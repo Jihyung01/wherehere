@@ -1,0 +1,40 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgis/postgis:14-3.2
+    environment:
+      POSTGRES_DB: wh_core
+      POSTGRES_USER: wh_user
+      POSTGRES_PASSWORD: wh_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wh_user -d wh_core"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: postgresql://wh_user:wh_password@db:5432/wh_core
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-your_api_key_here}
+      SECRET_KEY: ${SECRET_KEY:-default-secret-key}
+      ENVIRONMENT: development
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+    command: uvicorn recommendation_engine:app --host 0.0.0.0 --port 8000 --reload
+
+volumes:
+  postgres_data:
