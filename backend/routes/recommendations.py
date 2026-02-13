@@ -11,6 +11,7 @@ from datetime import datetime
 from core.dependencies import Database
 from mock.mock_data import get_mock_recommendations
 from services.weather_service import get_weather, get_time_of_day
+from services.narrative_generator import generate_narratives_batch
 
 router = APIRouter(
     prefix="/api/v1/recommendations",
@@ -208,9 +209,32 @@ async def _get_db_recommendations(request, weather_data, time_now):
         })
 
     scored.sort(key=lambda x: x["score"], reverse=True)
+    top_3 = scored[:3]
+    
+    # 🤖 AI 서사 생성 (상위 3개만)
+    user_mood = request.mood.mood_text if request.mood else None
+    places_for_narrative = [
+        {
+            "name": p["name"],
+            "category": p["category"],
+            "vibe_tags": p["vibe_tags"],
+            "is_hidden_gem": p["is_hidden_gem"],
+        }
+        for p in top_3
+    ]
+    
+    ai_narratives = await generate_narratives_batch(
+        places=places_for_narrative,
+        role_type=request.role_type,
+        user_mood=user_mood,
+    )
+    
+    # AI 서사 적용
+    for i, place in enumerate(top_3):
+        place["narrative"] = ai_narratives[i]
 
     return RecommendationResponse(
-        recommendations=scored[:3],
+        recommendations=top_3,
         role_type=request.role_type,
         radius_used=radius,
         total_candidates=len(rows),

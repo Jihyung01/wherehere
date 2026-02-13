@@ -1,7 +1,22 @@
+# -*- coding: utf-8 -*-
 """
 WhereHere Backend API v2
 Mock-First Architecture - Works immediately, upgrades with DB
 """
+
+import sys
+import io
+import os
+
+# Windows 인코딩 문제 해결 - UTF-8로 강제 설정
+if sys.platform == 'win32':
+    # 환경 변수로 UTF-8 강제
+    os.environ['PYTHONIOENCODING'] = 'utf-8'
+    # stdout/stderr를 UTF-8로 재설정
+    if hasattr(sys.stdout, 'buffer'):
+        sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+    if hasattr(sys.stderr, 'buffer'):
+        sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware

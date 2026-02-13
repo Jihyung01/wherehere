@@ -3,8 +3,10 @@ Configuration Management
 """
 
 from pydantic_settings import BaseSettings
-from typing import List, Optional
+from typing import List, Optional, Union
 from functools import lru_cache
+from pydantic import field_validator
+import json
 
 
 class Settings(BaseSettings):
@@ -37,10 +39,26 @@ class Settings(BaseSettings):
     OPENWEATHER_API_KEY: str = ""
 
     # CORS
-    ALLOWED_ORIGINS: List[str] = [
+    ALLOWED_ORIGINS: Union[List[str], str] = [
         "http://localhost:3000",
         "http://localhost:3001",
+        "http://localhost:3002",
+        "http://localhost:3003",
     ]
+
+    @field_validator('ALLOWED_ORIGINS', mode='before')
+    @classmethod
+    def parse_allowed_origins(cls, v):
+        if isinstance(v, str):
+            # JSON 배열 형식 시도
+            if v.startswith('['):
+                try:
+                    return json.loads(v)
+                except:
+                    pass
+            # 쉼표로 구분된 문자열
+            return [origin.strip() for origin in v.split(',')]
+        return v
 
     class Config:
         env_file = ".env"
