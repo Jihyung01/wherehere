@@ -26,6 +26,9 @@ import time
 
 from core import settings, Database
 from routes import users_router, recommendations_router, quests_router
+from routes.ai_features import router as ai_features_router
+from routes.challenges import router as challenges_router
+from routes.social import router as social_router
 
 
 @asynccontextmanager
@@ -80,6 +83,9 @@ async def add_process_time(request: Request, call_next):
 app.include_router(users_router)
 app.include_router(recommendations_router)
 app.include_router(quests_router)
+app.include_router(ai_features_router)
+app.include_router(challenges_router)
+app.include_router(social_router)
 
 
 @app.get("/")

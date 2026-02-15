@@ -34,7 +34,8 @@ class Settings(BaseSettings):
 
     # Kakao Maps
     KAKAO_REST_API_KEY: str = ""
-
+    KAKAO_API_KEY: str = ""  # Alias for services
+    
     # OpenWeatherMap
     OPENWEATHER_API_KEY: str = ""
 
@@ -58,6 +59,14 @@ class Settings(BaseSettings):
                     pass
             # 쉼표로 구분된 문자열
             return [origin.strip() for origin in v.split(',')]
+        return v
+    
+    @field_validator('KAKAO_API_KEY', mode='before')
+    @classmethod
+    def set_kakao_api_key(cls, v, info):
+        # KAKAO_API_KEY가 없으면 KAKAO_REST_API_KEY 사용
+        if not v and info.data.get('KAKAO_REST_API_KEY'):
+            return info.data['KAKAO_REST_API_KEY']
         return v
 
     class Config:

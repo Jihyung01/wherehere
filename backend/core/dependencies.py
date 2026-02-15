@@ -40,6 +40,7 @@ class Database:
 
     pool: Optional[asyncpg.Pool] = None
     connected: bool = False
+    helpers: Optional[object] = None
 
     @classmethod
     async def connect(cls):
@@ -55,6 +56,11 @@ class Database:
                 command_timeout=30
             )
             cls.connected = True
+            
+            # DB 헬퍼 초기화
+            from db.helpers import DatabaseHelpers
+            cls.helpers = DatabaseHelpers(cls.pool)
+            
             print("✅ Database connected")
         except Exception as e:
             print(f"⚠️  Database connection failed: {e}")
@@ -65,6 +71,7 @@ class Database:
         if cls.pool:
             await cls.pool.close()
             cls.connected = False
+            cls.helpers = None
             print("Database disconnected")
 
     @classmethod
@@ -76,10 +83,17 @@ class Database:
         if not cls.pool:
             raise RuntimeError("Database pool not initialized")
         return cls.pool
+    
+    @classmethod
+    def get_helpers(cls):
+        """DB 헬퍼 메서드 반환"""
+        if not cls.helpers:
+            raise RuntimeError("Database helpers not initialized")
+        return cls.helpers
 
 
-async def get_db() -> Optional[asyncpg.Pool]:
-    """Get database pool - returns None if not connected"""
+async def get_db():
+    """Get database helpers - returns helpers object if connected"""
     if Database.is_connected():
-        return Database.get_pool()
+        return Database.get_helpers()
     return None
