@@ -13,7 +13,7 @@ from pydantic import BaseModel
 
 from services.social_matching import SocialMatchingService
 from services.social_share import SocialShareService
-from db.database import get_db
+from core.dependencies import get_db
 
 
 router = APIRouter(prefix="/api/v1/social", tags=["Social"])

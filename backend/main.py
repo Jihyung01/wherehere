@@ -29,22 +29,26 @@ from routes import users_router, recommendations_router, quests_router
 from routes.ai_features import router as ai_features_router
 from routes.challenges import router as challenges_router
 from routes.social import router as social_router
+from routes.tracking import router as tracking_router
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    print("🚀 Starting WhereHere API v2...")
+    import logging
+    logger = logging.getLogger("uvicorn.error")
+    
+    logger.info("Starting WhereHere API v2...")
     await Database.connect()
 
     if Database.is_connected():
-        print("✅ Database: Connected (Real data mode)")
+        logger.info("Database: Connected (Real data mode)")
     else:
-        print("📦 Database: Not connected (Mock data mode)")
-        print("   → All APIs work with sample data!")
+        logger.warning("Database: Not connected (Mock data mode)")
+        logger.info("All APIs work with sample data!")
 
-    print(f"🌐 API Docs: http://localhost:8000/docs")
-    print(f"🏥 Health: http://localhost:8000/health")
-    print("✨ WhereHere API Ready!")
+    logger.info(f"API Docs: http://localhost:8000/docs")
+    logger.info(f"Health: http://localhost:8000/health")
+    logger.info("WhereHere API Ready!")
 
     yield
 
@@ -86,6 +90,7 @@ app.include_router(quests_router)
 app.include_router(ai_features_router)
 app.include_router(challenges_router)
 app.include_router(social_router)
+app.include_router(tracking_router)
 
 
 @app.get("/")

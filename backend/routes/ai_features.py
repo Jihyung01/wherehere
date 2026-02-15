@@ -15,7 +15,7 @@ from pydantic import BaseModel
 from services.personalization import PersonalizationService
 from services.mission_generator import MissionGenerator
 from services.location_guide import LocationGuideService
-from db.database import get_db
+from core.dependencies import get_db
 
 
 router = APIRouter(prefix="/api/v1/ai", tags=["AI Features"])
@@ -54,6 +54,25 @@ async def analyze_personality(
     """
     
     try:
+        # Mock 모드: 샘플 데이터 반환
+        if db is None:
+            return {
+                "success": True,
+                "personality": {
+                    "openness": 0.75,
+                    "conscientiousness": 0.65,
+                    "extraversion": 0.70,
+                    "agreeableness": 0.80,
+                    "neuroticism": 0.35
+                },
+                "companion_style": {
+                    "tone": "friendly",
+                    "emoji_usage": "medium",
+                    "formality": "casual",
+                    "encouragement_level": 0.7
+                }
+            }
+        
         personalization = PersonalizationService()
         
         # 방문 기록 가져오기
@@ -93,6 +112,30 @@ async def get_personality(
     """
     
     try:
+        # Mock 모드: 샘플 데이터 반환
+        if db is None:
+            return {
+                "personality": {
+                    "openness": 0.75,
+                    "conscientiousness": 0.65,
+                    "extraversion": 0.70,
+                    "agreeableness": 0.80,
+                    "neuroticism": 0.35
+                },
+                "companion_style": {
+                    "tone": "friendly",
+                    "emoji_usage": "medium",
+                    "formality": "casual",
+                    "encouragement_level": 0.7
+                },
+                "preferred_categories": ["카페", "문화공간", "공원"],
+                "behavior_stats": {
+                    "total_visits": 0,
+                    "avg_duration": 60,
+                    "social_ratio": 0.5
+                }
+            }
+        
         profile = await db.get_user_profile(user_id)
         
         return {
@@ -179,6 +222,31 @@ async def analyze_pattern(
     """
     
     try:
+        # Mock 모드: 샘플 데이터 반환
+        if db is None:
+            return {
+                "insufficient_data": True,
+                "message": "아직 충분한 데이터가 없어요. 3개 이상의 장소를 방문해주세요!",
+                "stats": {
+                    "total_visits": 0,
+                    "category_distribution": {},
+                    "time_preference": {},
+                    "avg_duration": 0,
+                    "avg_budget": 0,
+                    "max_budget": 0,
+                    "total_distance_km": 0,
+                    "exploration_radius_km": 0,
+                    "main_region": "서울"
+                },
+                "ai_analysis": {
+                    "style_name": "신규 탐험가",
+                    "style_emoji": "🌱",
+                    "style_description": "이제 막 탐험을 시작했어요",
+                    "characteristics": [],
+                    "recommendations": []
+                }
+            }
+        
         personalization = PersonalizationService()
         
         analysis = await personalization.analyze_user_pattern(

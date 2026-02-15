@@ -1,154 +1,210 @@
 /**
- * API Client
- * Handles all backend API calls with authentication
+ * WhereHere API Client
+ * 새로 추가된 8대 AI 기능 API
  */
 
-import { createClient } from './supabase'
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+// ============================================================
+// AI Features
+// ============================================================
 
-export class APIError extends Error {
-  constructor(
-    message: string,
-    public status: number,
-    public data?: any
-  ) {
-    super(message)
-    this.name = 'APIError'
-  }
-}
-
-/**
- * Get authentication headers with JWT token
- */
-async function getAuthHeaders(): Promise<HeadersInit> {
-  const supabase = createClient()
-  const { data: { session } } = await supabase.auth.getSession()
-  
-  const headers: HeadersInit = {
-    'Content-Type': 'application/json',
-  }
-  
-  if (session?.access_token) {
-    headers['Authorization'] = `Bearer ${session.access_token}`
-  }
-  
-  return headers
-}
-
-/**
- * Make authenticated API request
- */
-async function apiRequest<T>(
-  endpoint: string,
-  options: RequestInit = {}
-): Promise<T> {
-  const headers = await getAuthHeaders()
-  
-  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-    ...options,
-    headers: {
-      ...headers,
-      ...options.headers,
-    },
+export async function analyzePersonality(userId: string) {
+  const response = await fetch(`${API_BASE}/api/v1/ai/personality/analyze`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ user_id: userId })
   })
-  
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ detail: 'Unknown error' }))
-    throw new APIError(
-      error.detail || `HTTP ${response.status}`,
-      response.status,
-      error
-    )
-  }
-  
+  return response.json()
+}
+
+export async function getPersonality(userId: string) {
+  const response = await fetch(`${API_BASE}/api/v1/ai/personality/${userId}`)
+  return response.json()
+}
+
+export async function getArrivalGuide(userId: string, questId: string, placeId: string) {
+  const response = await fetch(`${API_BASE}/api/v1/ai/arrival`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ user_id: userId, quest_id: questId, place_id: placeId })
+  })
+  return response.json()
+}
+
+export async function analyzePattern(userId: string, days: number = 90) {
+  const response = await fetch(`${API_BASE}/api/v1/ai/pattern/analyze`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ user_id: userId, days })
+  })
+  return response.json()
+}
+
+export async function generatePersonalizedMessage(
+  userId: string,
+  contextType: string,
+  contextData: any
+) {
+  const response = await fetch(`${API_BASE}/api/v1/ai/message/generate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ user_id: userId, context_type: contextType, context_data: contextData })
+  })
   return response.json()
 }
 
 // ============================================================
-// User API
+// Challenges
 // ============================================================
 
-export interface UserProfile {
-  id: string
-  email: string
-  username: string
-  display_name: string | null
-  bio: string | null
-  profile_image_url: string | null
-  current_role: 'explorer' | 'healer' | 'archivist' | 'relation' | 'achiever'
-  level: number
-  total_xp: number
-  xp_to_next_level: number
-  current_streak: number
-  longest_streak: number
-  last_active_date: string | null
-  last_location: { latitude: number; longitude: number } | null
-  home_location: { latitude: number; longitude: number } | null
-  is_onboarded: boolean
-  onboarding_completed_at: string | null
-  created_at: string
-  updated_at: string
-  is_active: boolean
+export async function generateChallenge(userId: string) {
+  const response = await fetch(`${API_BASE}/api/v1/challenges/generate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ user_id: userId })
+  })
+  return response.json()
 }
 
-export interface OnboardingData {
-  username: string
-  display_name: string
-  current_role: 'explorer' | 'healer' | 'archivist' | 'relation' | 'achiever'
-  home_location?: { latitude: number; longitude: number }
+export async function getChallengeProgress(challengeId: string, userId: string) {
+  const response = await fetch(
+    `${API_BASE}/api/v1/challenges/${challengeId}/progress?user_id=${userId}`
+  )
+  return response.json()
 }
 
-export interface UserStats {
-  total_quests: number
-  completed_quests: number
-  total_places_visited: number
-  total_narratives: number
-  favorite_categories: string[]
-}
-
-export const userAPI = {
-  /**
-   * Get current user profile
-   */
-  getProfile: () => 
-    apiRequest<UserProfile>('/api/v1/users/me'),
-  
-  /**
-   * Update current user profile
-   */
-  updateProfile: (data: Partial<UserProfile>) =>
-    apiRequest<UserProfile>('/api/v1/users/me', {
-      method: 'PATCH',
-      body: JSON.stringify(data),
-    }),
-  
-  /**
-   * Complete onboarding
-   */
-  completeOnboarding: (data: OnboardingData) =>
-    apiRequest<UserProfile>('/api/v1/users/me/onboarding', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    }),
-  
-  /**
-   * Get user statistics
-   */
-  getStats: () =>
-    apiRequest<UserStats>('/api/v1/users/me/stats'),
-  
-  /**
-   * Get user by ID (public profile)
-   */
-  getUserById: (userId: string) =>
-    apiRequest<UserProfile>(`/api/v1/users/${userId}`),
+export async function completeChallenge(challengeId: string, userId: string) {
+  const response = await fetch(`${API_BASE}/api/v1/challenges/complete`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ challenge_id: challengeId, user_id: userId })
+  })
+  return response.json()
 }
 
 // ============================================================
-// Health Check
+// Social
 // ============================================================
 
-export const healthAPI = {
-  check: () => apiRequest<{ status: string }>('/health'),
+export async function createGathering(
+  creatorId: string,
+  placeId: string,
+  scheduledTime: string,
+  title?: string,
+  description?: string,
+  maxParticipants: number = 4
+) {
+  const response = await fetch(`${API_BASE}/api/v1/social/gatherings/create`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      creator_id: creatorId,
+      place_id: placeId,
+      scheduled_time: scheduledTime,
+      title,
+      description,
+      max_participants: maxParticipants
+    })
+  })
+  return response.json()
+}
+
+export async function joinGathering(gatheringId: string, userId: string) {
+  const response = await fetch(`${API_BASE}/api/v1/social/gatherings/join`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ gathering_id: gatheringId, user_id: userId })
+  })
+  return response.json()
+}
+
+export async function getGatheringDetails(gatheringId: string, userId: string) {
+  const response = await fetch(
+    `${API_BASE}/api/v1/social/gatherings/${gatheringId}?user_id=${userId}`
+  )
+  return response.json()
+}
+
+export async function getRecommendedGatherings(userId: string, limit: number = 10) {
+  const response = await fetch(
+    `${API_BASE}/api/v1/social/gatherings/recommended/${userId}?limit=${limit}`
+  )
+  return response.json()
+}
+
+export async function findMatches(
+  userId: string,
+  placeId: string,
+  scheduledTime: string,
+  maxDistanceKm: number = 5.0
+) {
+  const response = await fetch(`${API_BASE}/api/v1/social/matches/find`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      user_id: userId,
+      place_id: placeId,
+      scheduled_time: scheduledTime,
+      max_distance_km: maxDistanceKm
+    })
+  })
+  return response.json()
+}
+
+export async function createShareLink(
+  userId: string,
+  questId: string,
+  placeId: string,
+  questData: any
+) {
+  const response = await fetch(`${API_BASE}/api/v1/social/share/create`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      user_id: userId,
+      quest_id: questId,
+      place_id: placeId,
+      quest_data: questData
+    })
+  })
+  return response.json()
+}
+
+export async function getShareData(shareId: string) {
+  const response = await fetch(`${API_BASE}/api/v1/social/share/${shareId}`)
+  return response.json()
+}
+
+// ============================================================
+// Existing API (기존 API)
+// ============================================================
+
+export async function getRecommendations(
+  latitude: number,
+  longitude: number,
+  roleType: string,
+  mood: string
+) {
+  const response = await fetch(`${API_BASE}/api/v1/recommendations`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      role_type: roleType,
+      current_location: {
+        latitude,
+        longitude
+      },
+      mood: {
+        mood_text: mood,
+        intensity: 0.7
+      }
+    })
+  })
+  
+  if (!response.ok) {
+    throw new Error(`API Error: ${response.status}`)
+  }
+  
+  return response.json()
 }

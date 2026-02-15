@@ -6,8 +6,8 @@ import { Providers } from './providers'
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
-  title: 'WhereHere - 초개인화 장소 추천',
-  description: 'AI 기반 5가지 역할 페르소나로 맞춤형 장소를 추천받으세요',
+  title: 'WhereHere - AI 기반 장소 탐험',
+  description: '당신만의 서울을 발견하세요',
 }
 
 export default function RootLayout({
@@ -18,7 +18,9 @@ export default function RootLayout({
   return (
     <html lang="ko">
       <body className={inter.className}>
-        <Providers>{children}</Providers>
+        <Providers>
+          {children}
+        </Providers>
       </body>
     </html>
   )

@@ -41,30 +41,30 @@ class Database:
     pool: Optional[asyncpg.Pool] = None
     connected: bool = False
     helpers: Optional[object] = None
+    supabase_client: Optional[object] = None
 
     @classmethod
     async def connect(cls):
-        if not settings.DATABASE_URL:
-            print("⚠️  DATABASE_URL not set - running in mock mode")
+        """Supabase REST API로 직접 연결 (PostgreSQL 우회)"""
+        import logging
+        logger = logging.getLogger("uvicorn.error")
+        
+        if not settings.SUPABASE_URL or not settings.SUPABASE_SERVICE_ROLE_KEY:
+            logger.warning("Supabase credentials not set - running in mock mode")
             return
-
+        
+        # Supabase REST API 사용 (PostgreSQL 연결 문제 우회)
         try:
-            cls.pool = await asyncpg.create_pool(
-                settings.DATABASE_URL,
-                min_size=2,
-                max_size=10,
-                command_timeout=30
-            )
+            from db.rest_helpers import RestDatabaseHelpers
+            cls.helpers = RestDatabaseHelpers()
             cls.connected = True
+            cls.supabase_client = cls.helpers  # 호환성
             
-            # DB 헬퍼 초기화
-            from db.helpers import DatabaseHelpers
-            cls.helpers = DatabaseHelpers(cls.pool)
-            
-            print("✅ Database connected")
+            logger.info("✅ Database connected via Supabase REST API")
+            logger.info("✅ Real data mode activated!")
         except Exception as e:
-            print(f"⚠️  Database connection failed: {e}")
-            print("📦 Running in mock mode - all features work with sample data")
+            logger.error(f"Failed to initialize Supabase REST client: {e}")
+            logger.warning("Running in mock mode")
 
     @classmethod
     async def disconnect(cls):
@@ -76,7 +76,7 @@ class Database:
 
     @classmethod
     def is_connected(cls) -> bool:
-        return cls.connected and cls.pool is not None
+        return cls.connected or cls.supabase_client is not None
 
     @classmethod
     def get_pool(cls) -> asyncpg.Pool:

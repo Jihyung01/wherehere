@@ -1,5 +1,5 @@
-import { HomeClientV2 } from '@/components/home-client-v2'
+import { MainAppV3 } from '@/components/main-app-v3'
 
 export default function Home() {
-  return <HomeClientV2 />
+  return <MainAppV3 />
 }
