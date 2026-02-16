@@ -2,4 +2,5 @@ backend/
 supabase/
 scripts/
 *.md
-.git/
+# Don't ignore .git - Vercel needs it!
+
