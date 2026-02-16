@@ -1,0 +1,5 @@
+backend/
+supabase/
+scripts/
+*.md
+.git/
