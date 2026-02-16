@@ -47,6 +47,8 @@ class Settings(BaseSettings):
         "http://localhost:3003",
         "http://localhost:3004",
         "http://localhost:3005",
+        "https://wherehere-seven.vercel.app",
+        "https://wherehere-production.up.railway.app",
     ]
 
     @field_validator('ALLOWED_ORIGINS', mode='before')
