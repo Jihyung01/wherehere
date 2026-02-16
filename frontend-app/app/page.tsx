@@ -1,5 +1,5 @@
-import { MainAppV3 } from '@/components/main-app-v3'
+import { CompleteApp } from '@/components/complete-app'
 
 export default function Home() {
-  return <MainAppV3 />
+  return <CompleteApp />
 }

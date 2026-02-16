@@ -1,214 +1,265 @@
-# 🚀 실제 데이터 기반 앱 설정 가이드
+# 실제 데이터로 전환하기 (Mock → Real Data)
 
-## ✅ 완료된 작업
+## 🎯 현재 상황
 
-1. **실제 DB 스키마 생성** - 사용자 행동 추적용 테이블
-2. **사용자 추적 시스템** - 방문, 위치, 평가 기록
-3. **Kakao API 연동** - 실제 장소 검색 및 자동 추가
-4. **AI 분석 시스템** - 실제 데이터 기반 분석
-5. **동적 추천 시스템** - 축적된 데이터로 추천
+### ❌ 문제점
+1. **나의 지도 UI 안 보임** - 버튼만 있고 페이지 이동 안 됨
+2. **거리 0m** - DB에 위치 정보 없음
+3. **같은 장소만 추천** - 15개 샘플 데이터뿐
+4. **Mock 데이터 같음** - 실제로는 DB 연결되어 있지만 데이터 부족
 
----
-
-## 📋 Step 1: Supabase에서 SQL 실행
-
-### 1-1. Supabase 대시보드 접속
-1. https://supabase.com/dashboard
-2. 프로젝트 선택: `rftsnaoexvgjlhhfbsyt`
-
-### 1-2. SQL Editor에서 실행
-1. 왼쪽 메뉴 → **SQL Editor** 클릭
-2. **New query** 버튼 클릭
-3. 아래 파일의 내용을 **전체 복사**하여 붙여넣기:
-
-**파일 경로**: `supabase/migrations/EXECUTE_THIS_FIRST.sql`
-
-4. **Run** 버튼 클릭
-5. ✅ "Success" 메시지 확인
+### ✅ 해결 완료
+1. ✅ 나의 지도 페이지 라우팅 수정
+2. ✅ Kakao Local API 수집 스크립트 작성
+3. ✅ 거리 계산 로직 구현
+4. ✅ DB 마이그레이션 SQL 준비
 
 ---
 
-## 📋 Step 2: 백엔드 재시작
+## 🚀 실행 순서 (5분 안에 완료)
 
-### 2-1. 현재 백엔드 중지
-터미널에서 `Ctrl+C` 눌러서 백엔드 중지
+### 1단계: Kakao API 키 발급 (2분)
+```
+1. https://developers.kakao.com/ 접속
+2. 로그인 → 내 애플리케이션 → 애플리케이션 추가
+3. REST API 키 복사
+4. backend/.env 파일에 추가:
+   KAKAO_REST_API_KEY=복사한키
+```
 
-### 2-2. 백엔드 재시작
-```bash
+**자세한 가이드**: `KAKAO_API_SETUP.md` 참조
+
+### 2단계: DB 마이그레이션 실행 (1분)
+```sql
+-- Supabase SQL Editor에서 실행
+-- https://supabase.com/dashboard
+
+ALTER TABLE places 
+ADD COLUMN IF NOT EXISTS latitude FLOAT,
+ADD COLUMN IF NOT EXISTS longitude FLOAT;
+
+CREATE INDEX IF NOT EXISTS idx_places_lat_lon ON places(latitude, longitude);
+```
+
+### 3단계: 장소 데이터 수집 (10-15분)
+```powershell
+# WhereHere 프로젝트 루트에서
+cd scripts
+powershell -ExecutionPolicy Bypass -File run_collection.ps1
+```
+
+**예상 결과**: 500-1,500개 실제 장소 수집
+
+### 4단계: 백엔드 재시작 (10초)
+```powershell
+# 기존 프로세스 종료
+taskkill /F /IM python.exe
+
+# 재시작
 cd backend
 python -m uvicorn main:app --reload
 ```
 
-### 2-3. 연결 확인
-백엔드 로그에서 다음 메시지 확인:
-```
-✅ Database: Connected (Real data mode)
+### 5단계: 테스트 (1분)
+```powershell
+# API 테스트
+powershell -ExecutionPolicy Bypass -File test_api.ps1
+
+# 프론트엔드 확인
+# http://localhost:3003 접속
+# "나의 지도" 버튼 클릭
 ```
 
 ---
 
-## 📋 Step 3: 프론트엔드 새로고침
+## 📊 Before & After
 
-브라우저에서 **F5** 또는 **Ctrl+R**로 새로고침
+### Before (현재)
+```
+추천 장소:
+- 연남동 책방 카페 (거리: 0m, 항상 같은 장소)
+- 빈티지 레코드 카페 (거리: 0m, 항상 같은 장소)
+- 한남동 숨은 정원 (거리: 0m, 항상 같은 장소)
+
+총 장소: 15개 (샘플 데이터)
+```
+
+### After (실행 후)
+```
+추천 장소:
+- 강남역 스타벅스 (거리: 523m, 평점: 4.5)
+- 신사동 가로수길 카페 (거리: 847m, 평점: 4.7)
+- 청담동 루프탑 바 (거리: 1,234m, 평점: 4.8)
+
+총 장소: 1,234개 (실제 데이터)
+매번 다른 장소 추천!
+```
 
 ---
 
-## 🎯 실제 데이터 수집 흐름
+## 🎨 UI 개선 사항
 
-### 1. 사용자가 퀘스트 수락
-→ 프론트엔드에서 역할 선택 → 기분 선택 → 퀘스트 추천
+### 1. 나의 지도 페이지
+**URL**: http://localhost:3003/my-map
 
-### 2. 실시간 위치 추적
-```typescript
-// 프론트엔드에서 자동 호출
-await fetch('/api/v1/tracking/location', {
-  method: 'POST',
-  body: JSON.stringify({
-    user_id: userId,
-    latitude: lat,
-    longitude: lng
-  })
-})
-```
+**기능**:
+- 방문 기록 시각화 (Canvas 기반 지도)
+- 통계 대시보드 (카테고리 분포, 주간 활동)
+- 스타일 분석 (탐험 스타일, AI 추천)
+- 타임라인 (방문 히스토리)
 
-### 3. 방문 완료 시 데이터 저장
-```typescript
-// 사용자가 미션 완료 시
-await fetch('/api/v1/tracking/visit', {
-  method: 'POST',
-  body: JSON.stringify({
-    user_id: userId,
-    place_id: placeId,
-    duration_minutes: 45,
-    rating: 4.5,
-    review: "정말 좋았어요!",
-    mood: "happy",
-    spent_amount: 15000
-  })
-})
-```
+**수정 완료**:
+- ✅ 버튼 클릭 시 `/my-map` 페이지로 이동
 
-### 4. AI가 축적된 데이터 분석
-- 방문 기록 3개 이상 → 성격 분석 가능
-- 방문 기록 10개 이상 → 패턴 분석 가능
-- 방문 기록 20개 이상 → 정확한 추천 가능
+### 2. 추천 시스템
+**개선 사항**:
+- ✅ 실제 거리 계산 (Haversine 공식)
+- ✅ 거리 기반 스코어링
+- ✅ 다양한 장소 추천 (랜덤 선택)
+
+**향후 개선**:
+- ⏳ AI 기반 개인화 추천
+- ⏳ 사용자 선호도 학습
+- ⏳ 컨텍스트 기반 추천 (시간, 날씨, 동행자)
 
 ---
 
-## 🔍 실제 장소 검색 (Kakao API)
+## 🔧 문제 해결
 
-### 자동 장소 추가
-사용자가 앱을 사용할 때 주변 장소를 자동으로 검색하고 DB에 추가:
+### Q1: 여전히 거리가 0m
+**A**: DB 마이그레이션 실행 안 됨
+```sql
+-- Supabase SQL Editor에서 확인
+SELECT COUNT(*) FROM places WHERE latitude IS NOT NULL;
+-- 결과가 0이면 마이그레이션 미실행
+```
 
-```python
-# 백엔드에서 자동 실행
-POST /api/v1/tracking/discover
+### Q2: 나의 지도 페이지가 안 보임
+**A**: 프론트엔드 재시작 필요
+```powershell
+# 프론트엔드 재시작
+cd frontend-app
+npm run dev
+```
+
+### Q3: 장소 수집 스크립트 에러
+**A**: API 키 확인
+```bash
+# backend/.env 파일 확인
+KAKAO_REST_API_KEY=실제키값
+```
+
+### Q4: 같은 장소만 추천됨
+**A**: 장소 데이터 수집 안 됨
+```sql
+-- Supabase에서 확인
+SELECT COUNT(*) FROM places;
+-- 결과가 15개면 수집 안 됨
+```
+
+---
+
+## 📈 데이터 수집 상세
+
+### 수집 범위
+- **지역**: 서울 25개 구
+- **카테고리**: 카페, 음식점, 술집, 공원, 문화시설, 편의점
+- **예상 수집량**: 500-1,500개 장소
+
+### 수집 데이터
+```json
 {
-  "latitude": 37.5665,
-  "longitude": 126.9780,
-  "radius": 3000,
-  "category": "카페"
+  "id": "kakao-12345678",
+  "name": "강남역 스타벅스",
+  "address": "서울 강남구 강남대로 396",
+  "latitude": 37.4979,
+  "longitude": 127.0276,
+  "primary_category": "카페",
+  "vibe_tags": ["cozy", "quiet", "trendy"],
+  "average_rating": 4.5,
+  "average_price": 8000,
+  "is_active": true
 }
 ```
 
-### 결과
-- Kakao Local API에서 실제 장소 검색
-- 자동으로 DB에 추가
-- AI가 vibe_tags 생성
-- 즉시 추천에 사용 가능
+### 수집 시간
+- 1개 지역 × 1개 카테고리: 약 10초
+- 25개 지역 × 6개 카테고리: 약 10-15분
+- Rate limiting: 0.5초 대기
 
 ---
 
-## 📊 데이터 축적 확인
+## 🎯 다음 단계
 
-### Supabase Table Editor에서 확인
-1. 왼쪽 메뉴 → **Table Editor**
-2. 테이블 확인:
-   - `user_visits` - 방문 기록
-   - `location_history` - 위치 기록
-   - `user_personality` - AI 분석 결과
-   - `places` - 장소 데이터 (Kakao API로 자동 추가됨)
+### 즉시 (오늘)
+1. ✅ Kakao API 키 발급
+2. ✅ DB 마이그레이션
+3. ✅ 장소 데이터 수집
+4. ✅ 테스트
 
----
+### 단기 (1-2주)
+1. ⏳ AI 추천 알고리즘 고도화
+   - 하이브리드 추천 엔진
+   - 사용자 선호도 학습
+   - 컨텍스트 기반 추천
 
-## 🤖 AI 기능 작동 방식
+2. ⏳ 실시간 위치 추적
+   - 사용자 현재 위치 기반 추천
+   - 가까운 순 정렬
+   - 실시간 거리 업데이트
 
-### 1. 성격 분석 (Big Five)
-- **필요 데이터**: 방문 기록 3개 이상
-- **AI 분석**: 방문한 장소의 카테고리, vibe_tags, 체류 시간 분석
-- **결과**: 개방성, 성실성, 외향성, 친화성, 신경성 점수
+### 중기 (1개월)
+1. ⏳ 리뷰 데이터 수집
+   - Kakao Place API (리뷰, 평점)
+   - 사용자 리뷰 시스템
+   - 평점 기반 추천
 
-### 2. 패턴 분석
-- **필요 데이터**: 방문 기록 10개 이상
-- **AI 분석**: 시간대, 카테고리, 예산, 동선 패턴 분석
-- **결과**: 탐험 스타일, 선호 카테고리, 추천 장소
-
-### 3. 맞춤형 추천
-- **필요 데이터**: 방문 기록 5개 이상
-- **AI 분석**: 과거 방문 장소와 유사한 곳 찾기
-- **결과**: 매칭 확률 90% 이상의 장소 추천
-
-### 4. 챌린지 생성
-- **필요 데이터**: 사용자 레벨, 선호 카테고리
-- **AI 분석**: 사용자 수준에 맞는 난이도 조정
-- **결과**: 개인화된 주간/월간 챌린지
+2. ⏳ 대화형 AI
+   - 자연어 추천
+   - 의도 파악
+   - 개인화된 응답
 
 ---
 
-## 💰 비용 관리
+## 📞 지원
 
-### Anthropic API 사용량
-- 성격 분석: ~$0.01/회 (방문 3회마다 1회 실행)
-- 패턴 분석: ~$0.015/회 (주 1회 실행)
-- 챌린지 생성: ~$0.02/회 (주 1회 실행)
-- 추천 서사: ~$0.005/회 (퀘스트마다 실행)
+### 문서
+- `KAKAO_API_SETUP.md` - Kakao API 설정 가이드
+- `FIX_DISTANCE_ISSUE.md` - 거리 0m 문제 해결
+- `IMPLEMENTATION_GUIDE.md` - 전체 구현 가이드
 
-### 예상 월 비용 (사용자 100명 기준)
-- 성격 분석: $3 (100명 × 월 3회)
-- 패턴 분석: $6 (100명 × 월 4회)
-- 챌린지: $8 (100명 × 월 4회)
-- 추천 서사: $15 (100명 × 일 10회 × 30일)
-- **총 예상 비용**: ~$32/월
+### 스크립트
+- `scripts/collect_kakao_places.py` - 장소 수집 스크립트
+- `scripts/run_collection.ps1` - 실행 스크립트
+- `test_api.ps1` - API 테스트 스크립트
 
----
-
-## ✅ 성공 확인 체크리스트
-
-- [ ] Supabase SQL 실행 완료
-- [ ] 백엔드 로그에 "Database: Connected (Real data mode)" 표시
-- [ ] 프론트엔드에서 퀘스트 추천 작동 (422 에러 없음)
-- [ ] 방문 기록 저장 API 작동
-- [ ] Supabase Table Editor에서 데이터 확인
-- [ ] AI 분석 결과 확인 (3회 방문 후)
+### 마이그레이션
+- `supabase/migrations/ADD_LAT_LON.sql` - DB 마이그레이션
 
 ---
 
-## 🔧 트러블슈팅
+## ✅ 체크리스트
 
-### 문제 1: "Database not connected"
-**해결**: 
-1. Supabase SQL 실행 확인
-2. `.env` 파일의 `DATABASE_URL` 확인
-3. 백엔드 재시작
+실행 전 확인:
+- [ ] Kakao API 키 발급 완료
+- [ ] backend/.env에 API 키 추가
+- [ ] Supabase 접속 가능
+- [ ] Python 3.8+ 설치
+- [ ] httpx 라이브러리 설치 (`pip install httpx`)
 
-### 문제 2: 422 Unprocessable Entity
-**해결**: 
-- `role_type` 값 확인: `explorer`, `healer`, `artist`, `foodie`, `challenger` 중 하나
-- 요청 형식 확인 (JSON)
-
-### 문제 3: "No places found"
-**해결**:
-1. Supabase에서 샘플 데이터 삽입 확인
-2. `/api/v1/tracking/discover` 호출하여 실제 장소 추가
+실행 후 확인:
+- [ ] Supabase에 장소 데이터 500개 이상
+- [ ] API 테스트 시 거리 표시 (0m 아님)
+- [ ] 매번 다른 장소 추천
+- [ ] 나의 지도 페이지 접속 가능
 
 ---
 
-## 🎉 완료!
+## 🎉 완료 시 기대 효과
 
-이제 **실제 데이터가 축적되는 상용화 가능한 앱**이 완성되었습니다!
+1. **다양한 추천**: 매번 다른 장소 추천 (500-1,500개 중)
+2. **실제 거리**: 사용자 위치 기반 정확한 거리 표시
+3. **실제 장소**: 카카오맵에서 검색 가능한 실제 장소
+4. **AI 추천 준비**: 충분한 데이터로 AI 학습 가능
 
-- ✅ 사용자 행동 실시간 추적
-- ✅ Kakao API로 실제 장소 검색
-- ✅ AI가 실제 데이터 분석
-- ✅ 동적으로 추천 개선
-- ✅ 무한히 확장 가능한 구조
+**이제 진짜 상용화 가능한 앱이 됩니다!** 🚀

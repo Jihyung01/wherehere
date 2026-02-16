@@ -30,6 +30,7 @@ from routes.ai_features import router as ai_features_router
 from routes.challenges import router as challenges_router
 from routes.social import router as social_router
 from routes.tracking import router as tracking_router
+from routes.visits import router as visits_router
 
 
 @asynccontextmanager
@@ -64,15 +65,30 @@ app = FastAPI(
 )
 
 
-# CORS
+# CORS - 더 명시적인 설정
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     allow_headers=["*"],
+    expose_headers=["*"],
+    max_age=3600,
 )
 
+
+# OPTIONS 요청 명시적 처리
+@app.options("/{full_path:path}")
+async def options_handler(request: Request):
+    return JSONResponse(
+        content={"message": "OK"},
+        headers={
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, PATCH",
+            "Access-Control-Allow-Headers": "*",
+            "Access-Control-Max-Age": "3600",
+        }
+    )
 
 # Timing middleware
 @app.middleware("http")
@@ -91,6 +107,7 @@ app.include_router(ai_features_router)
 app.include_router(challenges_router)
 app.include_router(social_router)
 app.include_router(tracking_router)
+app.include_router(visits_router)
 
 
 @app.get("/")

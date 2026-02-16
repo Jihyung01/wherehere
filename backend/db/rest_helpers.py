@@ -48,7 +48,7 @@ class RestDatabaseHelpers:
     async def get_user_visits(self, user_id: str, days: int = 90) -> List[Dict[str, Any]]:
         """사용자 방문 기록 조회"""
         async with httpx.AsyncClient(timeout=30.0) as client:
-            url = f"{self.base_url}/rest/v1/user_visits"
+            url = f"{self.base_url}/rest/v1/visits"
             params = {
                 "select": "*",
                 "user_id": f"eq.{user_id}",
@@ -148,7 +148,7 @@ class RestDatabaseHelpers:
     async def get_completed_places(self, user_id: str) -> List[str]:
         """사용자가 완료한 장소 ID 목록"""
         async with httpx.AsyncClient(timeout=30.0) as client:
-            url = f"{self.base_url}/rest/v1/user_visits"
+            url = f"{self.base_url}/rest/v1/visits"
             params = {
                 "select": "place_id",
                 "user_id": f"eq.{user_id}"
@@ -202,3 +202,19 @@ class RestDatabaseHelpers:
             if response.status_code == 200:
                 return response.json()
             return []
+    
+    async def insert_visit(self, visit_data: Dict[str, Any]) -> Dict[str, Any]:
+        """방문 기록 삽입"""
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            url = f"{self.base_url}/rest/v1/visits"
+            headers = {
+                **self.headers,
+                "Prefer": "return=representation"
+            }
+            
+            response = await client.post(url, headers=headers, json=visit_data)
+            
+            if response.status_code == 201:
+                results = response.json()
+                return results[0] if results else {}
+            return {}

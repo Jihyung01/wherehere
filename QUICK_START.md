@@ -1,328 +1,213 @@
-# WhereHere - 빠른 시작 가이드
+# 🚀 WhereHere 빠른 시작 가이드
 
-## ✅ 현재 서버 상태
-
-### 프론트엔드
-- **주소**: http://localhost:3000
-- **상태**: ✅ 실행 중
-- **PID**: 9636
-
-### 백엔드  
-- **주소**: http://localhost:8000
-- **상태**: ✅ 실행 중
+## ✅ 현재 상태: 모든 기능 정상 작동 중!
 
 ---
 
-## 🚀 지금 바로 접속하세요!
+## 📍 접속 URL
 
-### 1단계: 브라우저 열기
-브라우저에서 다음 주소로 접속:
-```
-http://localhost:3000
-```
-
-### 2단계: 첫 로딩 대기
-- 처음 접속 시 페이지 컴파일에 5-10초 소요
-- "Compiling /" 메시지가 터미널에 표시됨
-- 컴파일 완료 후 페이지 표시
-
-### 3단계: 위치 권한 허용
-- 브라우저에서 위치 권한 요청 시 "허용" 클릭
-- 거부하면 기본 위치(강남)로 설정됨
-
-### 4단계: 역할 선택
-5가지 역할 중 하나 선택:
-- 🧭 탐험가
-- 🌿 치유자  
-- 📸 수집가
-- 🤝 연결자
-- 🏆 달성자
+- **프론트엔드**: http://localhost:3005
+- **백엔드 API**: http://localhost:8000
+- **API 문서**: http://localhost:8000/docs
 
 ---
 
-## 📋 구현된 모든 기능
+## 🎯 주요 기능 테스트
 
-### 메인 페이지
-- [x] 5가지 역할 페르소나 선택
-- [x] 실시간 위치 감지 (Geolocation API)
-- [x] AI 기반 장소 추천
-- [x] 장소 카드 (이름, 주소, 거리, 카테고리, 태그)
-- [x] 추천 이유 (AI 생성)
-- [x] 레벨 & XP 진행바
-- [x] 연속 출석 스트릭 (🔥)
-- [x] 반응형 디자인
+### 1. 퀘스트 시작하기
+```
+1. http://localhost:3005 접속
+2. 역할 선택 (예: 🧭 탐험가)
+3. 기분 선택 (예: 🔍 호기심 가득)
+4. AI가 추천하는 3개 장소 확인
+5. 마음에 드는 장소 클릭
+```
 
-### 인증 시스템
-- [x] 이메일/비밀번호 로그인
-- [x] 회원가입 (검증 포함)
-- [x] 소셜 로그인 (카카오, Google)
-- [x] 비밀번호 찾기
-- [x] Supabase Auth 연동
+### 2. 체크리스트 완료하기 ✨ NEW!
+```
+1. 퀘스트 수락 화면에서 체크리스트 확인
+2. 각 미션 클릭해서 체크하기:
+   ☐ 장소 도착하기 → 클릭 → ✅
+   ☐ 사진 찍기 → 클릭 → ✅
+   ☐ 특별한 순간 기록하기 → 클릭 → ✅
+   ☐ 리뷰 남기기 → 클릭 → ✅
+3. 모든 미션 완료 시 "✅ 체크인하기" 버튼 활성화
+4. 체크인 클릭!
+```
 
-### UI/UX
-- [x] Tailwind CSS 스타일링
-- [x] 그라데이션 배경
-- [x] 부드러운 애니메이션
-- [x] 로딩 스피너
-- [x] Toast 알림 (Sonner)
-- [x] 에러 핸들링
+### 3. 리뷰 & 사진 업로드 📷 NEW!
+```
+1. 체크인 후 3초 대기
+2. 리뷰 작성 화면 표시
+3. 별점 선택 (⭐⭐⭐⭐⭐)
+4. 후기 작성 (선택)
+5. 📷 사진 업로드:
+   - "클릭해서 사진 추가" 영역 클릭
+   - 사진 1개 이상 선택
+   - 썸네일 확인
+   - 원하지 않는 사진은 × 버튼으로 삭제
+6. "완료하고 XP 받기" 클릭
+7. 🎉 XP 획득 알림 확인
+```
+
+### 4. 소셜 공유하기 📢
+```
+1. 퀘스트 수락 화면에서 "📢 친구에게 공유하기" 섹션 확인
+2. 원하는 플랫폼 클릭:
+   - 💬 카카오톡
+   - 📷 인스타그램
+   - 🐦 트위터
+   - 📘 페이스북
+3. 새 창에서 공유 페이지 열림
+```
+
+### 5. 나의 지도 확인 🗺️
+```
+1. 하단 네비게이션에서 "🗺️ 나의 지도" 클릭
+2. Kakao Map에서 방문 마커 확인
+3. 마커 클릭 시 장소 정보 표시
+4. 탭 전환:
+   - 🗺️ 지도: 실제 지도 및 경로
+   - 📊 통계: 카테고리 분포, 평균 체류시간 등
+   - 🎨 스타일: AI 탐험 스타일 분석
+```
+
+### 6. 설정 관리 ⚙️ NEW!
+```
+1. 하단 네비게이션에서 "⚙️ 설정" 클릭
+2. 다크모드 토글 (🌙 ↔ ☀️)
+3. 🔔 알림 설정 클릭:
+   - 각 알림 옵션 체크/해제
+4. 🗺️ 위치 서비스 클릭:
+   - 현재 GPS 좌표 확인
+   - "위치 새로고침" 버튼으로 업데이트
+5. 🔒 개인정보 클릭:
+   - 사용자 ID 확인
+   - "로그아웃" 버튼 테스트
+6. ❓ 도움말 클릭:
+   - 사용 가이드 읽기
+```
 
 ---
 
-## 🔍 문제 해결
+## 🎨 테마 전환
 
-### "404 This page could not be found" 표시되면
-
-#### 원인
-Next.js가 페이지를 컴파일하지 못함
-
-#### 해결 방법
-1. 터미널 확인:
+### 다크모드 ↔ 라이트모드
 ```
-○ Compiling / ...
-✓ Compiled / in 3.2s
+설정 화면 → 다크모드 토글 클릭
+→ 모든 화면에 즉시 적용
+→ localStorage에 자동 저장
 ```
-이 메시지가 나타나야 함
 
-2. 메시지가 없으면:
+---
+
+## 🐛 문제 해결
+
+### 프론트엔드가 안 보여요
 ```powershell
-# 서버 재시작
-cd frontend-app
-Remove-Item -Path ".next" -Recurse -Force
+# 브라우저 새로고침 (Ctrl + F5)
+# 또는 터미널 확인:
+cd C:\Users\tbvj1\Projects\WhereHere\frontend-app
 npm run dev
 ```
 
-3. 브라우저 새로고침 (Ctrl + F5)
-
-### 페이지가 로딩되지 않으면
-
-1. **서버 로그 확인**:
-   - 터미널에서 에러 메시지 확인
-   - "GET / 200" 또는 "GET / 404" 확인
-
-2. **캐시 삭제**:
+### 백엔드 API 에러
 ```powershell
-Remove-Item -Path "frontend-app\.next" -Recurse -Force
-```
-
-3. **브라우저 캐시 삭제**:
-   - Ctrl + Shift + Delete
-   - 캐시 및 쿠키 삭제
-
-### 백엔드 연결 오류
-
-1. **백엔드 서버 확인**:
-```
-http://localhost:8000/docs
-```
-API 문서가 표시되어야 함
-
-2. **CORS 오류 시**:
-   - `backend/.env`의 `ALLOWED_ORIGINS` 확인
-   - `["http://localhost:3000"]` 포함되어 있어야 함
-
----
-
-## 📁 파일 구조
-
-```
-frontend-app/
-├── src/
-│   ├── app/
-│   │   ├── layout.tsx          ✅ 루트 레이아웃
-│   │   ├── page.tsx            ✅ 메인 페이지 (모든 기능)
-│   │   ├── globals.css         ✅ 전역 스타일
-│   │   ├── providers.tsx       ✅ React Query
-│   │   ├── login/
-│   │   │   └── page.tsx        ✅ 로그인
-│   │   └── signup/
-│   │       └── page.tsx        ✅ 회원가입
-│   ├── components/
-│   │   ├── auth/               ✅ 인증 컴포넌트
-│   │   └── ui/                 ✅ UI 컴포넌트
-│   ├── lib/
-│   │   ├── components.tsx      ✅ 핵심 UI (역할, 카드 등)
-│   │   ├── supabase.ts         ✅ 클라이언트 Supabase
-│   │   └── supabase-server.ts  ✅ 서버 Supabase
-│   └── hooks/
-│       ├── useAuth.ts          ✅ 인증 훅
-│       └── useUser.ts          ✅ 사용자 훅
-├── next.config.js              ✅ Next.js 설정
-├── tailwind.config.ts          ✅ Tailwind 설정
-└── tsconfig.json               ✅ TypeScript 설정
-```
-
----
-
-## 🎯 핵심 코드 위치
-
-### 역할 선택 UI
-`frontend-app/src/lib/components.tsx` - `RoleSelector` 컴포넌트
-
-### 장소 추천 로직
-`frontend-app/src/app/page.tsx` - `useQuery` 훅
-
-### AI 추천 API
-`backend/main.py` - `/api/v1/recommendations` 엔드포인트
-
-### 레벨 시스템
-`frontend-app/src/lib/components.tsx` - `LevelProgressBar` 컴포넌트
-
-### 스트릭 시스템
-`frontend-app/src/lib/components.tsx` - `StreakDisplay` 컴포넌트
-
----
-
-## 🔧 개발 명령어
-
-### 프론트엔드
-```powershell
-cd frontend-app
-
-# 개발 서버 시작
-npm run dev
-
-# 빌드
-npm run build
-
-# 프로덕션 서버
-npm start
-
-# 린트
-npm run lint
-```
-
-### 백엔드
-```powershell
-cd backend
-
-# 개발 서버 시작
+# 백엔드 재시작:
+cd C:\Users\tbvj1\Projects\WhereHere\backend
 python -m uvicorn main:app --reload
+```
 
-# 의존성 설치
-pip install -r requirements.txt
-
-# 테스트
-pytest
+### 데이터가 안 보여요
+```
+1. Supabase Dashboard 접속
+2. SQL Editor에서 확인:
+   SELECT COUNT(*) FROM visits WHERE user_id = 'user-demo-001';
+3. 결과가 0이면 UPDATE_VISITS_TABLE.sql 재실행
 ```
 
 ---
 
-## 📊 성능 최적화
+## 📱 화면별 기능 요약
 
-### 이미 적용된 최적화
-- ✅ React Query 캐싱 (5분)
-- ✅ Next.js 이미지 최적화
-- ✅ Tailwind CSS Purge
-- ✅ 코드 스플리팅
-- ✅ 서버 컴포넌트
-
-### 추가 최적화 가능
-- [ ] 이미지 lazy loading
-- [ ] 무한 스크롤
-- [ ] Service Worker
-- [ ] PWA 지원
-
----
-
-## 🎨 커스터마이징
-
-### 색상 변경
-`frontend-app/tailwind.config.ts`:
-```typescript
-theme: {
-  extend: {
-    colors: {
-      primary: '#3B82F6',  // 파란색
-      secondary: '#8B5CF6', // 보라색
-    }
-  }
-}
-```
-
-### 역할 추가
-`frontend-app/src/lib/components.tsx`:
-```typescript
-export type RoleType = 'explorer' | 'healer' | 'archivist' | 'relation' | 'achiever' | 'newrole'
-```
-
-### API 엔드포인트 변경
-`frontend-app/.env.local`:
-```env
-NEXT_PUBLIC_API_URL=http://your-api-url
-```
+| 화면 | 주요 기능 | 특징 |
+|------|----------|------|
+| 🏠 홈 | 역할 선택 | 5가지 역할, 호버 애니메이션 |
+| 💭 기분 | 기분 선택 | 5가지 기분, 색상 테마 |
+| ✨ 퀘스트 | AI 추천 | 3개 장소, 점수/거리 표시 |
+| 🎯 수락 | 체크리스트 | 인터랙티브, 조건부 버튼 |
+| 📢 공유 | 소셜 공유 | 4개 플랫폼, 새 창 |
+| ⭐ 리뷰 | 별점/후기/사진 | 다중 업로드, 미리보기 |
+| 🗺️ 지도 | Kakao Map | 마커, 경로, 3개 탭 |
+| 🎯 챌린지 | 도전 과제 | 진행률 바, 보상 |
+| 👤 프로필 | 성격 분석 | AI 분석 결과 |
+| ⚙️ 설정 | 테마/알림/위치 | 실제 기능 구현 |
 
 ---
 
-## 📱 모바일 테스트
+## 🎁 새로 추가된 기능
 
-### 로컬 네트워크에서 접속
-1. PC의 IP 주소 확인:
-```powershell
-ipconfig
-```
+### ✨ 이번 업데이트 (2026-02-16)
 
-2. 모바일에서 접속:
-```
-http://[PC-IP]:3000
-```
+1. **인터랙티브 체크리스트**
+   - 클릭 가능한 미션
+   - 체크/해제 애니메이션
+   - 완료 진행률 표시
+   - 조건부 버튼 활성화
 
-3. `next.config.js`에 호스트 설정:
-```javascript
-const nextConfig = {
-  reactStrictMode: true,
-  swcMinify: false,
-  // 모바일 접속 허용
-  experimental: {
-    allowedOrigins: ['*']
-  }
-}
+2. **사진 업로드**
+   - 다중 파일 선택
+   - 썸네일 그리드
+   - 개별 삭제 기능
+   - Base64 인코딩
+
+3. **설정 화면 실제 기능**
+   - 알림 설정 (체크박스)
+   - 위치 새로고침
+   - 로그아웃
+   - 도움말 가이드
+
+---
+
+## 📊 데이터 흐름
+
+```
+사용자 → 역할/기분 선택
+       ↓
+    AI 추천 API
+       ↓
+    퀘스트 수락
+       ↓
+    체크리스트 완료
+       ↓
+    체크인 (POST /api/v1/visits)
+       ↓
+    리뷰 작성 (별점 + 후기 + 사진)
+       ↓
+    XP 획득
+       ↓
+    나의 지도 (GET /api/v1/visits/{user_id})
+       ↓
+    통계 & 분석 표시
 ```
 
 ---
 
-## 🚀 배포 준비
+## 🎯 완료된 모든 Phase
 
-### Vercel (프론트엔드)
-1. GitHub에 푸시
-2. Vercel 연결
-3. 환경 변수 설정
-4. 자동 배포
-
-### Railway (백엔드)
-1. GitHub에 푸시
-2. Railway 연결
-3. 환경 변수 설정
-4. 자동 배포
+- ✅ Phase 1: 자동 방문 기록
+- ✅ Phase 2: 방문 후 리뷰 (사진 업로드 포함)
+- ✅ Phase 3: Kakao Map API 통합
+- ✅ Phase 4: 소셜 기능
+- ✅ UI 통일 및 다크모드
+- ✅ 하단 네비게이션
+- ✅ 설정 화면 실제 기능
 
 ---
 
-## ✅ 최종 체크리스트
+## 🎊 즐거운 탐험 되세요!
 
-서버 실행 확인:
-- [ ] http://localhost:3000 접속 가능
-- [ ] http://localhost:8000/docs 접속 가능
-- [ ] 위치 권한 허용
-- [ ] 역할 선택 가능
-- [ ] 장소 추천 표시
-- [ ] 레벨바 표시
-- [ ] 스트릭 표시
-- [ ] 로그인 페이지 접속 가능
-- [ ] 회원가입 페이지 접속 가능
+모든 기능이 정상 작동합니다. 
+이제 http://localhost:3005 에서 완전한 WhereHere 경험을 즐기세요!
 
----
-
-## 🎊 완료!
-
-모든 기능이 구현되어 있고 정상 작동합니다!
-
-**지금 바로 접속**: http://localhost:3000
-
-문제가 발생하면 터미널 로그를 확인하세요!
-
----
-
-**마지막 업데이트**: 2026-02-12 16:43
-**프론트엔드**: http://localhost:3000 (PID: 9636)
-**백엔드**: http://localhost:8000
-**상태**: ✅ 실행 중
+**문제가 있으면 `FINAL_COMPLETE_GUIDE.md`를 참고하세요.**
