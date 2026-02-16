@@ -58,7 +58,18 @@ export function ChallengeCard({ challengeId, userId, onComplete }: ChallengeCard
   }
 
   const { challenge, completed_count, total_places, days_left, ai_comment, next_recommendation } = progress
-  const progressPercent = progress.progress * 100
+  const progressPercent = (progress.progress || 0) * 100
+
+  // challenge 데이터가 없으면 로딩 표시
+  if (!challenge) {
+    return (
+      <div className="challenge-card">
+        <div style={{ padding: '20px', textAlign: 'center', color: 'rgba(255,255,255,0.5)' }}>
+          챌린지를 불러오는 중...
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="challenge-card">
@@ -66,10 +77,10 @@ export function ChallengeCard({ challengeId, userId, onComplete }: ChallengeCard
       <div className="challenge-header">
         <div className="challenge-icon">🏆</div>
         <div className="challenge-info">
-          <h3 className="challenge-title">{challenge.title}</h3>
-          <p className="challenge-description">{challenge.description}</p>
+          <h3 className="challenge-title">{challenge.title || '챌린지'}</h3>
+          <p className="challenge-description">{challenge.description || ''}</p>
         </div>
-        <div className={`challenge-difficulty difficulty-${challenge.difficulty}`}>
+        <div className={`challenge-difficulty difficulty-${challenge.difficulty || 'medium'}`}>
           {challenge.difficulty === 'easy' ? '쉬움' : 
            challenge.difficulty === 'medium' ? '보통' : '어려움'}
         </div>
@@ -109,15 +120,15 @@ export function ChallengeCard({ challengeId, userId, onComplete }: ChallengeCard
       <div className="places-list">
         <h4>📍 챌린지 장소</h4>
         <div className="places-grid">
-          {challenge.places.map((place, i) => (
+          {(challenge.places || []).map((place, i) => (
             <div 
               key={i} 
               className={`place-item ${place.completed ? 'completed' : ''}`}
             >
-              <div className="place-number">{place.order}</div>
+              <div className="place-number">{place.order || i + 1}</div>
               <div className="place-info">
-                <div className="place-name">{place.name}</div>
-                <div className="place-category">{place.category}</div>
+                <div className="place-name">{place.name || '장소'}</div>
+                <div className="place-category">{place.category || '기타'}</div>
                 {place.why && <div className="place-why">{place.why}</div>}
               </div>
               <div className="place-status">
@@ -145,13 +156,13 @@ export function ChallengeCard({ challengeId, userId, onComplete }: ChallengeCard
         <div className="rewards-grid">
           <div className="reward-item">
             <span className="reward-icon">⭐</span>
-            <span className="reward-text">+{challenge.rewards.xp} XP</span>
+            <span className="reward-text">+{challenge.rewards?.xp || 0} XP</span>
           </div>
           <div className="reward-item">
             <span className="reward-icon">🏅</span>
-            <span className="reward-text">{challenge.rewards.badge_name}</span>
+            <span className="reward-text">{challenge.rewards?.badge_name || '뱃지'}</span>
           </div>
-          {challenge.rewards.unlock && (
+          {challenge.rewards?.unlock && (
             <div className="reward-item">
               <span className="reward-icon">🔓</span>
               <span className="reward-text">{challenge.rewards.unlock}</span>

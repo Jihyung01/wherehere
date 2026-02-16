@@ -82,7 +82,28 @@ async def generate_challenge(
         challenge = await challenge_maker.generate_weekly_challenge(request.user_id)
         return challenge
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        import logging
+        logger = logging.getLogger("uvicorn.error")
+        logger.error(f"Challenge generation error: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        
+        # 에러 시 기본 챌린지 반환
+        from datetime import datetime, timedelta
+        return {
+            "challenge_id": f"challenge-{request.user_id}-fallback",
+            "title": "서울 탐험 시작하기",
+            "description": "새로운 장소 3곳을 방문해보세요",
+            "theme": "기본 탐험",
+            "difficulty": "easy",
+            "duration_days": 7,
+            "places": [],
+            "rewards": {"xp": 500, "badge_code": "starter", "badge_name": "시작하는 탐험가"},
+            "tips": "첫 탐험을 시작해보세요!",
+            "created_at": datetime.now().isoformat(),
+            "deadline": (datetime.now() + timedelta(days=7)).isoformat(),
+            "status": "active"
+        }
 
 
 @router.get("/{challenge_id}/progress")

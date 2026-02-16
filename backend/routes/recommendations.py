@@ -114,18 +114,55 @@ async def get_recommendations(request: RecommendationRequest):
         if places and len(places) > 0:
             # 상위 3개 선택
             import random
+            from math import radians, sin, cos, sqrt, atan2
+            
+            def calculate_distance(lat1, lon1, lat2, lon2):
+                """Haversine 거리 계산 (미터)"""
+                R = 6371000
+                lat1_rad, lat2_rad = radians(lat1), radians(lat2)
+                delta_lat, delta_lon = radians(lat2 - lat1), radians(lon2 - lon1)
+                a = sin(delta_lat/2)**2 + cos(lat1_rad) * cos(lat2_rad) * sin(delta_lon/2)**2
+                c = 2 * atan2(sqrt(a), sqrt(1-a))
+                return R * c
+            
             selected = random.sample(places, min(3, len(places)))
             
             recommendations = []
             for place in selected:
+                # 거리 계산
+                place_lat = place.get("latitude")
+                place_lon = place.get("longitude")
+                
+                if place_lat and place_lon:
+                    distance = calculate_distance(
+                        request.current_location.latitude,
+                        request.current_location.longitude,
+                        place_lat,
+                        place_lon
+                    )
+                else:
+                    distance = 0.0
+                
+                # 스코어 계산
+                score = 85.0
+                if place.get("average_rating"):
+                    score += place.get("average_rating", 0) * 2
+                if distance > 0:
+                    distance_score = max(0, 10 - (distance / 1000))
+                    score += distance_score
+                
                 recommendations.append(PlaceRecommendation(
                     place_id=place.get("id", ""),
                     name=place.get("name", "Unknown"),
                     address=place.get("address", ""),
                     category=place.get("primary_category", "기타"),
-                    distance_meters=0.0,
-                    score=85.0,
-                    score_breakdown={"category": 40.0, "distance": 25.0, "rating": 20.0},
+                    distance_meters=round(distance, 1),
+                    score=round(score, 1),
+                    score_breakdown={
+                        "category": 40.0,
+                        "distance": round(max(0, 25 - (distance / 200)), 1),
+                        "rating": round(place.get("average_rating", 0) * 4, 1),
+                    },
                     reason=f"{request.role_type} 역할에 맞는 장소",
                     estimated_cost=place.get("average_price"),
                     vibe_tags=place.get("vibe_tags", []),

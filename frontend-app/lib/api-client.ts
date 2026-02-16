@@ -208,3 +208,30 @@ export async function getRecommendations(
   
   return response.json()
 }
+
+// User API stub (for compatibility with hooks/useUser.ts)
+export const userAPI = {
+  getProfile: async (userId: string) => {
+    const response = await fetch(`${API_BASE_URL}/users/${userId}`)
+    if (!response.ok) throw new Error('Failed to fetch user profile')
+    return response.json()
+  },
+  updateProfile: async (userId: string, data: any) => {
+    const response = await fetch(`${API_BASE_URL}/users/${userId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    })
+    if (!response.ok) throw new Error('Failed to update user profile')
+    return response.json()
+  },
+  completeOnboarding: async (userId: string, data: any) => {
+    const response = await fetch(`${API_BASE_URL}/users/${userId}/onboarding`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    })
+    if (!response.ok) throw new Error('Failed to complete onboarding')
+    return response.json()
+  }
+}

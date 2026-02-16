@@ -297,7 +297,9 @@ export function HomeClientV2() {
       }
     `
     document.head.appendChild(style)
-    return () => document.head.removeChild(style)
+    return () => {
+      document.head.removeChild(style)
+    }
   }, [])
 
   if (!userLocation) {
@@ -390,6 +392,7 @@ function HomeScreen({
   nextLevelXP,
   streak,
   completedToday,
+  selectedRole,
   selectedMood,
   setSelectedMood,
   onSelectRole,
@@ -399,6 +402,7 @@ function HomeScreen({
   nextLevelXP: number
   streak: number
   completedToday: number
+  selectedRole: RoleType
   selectedMood: MoodType | null
   setSelectedMood: (mood: MoodType | null) => void
   onSelectRole: (role: RoleType) => void

@@ -46,7 +46,7 @@ export function useUser() {
     refetch: refetchProfile,
   } = useQuery({
     queryKey: ['user-profile', user?.id],
-    queryFn: () => userAPI.getProfile(),
+    queryFn: () => userAPI.getProfile(user!.id),
     enabled: !!user,
     staleTime: 5 * 60 * 1000, // 5 minutes
     retry: 1,
@@ -54,7 +54,7 @@ export function useUser() {
 
   // Update profile mutation
   const updateProfileMutation = useMutation({
-    mutationFn: (data: Partial<UserProfile>) => userAPI.updateProfile(data),
+    mutationFn: (data: Partial<UserProfile>) => userAPI.updateProfile(user!.id, data),
     onSuccess: (data) => {
       queryClient.setQueryData(['user-profile', user?.id], data)
       toast.success('프로필이 업데이트되었습니다.')

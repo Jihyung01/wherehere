@@ -117,7 +117,7 @@ export function MainAppV3() {
         🏆 챌린지
       </button>
       <button
-        onClick={() => setScreen('pattern')}
+        onClick={() => window.location.href = '/my-map-real'}
         className={screen === 'pattern' ? 'nav-active' : ''}
       >
         🗺️ 나의 지도

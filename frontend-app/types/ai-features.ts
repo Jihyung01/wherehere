@@ -89,7 +89,9 @@ export interface ChallengeProgress {
 
 // 패턴 분석
 export interface PatternAnalysis {
-  stats: {
+  insufficient_data?: boolean
+  message?: string
+  stats?: {
     total_visits: number
     category_distribution: Record<string, string>
     time_preference: Record<string, string>
@@ -100,14 +102,14 @@ export interface PatternAnalysis {
     exploration_radius_km: number
     main_region: string
   }
-  ai_analysis: {
+  ai_analysis?: {
     style_name: string
     style_emoji: string
     style_description: string
     characteristics: string[]
     recommendations: PatternRecommendation[]
   }
-  journey_map_data: {
+  journey_map_data?: {
     polyline: Array<{ lat: number; lng: number }>
     markers: Array<{
       lat: number
