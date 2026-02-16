@@ -16,6 +16,10 @@ build/
 .env.local
 .env.*.local
 *.env
+# Keep example files
+!.env.example
+!backend/.env.example
+!frontend-app/.env.example
 
 # IDE
 .vscode/
@@ -43,3 +47,10 @@ ENV/
 *.bak
 *.tmp
 .cache/
+
+# Vercel
+.vercel
+.vercel/
+
+# Railway
+.railway/
