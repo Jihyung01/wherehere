@@ -21,6 +21,10 @@ build/
 !backend/.env.example
 !frontend-app/.env.example
 
+# Deployment secrets (never commit!)
+DEPLOYMENT_SECRETS.txt
+*_SECRETS.txt
+
 # IDE
 .vscode/
 .idea/
