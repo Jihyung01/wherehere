@@ -4,6 +4,13 @@ import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Script from "next/script";
 
+// Kakao Maps Type Declaration
+declare global {
+  interface Window {
+    kakao: any;
+  }
+}
+
 // Types
 interface Visit {
   id: string;
