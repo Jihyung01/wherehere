@@ -20,7 +20,7 @@ if sys.platform == 'win32':
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from contextlib import asynccontextmanager
 import time
 
@@ -65,12 +65,12 @@ app = FastAPI(
 )
 
 
-# CORS - 더 명시적인 설정
+# CORS - 모든 origin 허용 (프로덕션용)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.ALLOWED_ORIGINS,
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+    allow_origins=["*"],  # 모든 origin 허용
+    allow_credentials=False,  # credentials와 "*" origin은 함께 사용 불가
+    allow_methods=["*"],
     allow_headers=["*"],
     expose_headers=["*"],
     max_age=3600,
@@ -80,11 +80,11 @@ app.add_middleware(
 # OPTIONS 요청 명시적 처리
 @app.options("/{full_path:path}")
 async def options_handler(request: Request):
-    return JSONResponse(
-        content={"message": "OK"},
+    return Response(
+        status_code=200,
         headers={
             "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, PATCH",
+            "Access-Control-Allow-Methods": "*",
             "Access-Control-Allow-Headers": "*",
             "Access-Control-Max-Age": "3600",
         }
