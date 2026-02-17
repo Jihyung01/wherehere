@@ -127,8 +127,27 @@ async def get_recommendations(request: RecommendationRequest):
             
             selected = random.sample(places, min(3, len(places)))
             
+            # 🤖 AI 서사 생성 준비
+            places_for_narrative = [
+                {
+                    "name": p.get("name", "Unknown"),
+                    "category": p.get("primary_category", "기타"),
+                    "vibe_tags": p.get("vibe_tags", []),
+                    "is_hidden_gem": p.get("is_hidden_gem", False),
+                }
+                for p in selected
+            ]
+            
+            # AI 서사 생성 (병렬 처리)
+            user_mood = request.mood.mood_text if request.mood else None
+            ai_narratives = await generate_narratives_batch(
+                places=places_for_narrative,
+                role_type=request.role_type,
+                user_mood=user_mood,
+            )
+            
             recommendations = []
-            for place in selected:
+            for idx, place in enumerate(selected):
                 # 거리 계산
                 place_lat = place.get("latitude")
                 place_lon = place.get("longitude")
@@ -169,7 +188,7 @@ async def get_recommendations(request: RecommendationRequest):
                     average_rating=place.get("average_rating", 0),
                     is_hidden_gem=place.get("is_hidden_gem", False),
                     typical_crowd_level=place.get("typical_crowd_level", "medium"),
-                    narrative=f"추천: {place.get('name', 'Unknown')}",
+                    narrative=ai_narratives[idx],  # 🤖 AI 생성 서사 적용
                     description=place.get("description", "")
                 ))
             
