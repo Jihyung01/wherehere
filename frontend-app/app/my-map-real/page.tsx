@@ -41,7 +41,7 @@ interface Stats {
   total_xp: number;
 }
 
-const API_BASE = "http://localhost:8000/api/v1";
+const API_BASE = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000') + '/api/v1';
 
 // API Functions
 async function fetchUserVisits(userId: string): Promise<Visit[]> {

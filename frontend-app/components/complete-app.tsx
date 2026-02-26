@@ -28,6 +28,8 @@ const MOODS = [
   { id: 'adventurous' as MoodType, name: '모험 준비됨', icon: '🚀', color: '#EF4444' },
 ]
 
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+
 export function CompleteApp() {
   const router = useRouter()
   const [screen, setScreen] = useState<Screen>('role')
@@ -93,7 +95,7 @@ export function CompleteApp() {
         duration_minutes: Math.max(duration, 30)
       })
       
-      const response = await fetch('http://localhost:8000/api/v1/visits', {
+      const response = await fetch(`${API_BASE}/api/v1/visits`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

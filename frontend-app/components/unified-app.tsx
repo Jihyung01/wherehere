@@ -26,6 +26,8 @@ const MOODS = [
   { id: 'adventurous' as MoodType, name: '모험 준비됨', icon: '🚀', color: '#EF4444' },
 ]
 
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+
 export function UnifiedApp() {
   const router = useRouter()
   const [screen, setScreen] = useState<Screen>('role')
@@ -73,7 +75,7 @@ export function UnifiedApp() {
     const duration = Math.floor((new Date().getTime() - checkInTime.getTime()) / 1000 / 60)
     
     try {
-      const response = await fetch('http://localhost:8000/api/v1/visits', {
+      const response = await fetch(`${API_BASE}/api/v1/visits`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
