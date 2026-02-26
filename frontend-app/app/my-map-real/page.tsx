@@ -240,6 +240,7 @@ export default function MyMapReal() {
   const [pattern, setPattern] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [kakaoLoaded, setKakaoLoaded] = useState(false);
+  const [mapLoadError, setMapLoadError] = useState<string | null>(null);
   const [isDarkMode, setIsDarkMode] = useState(false);
   const mapRef = useRef<any>(null);
   const mapContainerRef = useRef<HTMLDivElement>(null);
@@ -271,11 +272,31 @@ export default function MyMapReal() {
     return () => window.removeEventListener("focus", onFocus);
   }, [userId]);
 
-  // Init Kakao Map: 지도 탭일 때 항상 지도 표시 (기간 필터 적용된 방문 기준)
+  // 카카오맵 스크립트 로드 타임아웃 (오래 걸리면 에러 안내)
   useEffect(() => {
-    if (kakaoLoaded && mapContainerRef.current && tab === 'map') {
-      initKakaoMapWithVisits(filteredVisits);
-    }
+    const timeout = setTimeout(() => {
+      if (!kakaoLoaded) setMapLoadError('지도 로딩이 지연되고 있습니다. 배포 도메인이 카카오 개발자 콘솔 앱 키에 등록되어 있는지 확인해 주세요.');
+    }, 8000);
+    return () => clearTimeout(timeout);
+  }, [kakaoLoaded]);
+
+  // Init Kakao Map: 지도 탭일 때 표시. DOM 레이아웃 후 초기화 + relayout으로 그리기 보장
+  useEffect(() => {
+    if (!kakaoLoaded || !mapContainerRef.current || tab !== 'map') return;
+    setMapLoadError(null);
+    const t = setTimeout(() => {
+      try {
+        initKakaoMapWithVisits(filteredVisits);
+        const m = mapRef.current;
+        if (m && typeof m.relayout === 'function') {
+          setTimeout(() => m.relayout(), 150);
+        }
+      } catch (e) {
+        console.error('Kakao map init error:', e);
+        setMapLoadError('지도를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.');
+      }
+    }, 100);
+    return () => clearTimeout(t);
   }, [kakaoLoaded, filteredVisits, tab, isDarkMode]);
 
   const loadData = async () => {
@@ -291,6 +312,9 @@ export default function MyMapReal() {
 
   const initKakaoMapWithVisits = (visitsToShow: Visit[]) => {
     if (!window.kakao?.maps || !mapContainerRef.current) return;
+    const el = mapContainerRef.current;
+    if (!el || el.offsetWidth === 0 || el.offsetHeight === 0) return;
+    while (el.firstChild) el.removeChild(el.firstChild);
 
     const hasVisits = visitsToShow.length > 0;
     const centerLat = hasVisits
@@ -390,8 +414,18 @@ export default function MyMapReal() {
 
   return (
     <>
-      <Script src={`//dapi.kakao.com/v2/maps/sdk.js?appkey=${process.env.NEXT_PUBLIC_KAKAO_MAP_KEY || '160238a590f3d2957230d764fb745322'}&autoload=false`} strategy="afterInteractive"
-        onLoad={() => { window.kakao?.maps?.load(() => setKakaoLoaded(true)); }} />
+      <Script
+        src={`https://dapi.kakao.com/v2/maps/sdk.js?appkey=${process.env.NEXT_PUBLIC_KAKAO_MAP_KEY || '160238a590f3d2957230d764fb745322'}&autoload=false`}
+        strategy="afterInteractive"
+        onLoad={() => {
+          if (window.kakao?.maps?.load) {
+            window.kakao.maps.load(() => setKakaoLoaded(true));
+          } else {
+            setKakaoLoaded(true);
+          }
+        }}
+        onError={() => setMapLoadError('지도 스크립트를 불러오지 못했습니다. 배포 도메인이 카카오맵 앱 키에 등록되어 있는지 확인해 주세요.')}
+      />
       
       <div style={{ maxWidth: 430, margin: "0 auto", minHeight: "100vh", background: bgColor, color: textColor, fontFamily: 'Pretendard, sans-serif', position: "relative", overflow: "hidden" }}>
         
@@ -468,13 +502,26 @@ export default function MyMapReal() {
                   ref={mapContainerRef}
                   style={{
                     width: "100%",
+                    minHeight: 300,
                     height: 300,
                     borderRadius: 16,
                     border: `1px solid ${borderColor}`,
                     overflow: "hidden",
                     boxShadow: isDarkMode ? "none" : "0 2px 12px rgba(0,0,0,0.08)",
+                    background: isDarkMode ? "#1a1d24" : "#e5e7eb",
                   }}
                 />
+                {!kakaoLoaded && !mapLoadError && (
+                  <div style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, display: "flex", alignItems: "center", justifyContent: "center", background: isDarkMode ? "rgba(0,0,0,0.3)" : "rgba(255,255,255,0.9)", borderRadius: 16, color: isDarkMode ? "rgba(255,255,255,0.7)" : "#6b7280", fontSize: 14, pointerEvents: "none" }}>
+                    지도 로딩 중...
+                  </div>
+                )}
+                {mapLoadError && (
+                  <div style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 20, background: isDarkMode ? "rgba(0,0,0,0.7)" : "rgba(255,255,255,0.98)", borderRadius: 16, color: isDarkMode ? "#fff" : "#374151", fontSize: 13, textAlign: "center", pointerEvents: "auto" }}>
+                    <span style={{ marginBottom: 8 }}>⚠️</span>
+                    {mapLoadError}
+                  </div>
+                )}
                 {/* Nike 스타일 누적거리/탐험반경 오버레이 */}
                 <div
                   style={{

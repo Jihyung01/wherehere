@@ -276,7 +276,26 @@ export function CompleteApp() {
   // 역할 선택 화면
   if (screen === 'role') {
     return (
-      <div style={{ maxWidth: 430, margin: '0 auto', minHeight: '100vh', background: bgColor, color: textColor, fontFamily: 'Pretendard, sans-serif' }}>
+      <div style={{ maxWidth: 430, margin: '0 auto', minHeight: '100vh', background: bgColor, color: textColor, fontFamily: 'Pretendard, sans-serif', position: 'relative' }}>
+        <button
+          onClick={() => router.push('/login')}
+          style={{
+            position: 'absolute',
+            top: 16,
+            right: 20,
+            padding: '8px 14px',
+            background: isDarkMode ? 'rgba(255,255,255,0.1)' : 'rgba(232,116,12,0.15)',
+            border: '1px solid #E8740C',
+            borderRadius: 10,
+            color: '#E8740C',
+            fontSize: 13,
+            fontWeight: 600,
+            cursor: 'pointer',
+            zIndex: 10,
+          }}
+        >
+          로그인
+        </button>
         <div style={{ padding: '60px 20px 120px' }}>
           <div style={{ textAlign: 'center', marginBottom: 40 }}>
             <div style={{ fontSize: 48, marginBottom: 16 }}>🗺️</div>
@@ -864,24 +883,41 @@ export function CompleteApp() {
                   <div style={{ fontSize: 13, marginBottom: 12, color: isDarkMode ? 'rgba(255,255,255,0.5)' : '#9CA3AF' }}>
                     계정 생성일: 2024년 1월
                   </div>
-                  <button onClick={(e) => {
-                    e.stopPropagation()
-                    if (confirm('정말 로그아웃하시겠습니까?')) {
-                      alert('로그아웃되었습니다.')
-                      setScreen('role')
-                    }
-                  }} style={{
-                    padding: '8px 16px',
-                    background: isDarkMode ? 'rgba(255,255,255,0.1)' : '#E5E7EB',
-                    border: 'none',
-                    borderRadius: 8,
-                    color: textColor,
-                    fontSize: 12,
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                  }}>
-                    로그아웃
-                  </button>
+                  <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                    <button onClick={(e) => {
+                      e.stopPropagation()
+                      router.push('/login')
+                    }} style={{
+                      padding: '8px 16px',
+                      background: '#E8740C',
+                      border: 'none',
+                      borderRadius: 8,
+                      color: '#fff',
+                      fontSize: 12,
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                    }}>
+                      로그인 / 회원가입
+                    </button>
+                    <button onClick={(e) => {
+                      e.stopPropagation()
+                      if (confirm('정말 로그아웃하시겠습니까?')) {
+                        alert('로그아웃되었습니다.')
+                        setScreen('role')
+                      }
+                    }} style={{
+                      padding: '8px 16px',
+                      background: isDarkMode ? 'rgba(255,255,255,0.1)' : '#E5E7EB',
+                      border: 'none',
+                      borderRadius: 8,
+                      color: textColor,
+                      fontSize: 12,
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                    }}>
+                      로그아웃
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
