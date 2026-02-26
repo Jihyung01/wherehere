@@ -41,8 +41,12 @@ export function useAuth() {
 
       return { data, error: null }
     } catch (error: any) {
-      console.error('Signup error:', error)
-      toast.error(error.message || '회원가입에 실패했습니다.')
+      const msg = error?.message ?? ''
+      const userMsg =
+        msg.includes('already registered') ? '이미 가입된 이메일입니다. 로그인해 주세요.'
+        : msg.includes('Email not confirmed') ? '이메일 인증이 필요합니다. 메일함을 확인해 주세요.'
+        : msg || '회원가입에 실패했습니다.'
+      toast.error(userMsg)
       return { data: null, error }
     } finally {
       setLoading(false)
@@ -70,8 +74,12 @@ export function useAuth() {
 
       return { data, error: null }
     } catch (error: any) {
-      console.error('Login error:', error)
-      toast.error(error.message || '로그인에 실패했습니다.')
+      const msg = error?.message ?? ''
+      const userMsg =
+        msg.includes('Invalid login credentials') ? '이메일 또는 비밀번호를 확인해 주세요.'
+        : msg.includes('Email not confirmed') ? '이메일 인증이 필요합니다. 메일함을 확인해 주세요.'
+        : msg || '로그인에 실패했습니다.'
+      toast.error(userMsg)
       return { data: null, error }
     } finally {
       setLoading(false)

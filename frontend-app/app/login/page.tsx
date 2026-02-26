@@ -1,10 +1,9 @@
 /**
- * Login Page (app route - so /login works from main app)
+ * Login Page – 카카오/구글 주력, 이메일 로그인은 접이식
  */
 
 import Link from 'next/link'
-import { LoginForm } from '@/components/auth/login-form'
-import { SocialLogin } from '@/components/auth/social-login'
+import { LoginPageClient } from '@/components/auth/login-page-client'
 
 export const metadata = {
   title: '로그인 - WhereHere',
@@ -30,17 +29,11 @@ export default function LoginPage() {
           <div className="mb-6">
             <h2 className="text-2xl font-bold text-gray-900">로그인</h2>
             <p className="mt-2 text-sm text-gray-600">
-              계정에 로그인하여 맞춤형 추천을 받아보세요
+              개성에 맞는 추천을 받아보세요
             </p>
           </div>
 
-          <div className="[color:inherit]">
-            <LoginForm />
-          </div>
-
-          <div className="mt-6 [color:inherit]">
-            <SocialLogin />
-          </div>
+          <LoginPageClient />
         </div>
 
         <p className="mt-8 text-center text-sm text-gray-600">

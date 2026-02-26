@@ -114,3 +114,31 @@ Supabase 쪽 Google 설정:
 - [ ] Supabase **Providers**에서 Kakao/Google에 각각 Client ID·Secret 입력
 
 이 순서대로 하면 카카오/구글 로그인이 동작합니다.
+
+---
+
+## 카카오 KOE205 ("잘못된 요청") 해결
+
+KOE205는 **두 가지 경우**에 발생할 수 있습니다.
+
+### 1) Redirect URI 불일치
+
+- **원인**: 카카오에 등록한 Redirect URI와 요청 시 전달되는 `redirect_uri`가 다를 때.
+- **해결**:
+  1. Supabase **Authentication** → **Providers** → **Kakao** 에서 **Callback URL (for OAuth)** 를 그대로 복사합니다.  
+     형식: `https://<프로젝트ID>.supabase.co/auth/v1/callback`
+  2. 카카오 개발자 콘솔 **카카오 로그인** → **Redirect URI** 에 **그 URL만** 등록합니다.  
+     우리 앱 주소는 넣지 마세요.
+  3. 저장 후 캐시 없이 다시 로그인 시도.
+
+### 2) 동의 항목 미설정 (account_email, profile_image 등)
+
+- **원인**: 인가 코드 요청에 **설정하지 않은 동의 항목**(예: `account_email`, `profile_image`)이 포함된 경우.  
+  에러 메시지에 "설정하지 않은 동의 항목: …" 이 나오면 이 경우입니다.
+- **해결**:
+  1. 카카오 개발자 콘솔 → **내 애플리케이션** → 해당 앱 선택
+  2. **카카오 로그인** → **동의 항목** 이동
+  3. 필요한 항목(이메일, 프로필 이미지 등)을 **설정/신청**하고 저장
+  4. 다시 로그인 시도
+
+둘 다 확인하면 KOE205를 피하기 쉽습니다.

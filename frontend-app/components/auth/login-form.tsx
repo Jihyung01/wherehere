@@ -87,13 +87,6 @@ export function LoginForm() {
       <Button type="submit" fullWidth loading={loading}>
         로그인
       </Button>
-
-      <p className="text-center text-sm text-gray-700">
-        계정이 없으신가요?{' '}
-        <Link href="/signup" className="font-medium text-blue-600 hover:text-blue-700 hover:underline">
-          회원가입
-        </Link>
-      </p>
     </form>
   )
 }

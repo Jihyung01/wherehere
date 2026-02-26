@@ -1,10 +1,9 @@
 /**
- * Signup Page (app route - so /signup works from main app)
+ * Signup Page – 카카오/구글 주력, 이메일 회원가입은 접이식
  */
 
 import Link from 'next/link'
-import { SignupForm } from '@/components/auth/signup-form'
-import { SocialLogin } from '@/components/auth/social-login'
+import { SignupPageClient } from '@/components/auth/signup-page-client'
 
 export const metadata = {
   title: '회원가입 - WhereHere',
@@ -34,11 +33,7 @@ export default function SignupPage() {
             </p>
           </div>
 
-          <SignupForm />
-
-          <div className="mt-6">
-            <SocialLogin />
-          </div>
+          <SignupPageClient />
         </div>
 
         <p className="mt-8 text-center text-sm text-gray-600">

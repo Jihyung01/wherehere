@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
 import { getRecommendations } from '@/lib/api-client'
+import { useUser } from '@/hooks/useUser'
 import { ChallengeCard } from './challenge-card'
 
 type Screen = 'role' | 'mood' | 'quests' | 'accepted' | 'checkin' | 'review' | 'my-map' | 'social'
@@ -30,12 +31,13 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
 export function UnifiedApp() {
   const router = useRouter()
+  const { user } = useUser()
+  const userId = user?.id ?? 'user-demo-001'
   const [screen, setScreen] = useState<Screen>('role')
   const [selectedRole, setSelectedRole] = useState<RoleType | null>(null)
   const [selectedMood, setSelectedMood] = useState<MoodType | null>(null)
   const [acceptedQuest, setAcceptedQuest] = useState<any>(null)
   const [userLocation, setUserLocation] = useState({ lat: 37.5665, lng: 126.9780 })
-  const [userId] = useState('user-demo-001')
   const [checkInTime, setCheckInTime] = useState<Date | null>(null)
   const [reviewData, setReviewData] = useState({ rating: 0, review: '', photos: [] as string[] })
 
