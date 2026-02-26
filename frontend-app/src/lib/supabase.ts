@@ -7,6 +7,7 @@
 import { createBrowserClient } from '@supabase/ssr'
 
 function createNoopClient() {
+  const notConfigured = { message: 'Supabase가 설정되지 않았습니다. 환경 변수를 확인해 주세요.' }
   return {
     auth: {
       getSession: () => Promise.resolve({ data: { session: null }, error: null }),
@@ -15,6 +16,9 @@ function createNoopClient() {
       }),
       signOut: () => Promise.resolve({ error: null }),
       getUser: () => Promise.resolve({ data: { user: null }, error: null }),
+      signInWithOAuth: (_o: any) => Promise.resolve({ data: { provider: null, url: null }, error: notConfigured }),
+      signInWithPassword: (_c: any) => Promise.resolve({ data: { user: null, session: null }, error: notConfigured }),
+      signUp: (_o: any) => Promise.resolve({ data: { user: null, session: null }, error: notConfigured }),
     },
   } as ReturnType<typeof createBrowserClient>
 }

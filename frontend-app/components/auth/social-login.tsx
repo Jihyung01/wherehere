@@ -12,13 +12,13 @@ export function SocialLogin() {
   const { signInWithOAuth, loading } = useAuth()
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-3 text-gray-900">
       <div className="relative">
         <div className="absolute inset-0 flex items-center">
           <div className="w-full border-t border-gray-300" />
         </div>
         <div className="relative flex justify-center text-sm">
-          <span className="bg-white px-4 text-gray-500">또는</span>
+          <span className="bg-white px-4 text-gray-600">또는</span>
         </div>
       </div>
 
@@ -28,7 +28,7 @@ export function SocialLogin() {
         fullWidth
         onClick={() => signInWithOAuth('kakao')}
         disabled={loading}
-        className="gap-3 border-2"
+        className="gap-3 border-2 text-gray-800"
       >
         <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none">
           <path
@@ -50,7 +50,7 @@ export function SocialLogin() {
         fullWidth
         onClick={() => signInWithOAuth('google')}
         disabled={loading}
-        className="gap-3 border-2"
+        className="gap-3 border-2 text-gray-800"
       >
         <svg className="h-5 w-5" viewBox="0 0 24 24">
           <path

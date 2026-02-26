@@ -8,16 +8,18 @@ import { createBrowserClient } from '@supabase/ssr'
 
 // No-op client when Supabase env is missing (e.g. during `next build` on Vercel)
 function createNoopClient() {
+  const notConfigured = { message: 'Supabase가 설정되지 않았습니다. 환경 변수 NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY를 확인해 주세요.' }
   return {
     auth: {
       getSession: () => Promise.resolve({ data: { session: null }, error: null }),
       onAuthStateChange: (_callback: any) => ({
-        data: {
-          subscription: { unsubscribe: () => {} },
-        },
+        data: { subscription: { unsubscribe: () => {} } },
       }),
       signOut: () => Promise.resolve({ error: null }),
       getUser: () => Promise.resolve({ data: { user: null }, error: null }),
+      signInWithOAuth: (_options: any) => Promise.resolve({ data: { provider: null, url: null }, error: notConfigured }),
+      signInWithPassword: (_credentials: any) => Promise.resolve({ data: { user: null, session: null }, error: notConfigured }),
+      signUp: (_options: any) => Promise.resolve({ data: { user: null, session: null }, error: notConfigured }),
     },
   } as ReturnType<typeof createBrowserClient>
 }

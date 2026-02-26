@@ -35,7 +35,7 @@ export function useAuth() {
       if (error) throw error
 
       if (data.user) {
-        toast.success('회원가입 성공! 이메일을 확인해주세요.')
+        toast.success('진드기맨과 이제 여행을 시작한다')
         router.push('/onboarding')
       }
 
@@ -63,7 +63,7 @@ export function useAuth() {
       if (error) throw error
 
       if (data.session) {
-        toast.success('로그인 성공!')
+        toast.success('진드기맨과 이제 여행을 시작한다')
         router.push('/')
         router.refresh()
       }
@@ -91,8 +91,14 @@ export function useAuth() {
         },
       })
 
-      if (error) throw error
-
+      if (error) {
+        toast.error(error.message || '소셜 로그인에 실패했습니다.')
+        return { data: null, error }
+      }
+      if (data?.url) {
+        window.location.href = data.url
+        return { data, error: null }
+      }
       return { data, error: null }
     } catch (error: any) {
       console.error('OAuth error:', error)

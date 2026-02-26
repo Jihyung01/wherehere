@@ -44,7 +44,7 @@ export function LoginForm() {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-5">
+    <form onSubmit={handleSubmit} className="space-y-5 text-gray-900">
       <Input
         type="email"
         label="이메일"
@@ -68,12 +68,12 @@ export function LoginForm() {
       />
 
       <div className="flex items-center justify-between text-sm">
-        <label className="flex items-center gap-2">
+        <label className="flex items-center gap-2 text-gray-700">
           <input
             type="checkbox"
             className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
           />
-          <span className="text-gray-600">로그인 상태 유지</span>
+          <span>로그인 상태 유지</span>
         </label>
 
         <Link
@@ -88,7 +88,7 @@ export function LoginForm() {
         로그인
       </Button>
 
-      <p className="text-center text-sm text-gray-600">
+      <p className="text-center text-sm text-gray-700">
         계정이 없으신가요?{' '}
         <Link href="/signup" className="font-medium text-blue-600 hover:text-blue-700 hover:underline">
           회원가입
