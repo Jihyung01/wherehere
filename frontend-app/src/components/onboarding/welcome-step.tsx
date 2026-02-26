@@ -35,7 +35,7 @@ export function WelcomeStep({ displayName, role, onBack }: WelcomeStepProps) {
   const router = useRouter()
 
   const handleStart = () => {
-    router.push('/dashboard')
+    router.push('/')
   }
 
   return (

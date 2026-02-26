@@ -64,7 +64,7 @@ export function useAuth() {
 
       if (data.session) {
         toast.success('로그인 성공!')
-        router.push('/dashboard')
+        router.push('/')
         router.refresh()
       }
 
