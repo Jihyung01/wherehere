@@ -84,15 +84,16 @@ export function useAuth() {
   const signInWithOAuth = async (provider: 'kakao' | 'google') => {
     setLoading(true)
     try {
+      // redirectTo 생략 시 Supabase Site URL로 리다이렉트 (Kakao KOE205 방지). Site URL을 https://도메인/auth/callback 로 설정할 것.
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider,
-        options: {
-          redirectTo: `${window.location.origin}/auth/callback`,
-        },
       })
 
       if (error) throw error
-
+      if (data?.url) {
+        window.location.href = data.url
+        return { data, error: null }
+      }
       return { data, error: null }
     } catch (error: any) {
       console.error('OAuth error:', error)
