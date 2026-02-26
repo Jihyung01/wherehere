@@ -1,16 +1,35 @@
 /**
  * Supabase Client Configuration
  * Handles authentication and database connections
+ * Build-safe: when URL/Key are missing (e.g. Vercel build), returns a no-op client so build does not fail.
  */
 
 import { createBrowserClient } from '@supabase/ssr'
 
+// No-op client when Supabase env is missing (e.g. during `next build` on Vercel)
+function createNoopClient() {
+  return {
+    auth: {
+      getSession: () => Promise.resolve({ data: { session: null }, error: null }),
+      onAuthStateChange: (_callback: any) => ({
+        data: {
+          subscription: { unsubscribe: () => {} },
+        },
+      }),
+      signOut: () => Promise.resolve({ error: null }),
+      getUser: () => Promise.resolve({ data: { user: null }, error: null }),
+    },
+  } as ReturnType<typeof createBrowserClient>
+}
+
 // Client-side Supabase client (for use in Client Components)
 export const createClient = () => {
-  return createBrowserClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  )
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  if (!url || !key) {
+    return createNoopClient()
+  }
+  return createBrowserClient(url, key)
 }
 
 // Database types (will be auto-generated later with Supabase CLI)
