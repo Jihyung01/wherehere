@@ -89,7 +89,7 @@ async def get_recommendations(request: RecommendationRequest):
     try:
         from db.rest_helpers import RestDatabaseHelpers
         helpers = RestDatabaseHelpers()
-        
+
         # 역할별 반경
         radius_map = {
             "explorer": 3000,
@@ -102,7 +102,17 @@ async def get_recommendations(request: RecommendationRequest):
             "challenger": 4000,
         }
         radius = radius_map.get(request.role_type, 2000)
-        
+
+        # 이미 방문한(place_id가 visits에 존재하는) 장소를 추천에서 제외하기 위해 목록 가져오기
+        completed_place_ids = set()
+        try:
+            if request.user_id:
+                completed_ids = await helpers.get_completed_places(request.user_id)
+                completed_place_ids = set(completed_ids)
+        except Exception:
+            # 방문 기록 조회 실패 시에도 추천 자체는 계속 진행
+            completed_place_ids = set()
+
         # DB에서 장소 가져오기
         places = await helpers.get_places_nearby(
             request.current_location.latitude,
@@ -110,7 +120,7 @@ async def get_recommendations(request: RecommendationRequest):
             radius,
             50
         )
-        
+
         if places and len(places) > 0:
             from math import radians, sin, cos, sqrt, atan2
             from mock.mock_data import ROLE_CATEGORY_MAP
@@ -133,6 +143,12 @@ async def get_recommendations(request: RecommendationRequest):
             for p in places:
                 place_lat = p.get("latitude")
                 place_lon = p.get("longitude")
+                place_id = p.get("id")
+
+                # 이미 방문한(place_id가 visits에 있는) 장소는 건너뛰기
+                if place_id and place_id in completed_place_ids:
+                    continue
+
                 if place_lat is None or place_lon is None:
                     continue
                 dist = calculate_distance(user_lat, user_lon, place_lat, place_lon)

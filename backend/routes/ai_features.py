@@ -311,9 +311,16 @@ async def analyze_pattern(request: PatternAnalysisRequest):
         from db.rest_helpers import RestDatabaseHelpers
         helpers = RestDatabaseHelpers()
         
-        # 사용자 방문 기록 가져오기
-        visits_data = helpers.get_user_visits(request.user_id)
-        visits = visits_data.get('visits', [])
+        # 사용자 방문 기록 가져오기 (Supabase는 리스트 직접 반환)
+        raw_visits = await helpers.get_user_visits(request.user_id)
+        visits = raw_visits if isinstance(raw_visits, list) else (raw_visits.get("visits") or [])
+        
+        # 방문별 카테고리: places 테이블에서 조회 (없으면 기타)
+        for v in visits:
+            if v.get("category"):
+                continue
+            place = await helpers.get_place_by_id(v.get("place_id") or "")
+            v["category"] = (place.get("primary_category") or "기타") if place else "기타"
         
         # 데이터가 부족한 경우
         if len(visits) < 3:
@@ -385,15 +392,18 @@ async def analyze_pattern(request: PatternAnalysisRequest):
         time_map = {'morning': '아침', 'afternoon': '오후', 'evening': '저녁', 'night': '밤'}
         preferred_time_kr = time_map.get(preferred_time, '오후')
         
-        # 탐험 스타일 결정
+        # 탐험 스타일 결정 (카테고리가 모두 '기타'면 구체적 스타일 대신 일반 문구)
+        effective_cats = [c for c in favorite_categories if c and c != "기타"]
         if avg_duration > 90:
             style = "여유로운 감상가"
-        elif len(favorite_categories) > 0 and category_dist.get(favorite_categories[0], 0) > total_visits * 0.5:
+        elif len(effective_cats) > 0 and category_dist.get(effective_cats[0], 0) > total_visits * 0.5:
             style = "전문 탐험가"
         elif total_visits > 10:
             style = "열정적인 모험가"
-        else:
+        elif len(effective_cats) > 0:
             style = "호기심 많은 탐험가"
+        else:
+            style = "초보 탐험가"
         
         # AI 분석 문구
         ai_analysis = f"당신은 {style}입니다! "
