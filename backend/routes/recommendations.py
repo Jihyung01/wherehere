@@ -7,6 +7,8 @@ from fastapi import APIRouter, Query
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict
 from datetime import datetime
+import math
+import random
 
 from core.dependencies import Database
 from mock.mock_data import get_mock_recommendations
@@ -85,6 +87,31 @@ async def get_recommendations(request: RecommendationRequest):
     )
     time_now = request.time_of_day or get_time_of_day()
 
+    # 기분 텍스트 기반 선호 카테고리/분위기 키워드 계산
+    mood_text = (request.mood.mood_text or "").lower() if request.mood else ""
+    mood_preferred_categories: set[str] = set()
+    mood_vibe_keywords: set[str] = set()
+
+    if any(k in mood_text for k in ["지침", "피곤", "피로", "번아웃", "우울", "힘들"]):
+        # 휴식/힐링이 필요한 상태 → 공원, 조용한 카페
+        mood_preferred_categories.update(["공원", "카페"])
+        mood_vibe_keywords.update(["힐링", "자연", "고요", "조용", "산책"])
+
+    if any(k in mood_text for k in ["설렘", "설레", "두근", "데이트", "로맨틱", "좋아하는 사람"]):
+        # 데이트/설렘 → 분위기 좋은 식당, 와인바, 카페
+        mood_preferred_categories.update(["카페", "술집/바", "음식점"])
+        mood_vibe_keywords.update(["데이트", "분위기", "로맨틱", "와인"])
+
+    if any(k in mood_text for k in ["신남", "신나요", "신나는", "활기", "에너지", "스트레스 풀", "달리고"]):
+        # 에너지 발산/스트레스 해소 → 나이트라이프, 사람 많은 곳
+        mood_preferred_categories.update(["술집/바", "음식점", "공원"])
+        mood_vibe_keywords.update(["나이트라이프", "활기찬", "친구", "파티"])
+
+    if any(k in mood_text for k in ["혼자", "혼밥", "생각", "정리", "조용히"]):
+        # 혼자 정리하고 싶은 날 → 조용한 카페/문화시설
+        mood_preferred_categories.update(["카페", "문화시설"])
+        mood_vibe_keywords.update(["조용", "북카페", "갤러리", "전시"])
+
     # Supabase REST API로 직접 추천
     try:
         from db.rest_helpers import RestDatabaseHelpers
@@ -130,16 +157,16 @@ async def get_recommendations(request: RecommendationRequest):
                 R = 6371000
                 lat1_rad, lat2_rad = radians(lat1), radians(lat2)
                 delta_lat, delta_lon = radians(lat2 - lat1), radians(lon2 - lon1)
-                a = sin(delta_lat/2)**2 + cos(lat1_rad) * cos(lat2_rad) * sin(delta_lon/2)**2
-                c = 2 * atan2(sqrt(a), sqrt(1-a))
+                a = sin(delta_lat / 2) ** 2 + cos(lat1_rad) * cos(lat2_rad) * sin(delta_lon / 2) ** 2
+                c = 2 * atan2(sqrt(a), sqrt(1 - a))
                 return R * c
 
             user_lat = request.current_location.latitude
             user_lon = request.current_location.longitude
-            preferred_categories = ROLE_CATEGORY_MAP.get(request.role_type, [])
+            role_preferred_categories = ROLE_CATEGORY_MAP.get(request.role_type, [])
 
-            # 1) 각 장소의 거리 계산 후 반경 이내만 필터
-            candidates = []
+            # 1) 각 장소의 거리/점수 계산 후 후보 리스트 생성
+            candidates: list[Dict] = []
             for p in places:
                 place_lat = p.get("latitude")
                 place_lon = p.get("longitude")
@@ -151,35 +178,104 @@ async def get_recommendations(request: RecommendationRequest):
 
                 if place_lat is None or place_lon is None:
                     continue
+
                 dist = calculate_distance(user_lat, user_lon, place_lat, place_lon)
                 if dist > radius:
                     continue
-                # 2) 점수 계산: 기본 + 평점 + 거리 가산 + 역할(카테고리) 반영
-                base = 85.0
-                rating_part = (p.get("average_rating") or 0) * 2
-                distance_part = max(0.0, 10.0 - (dist / 1000.0))  # 가까울수록 최대 10점
-                cat_match = 1.0 if (p.get("primary_category") or "") in preferred_categories else 0.6
-                category_part = cat_match * 15  # 역할 맞으면 15, 아니면 9
-                score = base + rating_part + distance_part + category_part
-                candidates.append((score, dist, p))
 
-            # 3) 점수 순 정렬 후 상위 3개만 선택 (거리 반영됨)
-            candidates.sort(key=lambda x: x[0], reverse=True)
-            selected = [c[2] for c in candidates[:3]]
+                primary_cat = (p.get("primary_category") or "").strip()
+                vibe_tags = p.get("vibe_tags") or []
+                vibe_text = " ".join(vibe_tags)
 
-            if not selected:
-                # 반경 이내 후보가 없으면 거리 무시하고 점수만으로 상위 3개
+                # 역할 매칭 점수 (탐험가/힐러/예술가/미식가/도전자 등)
+                role_match = primary_cat in role_preferred_categories
+                role_score = 22.0 if role_match else 10.0
+
+                # 기분 매칭 점수 (mood_text + vibe_tags 기반)
+                mood_cat_match = primary_cat in mood_preferred_categories
+                mood_vibe_match = any(kw in vibe_text for kw in mood_vibe_keywords) if vibe_text else False
+                mood_score = 0.0
+                if mood_cat_match or mood_vibe_match:
+                    # 강도(intensity)에 따라 가중 (0.0~1.0)
+                    intensity = request.mood.intensity if request.mood else 0.5
+                    mood_score = 10.0 * (0.5 + intensity / 2.0)
+
+                # 평점/거리 점수
+                base = 70.0
+                rating = p.get("average_rating") or 0.0
+                rating_score = rating * 4.0  # 0~20점 정도
+                distance_km = dist / 1000.0
+                distance_score = max(0.0, 12.0 - distance_km * 2.0)  # 가까울수록 가산
+
+                # 숨은 스팟/탐험 보너스
+                hidden_bonus = 8.0 if (p.get("is_hidden_gem") and request.user_level >= 6) else 0.0
+
+                # 약간의 랜덤 탐색(매 호출마다 살짝 다른 결과)
+                explore_noise = random.uniform(0.0, 5.0)
+
+                score = base + rating_score + distance_score + role_score + mood_score + hidden_bonus + explore_noise
+
+                candidates.append(
+                    {
+                        "place": p,
+                        "score": score,
+                        "distance": dist,
+                        "role_score": role_score,
+                        "mood_score": mood_score,
+                        "rating_score": rating_score,
+                        "distance_score": distance_score,
+                    }
+                )
+
+            if not candidates:
+                # 반경 이내 후보가 없으면 전체 places에서 거리 제한 없이 점수 계산
                 for p in places:
-                    place_lat, place_lon = p.get("latitude"), p.get("longitude")
-                    dist = calculate_distance(user_lat, user_lon, place_lat or 0, place_lon or 0) if (place_lat and place_lon) else 999999
-                    rating_part = (p.get("average_rating") or 0) * 2
-                    distance_part = max(0.0, 10.0 - (dist / 1000.0))
-                    cat_match = 1.0 if (p.get("primary_category") or "") in preferred_categories else 0.6
-                    category_part = cat_match * 15
-                    score = 85.0 + rating_part + distance_part + category_part
-                    candidates.append((score, dist, p))
-                candidates.sort(key=lambda x: x[0], reverse=True)
-                selected = [c[2] for c in candidates[:3]]
+                    place_lat = p.get("latitude")
+                    place_lon = p.get("longitude")
+                    if place_lat is None or place_lon is None:
+                        continue
+                    dist = calculate_distance(user_lat, user_lon, place_lat, place_lon)
+                    primary_cat = (p.get("primary_category") or "").strip()
+                    vibe_tags = p.get("vibe_tags") or []
+                    vibe_text = " ".join(vibe_tags)
+
+                    role_match = primary_cat in role_preferred_categories
+                    role_score = 20.0 if role_match else 8.0
+
+                    mood_cat_match = primary_cat in mood_preferred_categories
+                    mood_vibe_match = any(kw in vibe_text for kw in mood_vibe_keywords) if vibe_text else False
+                    mood_score = 0.0
+                    if mood_cat_match or mood_vibe_match:
+                        intensity = request.mood.intensity if request.mood else 0.5
+                        mood_score = 8.0 * (0.5 + intensity / 2.0)
+
+                    base = 65.0
+                    rating = p.get("average_rating") or 0.0
+                    rating_score = rating * 3.5
+                    distance_km = dist / 1000.0
+                    distance_score = max(0.0, 10.0 - distance_km * 1.5)
+                    hidden_bonus = 6.0 if (p.get("is_hidden_gem") and request.user_level >= 6) else 0.0
+                    explore_noise = random.uniform(0.0, 5.0)
+
+                    score = base + rating_score + distance_score + role_score + mood_score + hidden_bonus + explore_noise
+                    candidates.append(
+                        {
+                            "place": p,
+                            "score": score,
+                            "distance": dist,
+                            "role_score": role_score,
+                            "mood_score": mood_score,
+                            "rating_score": rating_score,
+                            "distance_score": distance_score,
+                        }
+                    )
+
+            # 2) 점수 순 정렬 후 상위 N개 중에서 3개를 랜덤 샘플링 → 매번 다른 조합
+            candidates.sort(key=lambda c: c["score"], reverse=True)
+            top_n = candidates[:10] if len(candidates) > 10 else candidates
+            random.shuffle(top_n)
+            selected_wrapped = top_n[:3]
+            selected = [c["place"] for c in selected_wrapped]
 
             # 🤖 AI 서사 생성 준비
             places_for_narrative = [
@@ -198,41 +294,37 @@ async def get_recommendations(request: RecommendationRequest):
                 user_mood=user_mood,
             )
 
-            recommendations = []
-            for idx, place in enumerate(selected):
-                place_lat = place.get("latitude")
-                place_lon = place.get("longitude")
-                distance = calculate_distance(user_lat, user_lon, place_lat or 0, place_lon or 0) if (place_lat and place_lon) else 0.0
+            recommendations: List[PlaceRecommendation] = []
+            for idx, wrapped in enumerate(selected_wrapped):
+                place = wrapped["place"]
+                distance = wrapped["distance"]
+                total_score = wrapped["score"]
+                primary_cat = place.get("primary_category", "기타")
 
-                score = 85.0
-                if place.get("average_rating"):
-                    score += place.get("average_rating", 0) * 2
-                if distance > 0:
-                    score += max(0, 10 - (distance / 1000))
-                cat_match = 1.0 if (place.get("primary_category") or "") in preferred_categories else 0.6
-                score += cat_match * 15
-
-                recommendations.append(PlaceRecommendation(
-                    place_id=place.get("id", ""),
-                    name=place.get("name", "Unknown"),
-                    address=place.get("address", ""),
-                    category=place.get("primary_category", "기타"),
-                    distance_meters=round(distance, 1),
-                    score=round(score, 1),
-                    score_breakdown={
-                        "category": round(cat_match * 15, 1),
-                        "distance": round(max(0, 25 - (distance / 200)), 1),
-                        "rating": round(place.get("average_rating", 0) * 4, 1),
-                    },
-                    reason=f"{request.role_type} 역할에 맞는 장소",
-                    estimated_cost=place.get("average_price"),
-                    vibe_tags=place.get("vibe_tags", []),
-                    average_rating=place.get("average_rating", 0),
-                    is_hidden_gem=place.get("is_hidden_gem", False),
-                    typical_crowd_level=place.get("typical_crowd_level", "medium"),
-                    narrative=ai_narratives[idx],
-                    description=place.get("description", "")
-                ))
+                recommendations.append(
+                    PlaceRecommendation(
+                        place_id=place.get("id", ""),
+                        name=place.get("name", "Unknown"),
+                        address=place.get("address", ""),
+                        category=primary_cat,
+                        distance_meters=round(distance, 1),
+                        score=round(total_score, 1),
+                        score_breakdown={
+                            "role": round(wrapped["role_score"], 1),
+                            "mood": round(wrapped["mood_score"], 1),
+                            "rating": round(wrapped["rating_score"], 1),
+                            "distance": round(wrapped["distance_score"], 1),
+                        },
+                        reason=f"{request.role_type} · 기분 '{request.mood.mood_text}'에 맞는 장소" if request.mood else f"{request.role_type} 역할에 맞는 장소",
+                        estimated_cost=place.get("average_price"),
+                        vibe_tags=place.get("vibe_tags", []),
+                        average_rating=place.get("average_rating", 0),
+                        is_hidden_gem=place.get("is_hidden_gem", False),
+                        typical_crowd_level=place.get("typical_crowd_level", "medium"),
+                        narrative=ai_narratives[idx],
+                        description=place.get("description", ""),
+                    )
+                )
 
             return RecommendationResponse(
                 recommendations=recommendations,
