@@ -1,156 +1,64 @@
-# ✅ WhereHere 작업 체크리스트
+# WhereHere 작업 체크리스트
 
-## 🎯 지금 바로 해야 할 일 (Phase 1 마무리)
-
-### [ ] 1. 데이터베이스 마이그레이션 실행 (5분)
-
-**URL**: https://supabase.com/dashboard/project/rftsnaoexvgjlhhfbsyt/sql
-
-**실행 순서**:
-1. SQL Editor 열기
-2. `supabase/migrations/20260210_initial_schema_fixed.sql` 파일 내용 복사
-3. SQL Editor에 붙여넣고 **Run** 클릭
-4. `supabase/seed.sql` 파일 내용 복사
-5. SQL Editor에 붙여넣고 **Run** 클릭
-
-**확인**:
-```sql
-SELECT COUNT(*) FROM public.places;
--- 결과: 15개 장소가 나와야 함
-```
+> **현재 상태·기능 정리**: [docs/현재_상태_및_문서_가이드.md](docs/현재_상태_및_문서_가이드.md)
 
 ---
 
-### [ ] 2. Backend 패키지 설치 (2분)
+## ✅ 이미 구현된 것 (동작 중)
 
-**⚠️ 중요**: PowerShell을 **관리자 권한**으로 실행하세요!
-
-```powershell
-cd backend
-pip install -r requirements.txt
-```
-
-**권한 오류가 발생하면** (추천):
-```powershell
-# 가상환경 생성 및 활성화
-cd backend
-python -m venv venv
-.\venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-```
-
-**확인**:
-```powershell
-python -c "import fastapi; print('FastAPI OK')"
-```
+- [x] 카카오 / 구글 / 이메일 로그인·회원가입
+- [x] 사용자별 데이터 분리 (방문, 나의 지도, 추천)
+- [x] 메인 앱: 역할·무드 선택 → 퀘스트 추천 → 체크인·리뷰 → XP
+- [x] **퀘스트 완료 시 visits 자동 저장** (앱에서 "완료하고 XP 받기" → `POST /api/v1/visits` → DB에 저장)
+- [x] 나의 지도: 기간별 필터, 지도/통계/스타일 탭, 카카오맵
+- [x] 설정: 개인정보(닉네임 표시), 로그아웃, 다크모드
+- [x] 백엔드: visits CRUD, AI pattern/personality, **추천 API(DB places 연동·거리/역할 스코어링)**, 퀘스트·챌린지·소셜 라우트
 
 ---
 
-### [ ] 3. 서버 실행 테스트 (1분)
+## ✅ 실데이터 스키마 적용 (했으면 완료)
 
-**Backend 실행**:
-```powershell
-.\start-backend.ps1
-```
+- [x] **REAL_DATA_SCHEMA.sql** Supabase SQL Editor에서 실행 → `places`, `visits` 테이블 생성
 
-**확인**: http://localhost:8000/health 접속
-- 예상 응답: `{"status": "healthy", ...}`
+**확인 방법**
 
-**Frontend 실행** (새 터미널):
-```powershell
-.\start-frontend.ps1
-```
-
-**확인**: http://localhost:3000 접속
+1. Supabase 대시보드 → **Table Editor**
+2. 왼쪽에 **places**, **visits** 테이블이 보이는지 확인
+3. **places** 클릭 → 컬럼에 `id`, `name`, `latitude`, `longitude`, `primary_category` 등이 있으면 OK
 
 ---
 
-### [ ] 4. 회원가입 테스트 (2분)
+## 🎯 지금 할 수 있는 일 (우선순위)
 
-1. http://localhost:3000/signup 접속
-2. 이메일/비밀번호 입력
-3. 회원가입 완료
-4. 이메일 인증 (Supabase 메일 확인)
-5. 로그인 테스트
+### [ ] 1. places 실데이터 채우기 (스키마만 있으면 다음 단계)
 
----
+- 스키마는 적용됐고, **places가 비어 있으면** 추천/나의 지도에 쓸 장소가 없음
+- **할 일**: `python scripts/collect_simple.py` 실행 (터미널에서 KAKAO + Supabase 키 설정 후)
+- **가이드**: [docs/실데이터_설정_가이드.md](docs/실데이터_설정_가이드.md) 2단계
 
-### [ ] 5. 온보딩 플로우 테스트 (2분)
+### [ ] 2. 추천 엔진 고도화 (선택)
 
-1. 로그인 후 자동으로 `/onboarding`으로 이동
-2. Step 1: 닉네임 입력
-3. Step 2: 역할 선택 (5가지 중 1개)
-4. Step 3: 환영 메시지 확인
+- **이미 구현된 것**: DB `places`에서 장소 조회 → 거리·역할·카테고리 반영 스코어링 → 상위 추천
+- **고도화** = 개선 단계: PostGIS로 DB에서 거리 필터링 쿼리, 더 세밀한 스코어링 등 (필요 시)
 
----
+### [ ] 3. 퀘스트 Geofencing
 
-## 🚀 Phase 2 작업 (마이그레이션 완료 후)
+- 체크인 시 **위치 검증** (실제로 그 장소 근처인지), XP 보상 계산 정교화
 
-### [ ] 1. 추천 엔진 구현
+### [ ] 4. AI 서사 생성
 
-**Backend**:
-- [ ] `routes/recommendations.py` 생성
-- [ ] PostGIS 공간 쿼리 함수
-- [ ] 역할 기반 필터링 로직
-- [ ] 스코어링 알고리즘
+- Claude API 연동, 서사 생성 API·프론트
 
-**Frontend**:
-- [ ] 추천 페이지 (`app/recommendations/page.tsx`)
-- [ ] 장소 카드 컴포넌트
-- [ ] 지도 통합 (Kakao Map API)
+### [ ] 5. 레벨 & XP UI
+
+- 프로필 진행바, 업적 배지, 스트릭 표시
 
 ---
 
-### [ ] 2. 퀘스트 시스템
-
-**Backend**:
-- [ ] `routes/quests.py` 생성
-- [ ] 퀘스트 생성 로직
-- [ ] 체크인 검증 (Geofencing)
-- [ ] XP 보상 계산
-
-**Frontend**:
-- [ ] 퀘스트 목록 페이지
-- [ ] 퀘스트 상세 페이지
-- [ ] 체크인 버튼 (위치 권한)
-
----
-
-### [ ] 3. AI 서사 생성
-
-**Backend**:
-- [ ] `routes/narratives.py` 생성
-- [ ] Claude API 통합
-- [ ] 프롬프트 템플릿 (역할별)
-- [ ] 컨텍스트 수집 로직
-
-**Frontend**:
-- [ ] 서사 보기 페이지
-- [ ] 저장/공유 기능
-- [ ] 평점 시스템
-
----
-
-### [ ] 4. 레벨 & XP 시스템
-
-**Backend**:
-- [ ] XP 계산 함수 (`level_system.py` 활용)
-- [ ] 레벨업 로직
-- [ ] 스트릭 보너스 계산
-- [ ] 업적 시스템
-
-**Frontend**:
-- [ ] 프로필 페이지
-- [ ] 레벨 진행바
-- [ ] 업적 배지
-- [ ] 스트릭 표시
-
----
-
-## 📋 Phase 3 계획 (Phase 2 완료 후)
+## 📋 Phase 3 (나중에)
 
 - [ ] 실시간 알림 (Supabase Realtime)
-- [ ] 소셜 기능 (친구, 팔로우)
+- [ ] 소셜 (친구, 팔로우)
 - [ ] 크리에이터 모드 (장소 등록)
 - [ ] 모바일 앱 (React Native)
 - [ ] 관리자 대시보드
@@ -159,27 +67,16 @@ python -c "import fastapi; print('FastAPI OK')"
 
 ## 🐛 알려진 이슈
 
-현재 없음
+- (없음 시 "현재 없음" 유지)
 
 ---
 
 ## 💡 개선 아이디어
 
-- [ ] 다크 모드 지원
-- [ ] 다국어 지원 (i18n)
-- [ ] PWA 지원
-- [ ] 오프라인 모드
-- [ ] 성능 최적화 (이미지 lazy loading)
+- [ ] 다국어 (i18n)
+- [ ] PWA·오프라인
+- [ ] 이미지 lazy loading
 
 ---
 
-## 📝 메모
-
-- Anthropic API 키는 나중에 발급받아서 추가
-- 프로덕션 배포 시 환경변수 재설정 필요
-- Supabase 무료 플랜 제한 확인 필요
-
----
-
-**마지막 업데이트**: 2026-02-12  
-**현재 우선순위**: Phase 1 마무리 (마이그레이션 실행)
+**마지막 업데이트**: 2026-02

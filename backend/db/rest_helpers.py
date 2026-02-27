@@ -107,14 +107,14 @@ class RestDatabaseHelpers:
             return response.status_code in [200, 201]
     
     async def insert_visit(self, visit_data: Dict[str, Any]) -> Dict[str, Any]:
-        """방문 기록 저장"""
+        """방문 기록 저장 (visits 테이블 사용 - REAL_DATA_SCHEMA와 일치)"""
         async with httpx.AsyncClient(timeout=30.0) as client:
-            url = f"{self.base_url}/rest/v1/user_visits"
-            
-            response = await client.post(url, headers=self.headers, json=visit_data)
-            
+            url = f"{self.base_url}/rest/v1/visits"
+            headers = {**self.headers, "Prefer": "return=representation"}
+            response = await client.post(url, headers=headers, json=visit_data)
             if response.status_code in [200, 201]:
-                return response.json()[0] if response.json() else {}
+                results = response.json()
+                return results[0] if results else {}
             return {}
     
     async def create_challenge(self, challenge_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -202,19 +202,3 @@ class RestDatabaseHelpers:
             if response.status_code == 200:
                 return response.json()
             return []
-    
-    async def insert_visit(self, visit_data: Dict[str, Any]) -> Dict[str, Any]:
-        """방문 기록 삽입"""
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            url = f"{self.base_url}/rest/v1/visits"
-            headers = {
-                **self.headers,
-                "Prefer": "return=representation"
-            }
-            
-            response = await client.post(url, headers=headers, json=visit_data)
-            
-            if response.status_code == 201:
-                results = response.json()
-                return results[0] if results else {}
-            return {}

@@ -94,12 +94,13 @@ pip install -r requirements.txt
 
 | 문서 | 설명 |
 |------|------|
-| **[QUICK_START.md](./QUICK_START.md)** | ⚡ 15분 빠른 시작 가이드 |
-| **[TODO.md](./TODO.md)** | ✅ 작업 체크리스트 |
-| **[CURRENT_STATUS.md](./CURRENT_STATUS.md)** | 📊 현재 프로젝트 상태 |
-| **[MIGRATION_GUIDE.md](./MIGRATION_GUIDE.md)** | 🗄️ DB 마이그레이션 가이드 |
-| **[PROGRESS.md](./PROGRESS.md)** | 📈 진행 상황 |
-| **[SETUP_INSTRUCTIONS.md](./SETUP_INSTRUCTIONS.md)** | 🔧 상세 설정 가이드 |
+| **[docs/현재_상태_및_문서_가이드.md](./docs/현재_상태_및_문서_가이드.md)** | 📌 **현재 기능 정리 + 꼭 볼 문서만 정리** (여기서 시작) |
+| **[TODO.md](./TODO.md)** | ✅ 작업 체크리스트 (구현됨/미구현) |
+| **[QUICK_START.md](./QUICK_START.md)** | ⚡ 빠른 시작 |
+| **[프로젝트_실행_가이드.md](./프로젝트_실행_가이드.md)** | 🚀 로컬 실행 방법 |
+| **docs/SUPABASE_SOCIAL_LOGIN_SETUP.md** | 🔐 카카오/구글 로그인 설정 |
+| **docs/KAKAO_MAP_SETUP.md** | 🗺️ 나의 지도 카카오맵 도메인 등록 |
+| **docs/실데이터_설정_가이드.md** | 📊 실데이터 스키마·수집 스크립트 |
 
 ---
 

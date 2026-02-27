@@ -112,10 +112,9 @@ async def get_recommendations(request: RecommendationRequest):
         )
         
         if places and len(places) > 0:
-            # 상위 3개 선택
-            import random
             from math import radians, sin, cos, sqrt, atan2
-            
+            from mock.mock_data import ROLE_CATEGORY_MAP
+
             def calculate_distance(lat1, lon1, lat2, lon2):
                 """Haversine 거리 계산 (미터)"""
                 R = 6371000
@@ -124,9 +123,48 @@ async def get_recommendations(request: RecommendationRequest):
                 a = sin(delta_lat/2)**2 + cos(lat1_rad) * cos(lat2_rad) * sin(delta_lon/2)**2
                 c = 2 * atan2(sqrt(a), sqrt(1-a))
                 return R * c
-            
-            selected = random.sample(places, min(3, len(places)))
-            
+
+            user_lat = request.current_location.latitude
+            user_lon = request.current_location.longitude
+            preferred_categories = ROLE_CATEGORY_MAP.get(request.role_type, [])
+
+            # 1) 각 장소의 거리 계산 후 반경 이내만 필터
+            candidates = []
+            for p in places:
+                place_lat = p.get("latitude")
+                place_lon = p.get("longitude")
+                if place_lat is None or place_lon is None:
+                    continue
+                dist = calculate_distance(user_lat, user_lon, place_lat, place_lon)
+                if dist > radius:
+                    continue
+                # 2) 점수 계산: 기본 + 평점 + 거리 가산 + 역할(카테고리) 반영
+                base = 85.0
+                rating_part = (p.get("average_rating") or 0) * 2
+                distance_part = max(0.0, 10.0 - (dist / 1000.0))  # 가까울수록 최대 10점
+                cat_match = 1.0 if (p.get("primary_category") or "") in preferred_categories else 0.6
+                category_part = cat_match * 15  # 역할 맞으면 15, 아니면 9
+                score = base + rating_part + distance_part + category_part
+                candidates.append((score, dist, p))
+
+            # 3) 점수 순 정렬 후 상위 3개만 선택 (거리 반영됨)
+            candidates.sort(key=lambda x: x[0], reverse=True)
+            selected = [c[2] for c in candidates[:3]]
+
+            if not selected:
+                # 반경 이내 후보가 없으면 거리 무시하고 점수만으로 상위 3개
+                for p in places:
+                    place_lat, place_lon = p.get("latitude"), p.get("longitude")
+                    dist = calculate_distance(user_lat, user_lon, place_lat or 0, place_lon or 0) if (place_lat and place_lon) else 999999
+                    rating_part = (p.get("average_rating") or 0) * 2
+                    distance_part = max(0.0, 10.0 - (dist / 1000.0))
+                    cat_match = 1.0 if (p.get("primary_category") or "") in preferred_categories else 0.6
+                    category_part = cat_match * 15
+                    score = 85.0 + rating_part + distance_part + category_part
+                    candidates.append((score, dist, p))
+                candidates.sort(key=lambda x: x[0], reverse=True)
+                selected = [c[2] for c in candidates[:3]]
+
             # 🤖 AI 서사 생성 준비
             places_for_narrative = [
                 {
@@ -137,39 +175,27 @@ async def get_recommendations(request: RecommendationRequest):
                 }
                 for p in selected
             ]
-            
-            # AI 서사 생성 (병렬 처리)
             user_mood = request.mood.mood_text if request.mood else None
             ai_narratives = await generate_narratives_batch(
                 places=places_for_narrative,
                 role_type=request.role_type,
                 user_mood=user_mood,
             )
-            
+
             recommendations = []
             for idx, place in enumerate(selected):
-                # 거리 계산
                 place_lat = place.get("latitude")
                 place_lon = place.get("longitude")
-                
-                if place_lat and place_lon:
-                    distance = calculate_distance(
-                        request.current_location.latitude,
-                        request.current_location.longitude,
-                        place_lat,
-                        place_lon
-                    )
-                else:
-                    distance = 0.0
-                
-                # 스코어 계산
+                distance = calculate_distance(user_lat, user_lon, place_lat or 0, place_lon or 0) if (place_lat and place_lon) else 0.0
+
                 score = 85.0
                 if place.get("average_rating"):
                     score += place.get("average_rating", 0) * 2
                 if distance > 0:
-                    distance_score = max(0, 10 - (distance / 1000))
-                    score += distance_score
-                
+                    score += max(0, 10 - (distance / 1000))
+                cat_match = 1.0 if (place.get("primary_category") or "") in preferred_categories else 0.6
+                score += cat_match * 15
+
                 recommendations.append(PlaceRecommendation(
                     place_id=place.get("id", ""),
                     name=place.get("name", "Unknown"),
@@ -178,7 +204,7 @@ async def get_recommendations(request: RecommendationRequest):
                     distance_meters=round(distance, 1),
                     score=round(score, 1),
                     score_breakdown={
-                        "category": 40.0,
+                        "category": round(cat_match * 15, 1),
                         "distance": round(max(0, 25 - (distance / 200)), 1),
                         "rating": round(place.get("average_rating", 0) * 4, 1),
                     },
@@ -188,15 +214,15 @@ async def get_recommendations(request: RecommendationRequest):
                     average_rating=place.get("average_rating", 0),
                     is_hidden_gem=place.get("is_hidden_gem", False),
                     typical_crowd_level=place.get("typical_crowd_level", "medium"),
-                    narrative=ai_narratives[idx],  # 🤖 AI 생성 서사 적용
+                    narrative=ai_narratives[idx],
                     description=place.get("description", "")
                 ))
-            
+
             return RecommendationResponse(
                 recommendations=recommendations,
                 role_type=request.role_type,
                 radius_used=radius,
-                total_candidates=len(places),
+                total_candidates=len(candidates) if candidates else len(places),
                 generated_at=datetime.now().isoformat(),
                 weather=weather_data,
                 time_of_day=time_now,

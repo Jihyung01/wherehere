@@ -185,21 +185,20 @@ function getValueRedistributionTips(visits: Visit[], analysis: { favorite_catego
 // API Functions
 async function fetchUserVisits(userId: string): Promise<Visit[]> {
   try {
-    console.log('🔄 방문 기록 조회 중...', userId);
     const response = await fetch(`${API_BASE}/visits/${userId}`);
     if (!response.ok) {
-      console.error('❌ API 에러:', response.status);
-      throw new Error("Failed to fetch visits");
+      console.warn('[나의 지도] 방문 기록 API 에러:', response.status, response.statusText);
+      return [];
     }
     const data = await response.json();
-    console.log('✅ 방문 기록 응답:', {
-      total_count: data.total_count,
-      visits_count: data.visits?.length || 0,
-      sample: data.visits?.[0]
-    });
-    return data.visits || [];
+    const list = data.visits || [];
+    const total = data.total_count ?? list.length;
+    if (list.length === 0 && total === 0) {
+      console.info('[나의 지도] 방문 기록 0건 (DB에 데이터 없음. 퀘스트 완료 시 자동 저장됩니다)');
+    }
+    return list;
   } catch (error) {
-    console.error("Error fetching visits:", error);
+    console.error("[나의 지도] 방문 기록 조회 실패:", error);
     return [];
   }
 }
@@ -272,11 +271,11 @@ export default function MyMapReal() {
     return () => window.removeEventListener("focus", onFocus);
   }, [userId]);
 
-  // 카카오맵 스크립트 로드 타임아웃 (오래 걸리면 에러 안내)
+  // 카카오맵 스크립트 로드 대기 (첫 로딩이 느리면 타임아웃으로 안내)
   useEffect(() => {
     const timeout = setTimeout(() => {
       if (!kakaoLoaded) setMapLoadError('지도 로딩이 지연되고 있습니다. 배포 도메인이 카카오 개발자 콘솔 앱 키에 등록되어 있는지 확인해 주세요.');
-    }, 8000);
+    }, 15000);
     return () => clearTimeout(timeout);
   }, [kakaoLoaded]);
 
@@ -519,9 +518,14 @@ export default function MyMapReal() {
                 {mapLoadError && (
                   <div style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 20, background: isDarkMode ? "rgba(0,0,0,0.7)" : "rgba(255,255,255,0.98)", borderRadius: 16, color: isDarkMode ? "#fff" : "#374151", fontSize: 13, textAlign: "center", pointerEvents: "auto" }}>
                     <span style={{ marginBottom: 8 }}>⚠️</span>
-                    {mapLoadError}
+                    <div style={{ marginBottom: 8 }}>{mapLoadError}</div>
+                    <div style={{ fontSize: 11, opacity: 0.85 }}>배포 URL을 카카오 개발자 콘솔 → 앱 키 → Web → 사이트 도메인에 추가하면 해결됩니다.</div>
                   </div>
                 )}
+                {/* 안내: 주황 마커·선만 내 방문, 줌 아웃 시 보이는 다른 점은 카카오맵 기본 POI */}
+                <div style={{ fontSize: 11, color: isDarkMode ? "rgba(255,255,255,0.5)" : "#9CA3AF", marginTop: 8, marginBottom: 4 }}>
+                  주황색 마커와 선은 내 방문 기록입니다. 지도 위 다른 표시는 카카오맵 기본 정보입니다.
+                </div>
                 {/* Nike 스타일 누적거리/탐험반경 오버레이 */}
                 <div
                   style={{
@@ -585,7 +589,7 @@ export default function MyMapReal() {
                     }}
                   >
                     <div style={{ fontSize: 14, fontWeight: 700, color: isDarkMode ? "rgba(255,255,255,0.9)" : "#1c1917", marginBottom: 4 }}>아직 방문 기록이 없어요</div>
-                    <div style={{ fontSize: 12, color: isDarkMode ? "rgba(255,255,255,0.5)" : "#78716c" }}>퀘스트를 완료하면 누적 거리와 탐험 반경이 쌓여요</div>
+                    <div style={{ fontSize: 12, color: isDarkMode ? "rgba(255,255,255,0.5)" : "#78716c" }}>퀘스트를 완료하면 여기에 표시됩니다. DB(visits)가 비어 있어도 앱에서 완료 시 자동 저장돼요.</div>
                     <button
                       type="button"
                       onClick={() => router.push("/")}

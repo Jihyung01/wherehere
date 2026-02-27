@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
 import { getRecommendations } from '@/lib/api-client'
 import { useUser } from '@/hooks/useUser'
+import { useAuth } from '@/hooks/useAuth'
 import { ChallengeCard } from './challenge-card'
 import { PersonalityProfile } from './personality-profile'
 import { ShareButton } from './share-button'
@@ -31,10 +32,23 @@ const MOODS = [
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
+function formatAccountDate(iso?: string | null): string {
+  if (!iso) return '—'
+  try {
+    const d = new Date(iso)
+    return `${d.getFullYear()}년 ${d.getMonth() + 1}월`
+  } catch {
+    return '—'
+  }
+}
+
 export function CompleteApp() {
   const router = useRouter()
   const { user } = useUser()
+  const { signOut } = useAuth()
   const userId = user?.id ?? 'user-demo-001'
+  const displayName = user?.user_metadata?.name ?? user?.user_metadata?.full_name ?? user?.user_metadata?.user_name ?? user?.user_metadata?.kakao_account?.profile?.nickname ?? user?.email ?? (user ? '로그인한 사용자' : null)
+  const isLoggedIn = !!user
   const [screen, setScreen] = useState<Screen>('role')
   const [selectedRole, setSelectedRole] = useState<RoleType | null>(null)
   const [selectedMood, setSelectedMood] = useState<MoodType | null>(null)
@@ -881,44 +895,58 @@ export function CompleteApp() {
               </div>
               {showPrivacySettings && (
                 <div style={{ marginTop: 16, paddingTop: 16, borderTop: `1px solid ${borderColor}` }}>
-                  <div style={{ fontSize: 13, marginBottom: 8 }}>사용자 ID: {userId}</div>
-                  <div style={{ fontSize: 13, marginBottom: 12, color: isDarkMode ? 'rgba(255,255,255,0.5)' : '#9CA3AF' }}>
-                    계정 생성일: 2024년 1월
-                  </div>
+                  {isLoggedIn ? (
+                    <>
+                      <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 6 }}>{displayName}</div>
+                      <div style={{ fontSize: 12, marginBottom: 4, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280' }}>
+                        사용자 ID: {userId.slice(0, 8)}…
+                      </div>
+                      <div style={{ fontSize: 12, marginBottom: 12, color: isDarkMode ? 'rgba(255,255,255,0.5)' : '#9CA3AF' }}>
+                        계정 생성일: {formatAccountDate(user?.created_at)}
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div style={{ fontSize: 13, marginBottom: 8 }}>데모 모드 (비로그인)</div>
+                      <div style={{ fontSize: 12, marginBottom: 12, color: isDarkMode ? 'rgba(255,255,255,0.5)' : '#9CA3AF' }}>
+                        로그인하면 내 데이터로 이용할 수 있어요.
+                      </div>
+                    </>
+                  )}
                   <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                    <button onClick={(e) => {
-                      e.stopPropagation()
-                      router.push('/login')
-                    }} style={{
-                      padding: '8px 16px',
-                      background: '#E8740C',
-                      border: 'none',
-                      borderRadius: 8,
-                      color: '#fff',
-                      fontSize: 12,
-                      fontWeight: 600,
-                      cursor: 'pointer',
-                    }}>
-                      로그인 / 회원가입
-                    </button>
-                    <button onClick={(e) => {
-                      e.stopPropagation()
-                      if (confirm('정말 로그아웃하시겠습니까?')) {
-                        alert('로그아웃되었습니다.')
-                        setScreen('role')
-                      }
-                    }} style={{
-                      padding: '8px 16px',
-                      background: isDarkMode ? 'rgba(255,255,255,0.1)' : '#E5E7EB',
-                      border: 'none',
-                      borderRadius: 8,
-                      color: textColor,
-                      fontSize: 12,
-                      fontWeight: 600,
-                      cursor: 'pointer',
-                    }}>
-                      로그아웃
-                    </button>
+                    {!isLoggedIn ? (
+                      <button onClick={(e) => {
+                        e.stopPropagation()
+                        router.push('/login')
+                      }} style={{
+                        padding: '8px 16px',
+                        background: '#E8740C',
+                        border: 'none',
+                        borderRadius: 8,
+                        color: '#fff',
+                        fontSize: 12,
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                      }}>
+                        로그인 / 회원가입
+                      </button>
+                    ) : (
+                      <button onClick={(e) => {
+                        e.stopPropagation()
+                        if (confirm('정말 로그아웃하시겠습니까?')) signOut()
+                      }} style={{
+                        padding: '8px 16px',
+                        background: isDarkMode ? 'rgba(255,255,255,0.1)' : '#E5E7EB',
+                        border: 'none',
+                        borderRadius: 8,
+                        color: textColor,
+                        fontSize: 12,
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                      }}>
+                        로그아웃
+                      </button>
+                    )}
                   </div>
                 </div>
               )}
