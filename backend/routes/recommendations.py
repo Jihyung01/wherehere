@@ -13,7 +13,7 @@ import random
 from core.dependencies import Database
 from mock.mock_data import get_mock_recommendations
 from services.weather_service import get_weather, get_time_of_day
-from services.narrative_generator import generate_narratives_batch
+from services.narrative_generator import generate_narrative
 
 router = APIRouter(
     prefix="/api/v1/recommendations",
@@ -70,6 +70,30 @@ class RecommendationResponse(BaseModel):
     weather: Optional[Dict] = None
     time_of_day: str = ""
     data_source: str = "mock"
+
+
+class NarrativeRequest(BaseModel):
+    """클릭한 장소 1곳에 대한 서사 생성 요청"""
+    place_name: str
+    category: str = "기타"
+    role_type: str = "explorer"
+    user_mood: Optional[str] = None
+    vibe_tags: List[str] = []
+    is_hidden_gem: bool = False
+
+
+@router.post("/narrative")
+async def get_narrative_for_place(request: NarrativeRequest):
+    """클릭한 장소 1곳에 대해 AI 서사 1건만 생성 (토큰 절감)"""
+    narrative = await generate_narrative(
+        place_name=request.place_name,
+        category=request.category,
+        role_type=request.role_type,
+        vibe_tags=request.vibe_tags or [],
+        is_hidden_gem=request.is_hidden_gem,
+        user_mood=request.user_mood,
+    )
+    return {"narrative": narrative}
 
 
 @router.post("", response_model=RecommendationResponse)
@@ -330,23 +354,7 @@ async def get_recommendations(request: RecommendationRequest):
             random.shuffle(selected_wrapped)
             selected = [c["place"] for c in selected_wrapped]
 
-            # 🤖 AI 서사 생성 준비
-            places_for_narrative = [
-                {
-                    "name": p.get("name", "Unknown"),
-                    "category": p.get("primary_category", "기타"),
-                    "vibe_tags": p.get("vibe_tags", []),
-                    "is_hidden_gem": p.get("is_hidden_gem", False),
-                }
-                for p in selected
-            ]
-            user_mood = request.mood.mood_text if request.mood else None
-            ai_narratives = await generate_narratives_batch(
-                places=places_for_narrative,
-                role_type=request.role_type,
-                user_mood=user_mood,
-            )
-
+            # 서사는 클릭한 장소에서만 요청 (단일 서사 API 사용)
             recommendations: List[PlaceRecommendation] = []
             for idx, wrapped in enumerate(selected_wrapped):
                 place = wrapped["place"]
@@ -374,7 +382,7 @@ async def get_recommendations(request: RecommendationRequest):
                         average_rating=place.get("average_rating", 0),
                         is_hidden_gem=place.get("is_hidden_gem", False),
                         typical_crowd_level=place.get("typical_crowd_level", "medium"),
-                        narrative=ai_narratives[idx],
+                        narrative="",
                         description=place.get("description", ""),
                         latitude=place.get("latitude"),
                         longitude=place.get("longitude"),
@@ -517,28 +525,8 @@ async def _get_db_recommendations(request, weather_data, time_now):
 
     scored.sort(key=lambda x: x["score"], reverse=True)
     top_3 = scored[:3]
-    
-    # 🤖 AI 서사 생성 (상위 3개만)
-    user_mood = request.mood.mood_text if request.mood else None
-    places_for_narrative = [
-        {
-            "name": p["name"],
-            "category": p["category"],
-            "vibe_tags": p["vibe_tags"],
-            "is_hidden_gem": p["is_hidden_gem"],
-        }
-        for p in top_3
-    ]
-    
-    ai_narratives = await generate_narratives_batch(
-        places=places_for_narrative,
-        role_type=request.role_type,
-        user_mood=user_mood,
-    )
-    
-    # AI 서사 적용
-    for i, place in enumerate(top_3):
-        place["narrative"] = ai_narratives[i]
+    for p in top_3:
+        p["narrative"] = ""
 
     return RecommendationResponse(
         recommendations=top_3,

@@ -383,11 +383,62 @@ class RestDatabaseHelpers:
             url = f"{self.base_url}/rest/v1/feed_activities"
             # PostgREST: user_id=in.(id1,id2,id3)
             in_val = "in.(" + ",".join(user_ids) + ")"
-            params = {"select": "*", "order": "created_at.desc", "limit": limit, "user_id": in_val}
+            params = {
+                "select": "*",
+                "order": "created_at.desc",
+                "limit": limit,
+                "user_id": in_val,
+            }
             response = await client.get(url, headers=self.headers, params=params)
             if response.status_code != 200:
                 return []
             return response.json()
+
+    # ---------- 소셜: 사용자 검색 & 프로필 ----------
+    async def search_public_users(self, query: str, limit: int = 20) -> List[Dict[str, Any]]:
+        """
+        공개 사용자 검색 (username / display_name 기준 부분 검색)
+        Supabase public.users 테이블을 사용한다.
+        """
+        if not query:
+            return []
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            url = f"{self.base_url}/rest/v1/users"
+            # username 또는 display_name 에 부분 일치
+            like = f"*{query}*"
+            params = {
+                "select": "id,username,display_name,profile_image_url",
+                "limit": limit,
+                "order": "created_at.desc",
+                "or": f"(username.ilike.{like},display_name.ilike.{like})",
+            }
+            response = await client.get(url, headers=self.headers, params=params)
+            if response.status_code != 200:
+                return []
+            return response.json()
+
+    async def update_user_profile_basic(
+        self,
+        user_id: str,
+        display_name: Optional[str] = None,
+        avatar_url: Optional[str] = None,
+    ) -> bool:
+        """
+        기본 프로필(표시 이름, 프로필 이미지 URL) 업데이트.
+        public.users 테이블에 upsert 형태로 반영한다.
+        """
+        if not user_id:
+            return False
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            url = f"{self.base_url}/rest/v1/users"
+            payload: Dict[str, Any] = {"id": user_id}
+            if display_name is not None:
+                payload["display_name"] = display_name
+            if avatar_url is not None:
+                payload["profile_image_url"] = avatar_url
+            headers = {**self.headers, "Prefer": "resolution=merge-duplicates"}
+            response = await client.post(url, headers=headers, json=payload)
+            return response.status_code in (200, 201)
 
     # ---------- 크리에이터: 장소 제안 ----------
     async def create_place_suggestion(self, user_id: str, name: str, address: str = "", latitude: Optional[float] = None, longitude: Optional[float] = None, category: str = "", description: str = "") -> Optional[Dict]:

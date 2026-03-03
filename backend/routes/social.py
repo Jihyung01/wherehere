@@ -7,7 +7,7 @@
 """
 
 from fastapi import APIRouter, HTTPException, Depends
-from typing import Optional
+from typing import Optional, List, Dict
 from datetime import datetime
 from pydantic import BaseModel
 
@@ -251,3 +251,64 @@ async def get_following(user_id: str, db=Depends(get_db)):
         return {"following_ids": []}
     ids = await db.get_following_ids(user_id)
     return {"following_ids": ids}
+
+
+@router.get("/search-users")
+async def search_users(
+    q: str,
+    user_id: str,
+    limit: int = 20,
+    db=Depends(get_db)
+):
+    """
+    친구 찾기 / 팔로우용 사용자 검색
+    - username, display_name 기준 부분 검색
+    - 이미 팔로우 중인지 여부(is_following) 포함
+    """
+    if db is None or not q:
+        return {"results": []}
+    try:
+        following_ids: List[str] = await db.get_following_ids(user_id)
+        rows: List[Dict] = await db.search_public_users(q, limit=limit)
+        results = []
+        for row in rows:
+            uid = row.get("id")
+            if not uid or uid == user_id:
+                continue
+            results.append({
+                "user_id": uid,
+                "username": row.get("username"),
+                "display_name": row.get("display_name"),
+                "avatar_url": row.get("profile_image_url"),
+                "code": str(uid)[:8],
+                "is_following": uid in following_ids,
+            })
+        return {"results": results}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class SocialProfileUpdate(BaseModel):
+    user_id: str
+    display_name: Optional[str] = None
+    avatar_url: Optional[str] = None
+
+
+@router.post("/profile")
+async def update_social_profile(
+    req: SocialProfileUpdate,
+    db=Depends(get_db)
+):
+    """
+    소셜 프로필 업데이트
+    - public.users.display_name
+    - public.users.profile_image_url
+    """
+    if db is None:
+        return {"success": False, "message": "DB not connected"}
+    ok = await db.update_user_profile_basic(
+        user_id=req.user_id,
+        display_name=req.display_name,
+        avatar_url=req.avatar_url,
+    )
+    return {"success": ok}
