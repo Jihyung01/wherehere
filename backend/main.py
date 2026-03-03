@@ -31,6 +31,8 @@ from routes.challenges import router as challenges_router
 from routes.social import router as social_router
 from routes.tracking import router as tracking_router
 from routes.visits import router as visits_router
+from routes.notifications import router as notifications_router
+from routes.place_suggestions import router as place_suggestions_router
 
 
 @asynccontextmanager
@@ -108,6 +110,8 @@ app.include_router(challenges_router)
 app.include_router(social_router)
 app.include_router(tracking_router)
 app.include_router(visits_router)
+app.include_router(notifications_router)
+app.include_router(place_suggestions_router)
 
 
 @app.get("/")

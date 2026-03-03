@@ -86,28 +86,101 @@ export function CompleteApp() {
   const [checkInTime, setCheckInTime] = useState<Date | null>(null)
   const [reviewData, setReviewData] = useState({ rating: 0, review: '', photos: [] as string[] })
   const [isDarkMode, setIsDarkMode] = useState(false)
+  type ThemeMode = 'light' | 'dark' | 'system'
+  const [themeMode, setThemeMode] = useState<ThemeMode>('system')
   const [checklist, setChecklist] = useState([false, false, false, false])
   const [uploadedPhotos, setUploadedPhotos] = useState<string[]>([])
   const [showNotificationSettings, setShowNotificationSettings] = useState(false)
   const [showLocationSettings, setShowLocationSettings] = useState(false)
   const [showPrivacySettings, setShowPrivacySettings] = useState(false)
   const [showHelpSettings, setShowHelpSettings] = useState(false)
+  const [showCreatorSettings, setShowCreatorSettings] = useState(false)
+  const [placeSuggestionForm, setPlaceSuggestionForm] = useState({ name: '', address: '', category: '기타', description: '' })
+  const [placeSuggestionSubmitting, setPlaceSuggestionSubmitting] = useState(false)
+  const [placeSuggestionMessage, setPlaceSuggestionMessage] = useState<string | null>(null)
   const [arrivalCheckLoading, setArrivalCheckLoading] = useState(false)
   const [arrivalMessage, setArrivalMessage] = useState<string | null>(null)
   const [kakaoMapLoaded, setKakaoMapLoaded] = useState(false)
   const routeMapContainerRef = useRef<HTMLDivElement>(null)
+  const [showOnboarding, setShowOnboarding] = useState(true)
+  const [onboardingStep, setOnboardingStep] = useState(0)
 
-  // 테마 로드 및 저장
+  // 온보딩: 이미 본 적 있으면 건너뛰기
   useEffect(() => {
-    const savedTheme = localStorage.getItem('isDarkMode');
-    if (savedTheme) {
-      setIsDarkMode(savedTheme === 'true');
+    try {
+      if (typeof window !== 'undefined' && localStorage.getItem('wherehere_onboarded') === 'true') {
+        setShowOnboarding(false)
+      }
+    } catch (_) {}
+  }, [])
+
+  const finishOnboarding = () => {
+    try {
+      localStorage.setItem('wherehere_onboarded', 'true')
+    } catch (_) {}
+    setShowOnboarding(false)
+  }
+
+  const submitPlaceSuggestion = async () => {
+    if (!placeSuggestionForm.name.trim()) {
+      setPlaceSuggestionMessage('장소 이름을 입력해주세요.')
+      return
     }
-  }, []);
+    setPlaceSuggestionMessage(null)
+    setPlaceSuggestionSubmitting(true)
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/place-suggestions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_id: userId,
+          name: placeSuggestionForm.name.trim(),
+          address: placeSuggestionForm.address.trim(),
+          category: placeSuggestionForm.category || '기타',
+          description: placeSuggestionForm.description.trim(),
+        }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (data.success) {
+        setPlaceSuggestionMessage('제안이 접수되었어요. 검수 후 반영됩니다.')
+        setPlaceSuggestionForm({ name: '', address: '', category: '기타', description: '' })
+      } else {
+        setPlaceSuggestionMessage(data.message || '제출에 실패했어요.')
+      }
+    } catch (_) {
+      setPlaceSuggestionMessage('네트워크 오류가 났어요.')
+    } finally {
+      setPlaceSuggestionSubmitting(false)
+    }
+  }
+
+  // 테마 로드: wherehere_themeMode 우선, 없으면 기존 isDarkMode로 light/dark 복원
+  useEffect(() => {
+    const saved = localStorage.getItem('wherehere_themeMode') as ThemeMode | null
+    if (saved && ['light', 'dark', 'system'].includes(saved)) {
+      setThemeMode(saved)
+    } else {
+      const savedDark = localStorage.getItem('isDarkMode')
+      if (savedDark !== null) setThemeMode(savedDark === 'true' ? 'dark' : 'light')
+    }
+  }, [])
 
   useEffect(() => {
-    localStorage.setItem('isDarkMode', isDarkMode.toString());
-  }, [isDarkMode]);
+    if (themeMode === 'system') {
+      if (typeof window === 'undefined') return
+      const mq = window.matchMedia('(prefers-color-scheme: dark)')
+      setIsDarkMode(mq.matches)
+      const handler = () => setIsDarkMode(window.matchMedia('(prefers-color-scheme: dark)').matches)
+      mq.addEventListener('change', handler)
+      return () => mq.removeEventListener('change', handler)
+    }
+    setIsDarkMode(themeMode === 'dark')
+  }, [themeMode])
+
+  useEffect(() => {
+    localStorage.setItem('wherehere_themeMode', themeMode)
+    if (themeMode !== 'system') localStorage.setItem('isDarkMode', isDarkMode.toString())
+  }, [themeMode, isDarkMode])
 
   useEffect(() => {
     if (navigator.geolocation) {
@@ -167,12 +240,37 @@ export function CompleteApp() {
   const { data: userStats, refetch: refetchUserStats } = useQuery({
     queryKey: ['userStats', userId],
     queryFn: async () => {
-      const res = await fetch(`${API_BASE}/api/v1/users/me/stats`)
+      const res = await fetch(`${API_BASE}/api/v1/users/me/stats?user_id=${encodeURIComponent(userId)}`)
       if (!res.ok) return null
       return res.json()
     },
     enabled: screen === 'profile' && !!userId,
   })
+
+  const { data: notificationsData, refetch: refetchNotifications } = useQuery({
+    queryKey: ['notifications', userId],
+    queryFn: async () => {
+      const res = await fetch(`${API_BASE}/api/v1/notifications?user_id=${encodeURIComponent(userId)}`)
+      if (!res.ok) return { notifications: [], unread_count: 0 }
+      return res.json()
+    },
+    enabled: !!userId,
+    refetchInterval: 60000,
+  })
+  const notifications = notificationsData?.notifications ?? []
+  const unreadCount = notificationsData?.unread_count ?? 0
+  const [showNotificationPanel, setShowNotificationPanel] = useState(false)
+
+  const { data: feedData, refetch: refetchFeed } = useQuery({
+    queryKey: ['socialFeed', userId],
+    queryFn: async () => {
+      const res = await fetch(`${API_BASE}/api/v1/social/feed?user_id=${encodeURIComponent(userId)}`)
+      if (!res.ok) return { activities: [], following_ids: [] }
+      return res.json()
+    },
+    enabled: screen === 'social' && !!userId,
+  })
+  const feedActivities = feedData?.activities ?? []
 
   const handleCheckIn = async () => {
     setCheckInTime(new Date())
@@ -401,7 +499,8 @@ export function CompleteApp() {
     }}>
       {[
         { icon: '🏠', label: '홈', onClick: () => { setScreen('role'); setAcceptedQuest(null); } },
-        { icon: '🗺️', label: '나의 지도', onClick: () => router.push('/my-map-real') },
+        { icon: '🗺️', label: '지도', onClick: () => router.push('/my-map-real') },
+        { icon: '💬', label: '소셜', onClick: () => setScreen('social') },
         { icon: '🎯', label: '챌린지', onClick: () => setScreen('challenges') },
         { icon: '👤', label: '프로필', onClick: () => setScreen('profile') },
         { icon: '⚙️', label: '설정', onClick: () => setScreen('settings') },
@@ -418,35 +517,171 @@ export function CompleteApp() {
     </div>
   )
 
+  // 온보딩 (첫 방문 시 2~3장, 건너뛰기 가능)
+  if (showOnboarding) {
+    const steps = [
+      {
+        title: '오늘의 역할을 골라보세요',
+        desc: '탐험가, 힐러, 예술가, 미식가, 도전자 중에서\n나에게 맞는 역할을 선택하면 AI가 장소를 추천해요.',
+        icon: '🧭',
+      },
+      {
+        title: '퀘스트를 받고 떠나보세요',
+        desc: '기분과 역할에 맞는 특별한 장소 3곳을 추천받아\n마음에 드는 한 곳을 골라 도전해보세요.',
+        icon: '🎯',
+      },
+      {
+        title: '도착하면 인정받고, 지도에 쌓아요',
+        desc: '장소 100m 이내에서 "도착했어요"를 누르면\n미션이 완료되고 XP가 쌓여 나만의 지도가 완성돼요.',
+        icon: '🗺️',
+      },
+    ]
+    const step = steps[onboardingStep]
+    const isLast = onboardingStep === steps.length - 1
+    return (
+      <div style={{ maxWidth: 430, margin: '0 auto', minHeight: '100vh', background: bgColor, color: textColor, fontFamily: 'Pretendard, sans-serif', display: 'flex', flexDirection: 'column', padding: '48px 24px 32px' }}>
+        <div style={{ textAlign: 'center', flex: 1 }}>
+          <div style={{ fontSize: 56, marginBottom: 24 }}>{step.icon}</div>
+          <h2 style={{ fontSize: 22, fontWeight: 800, marginBottom: 16, lineHeight: 1.3 }}>{step.title}</h2>
+          <p style={{ fontSize: 15, color: isDarkMode ? 'rgba(255,255,255,0.7)' : '#6B7280', lineHeight: 1.7, whiteSpace: 'pre-line' }}>{step.desc}</p>
+        </div>
+        <div style={{ display: 'flex', gap: 12, marginTop: 32 }}>
+          <button
+            onClick={() => { if (isLast) finishOnboarding(); else setOnboardingStep((s) => s + 1); }}
+            style={{
+              flex: 1,
+              padding: 16,
+              background: isLast ? 'linear-gradient(135deg, #E8740C, #C65D00)' : cardBg,
+              border: `1px solid ${isLast ? 'transparent' : borderColor}`,
+              borderRadius: 14,
+              color: isLast ? '#fff' : textColor,
+              fontWeight: 700,
+              fontSize: 15,
+              cursor: 'pointer',
+            }}
+          >
+            {isLast ? '시작하기' : '다음'}
+          </button>
+          {!isLast && (
+            <button
+              onClick={finishOnboarding}
+              style={{
+                padding: '16px 20px',
+                background: 'transparent',
+                border: `1px solid ${borderColor}`,
+                borderRadius: 14,
+                color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#9CA3AF',
+                fontSize: 14,
+                cursor: 'pointer',
+              }}
+            >
+              건너뛰기
+            </button>
+          )}
+        </div>
+        {isLast && (
+          <button
+            onClick={finishOnboarding}
+            style={{
+              marginTop: 12,
+              padding: 12,
+              background: 'transparent',
+              border: 'none',
+              color: isDarkMode ? 'rgba(255,255,255,0.5)' : '#9CA3AF',
+              fontSize: 13,
+              cursor: 'pointer',
+            }}
+          >
+            건너뛰기
+          </button>
+        )}
+        <div style={{ display: 'flex', justifyContent: 'center', gap: 6, marginTop: 24 }}>
+          {steps.map((_, i) => (
+            <div
+              key={i}
+              style={{
+                width: 8,
+                height: 8,
+                borderRadius: 4,
+                background: i === onboardingStep ? '#E8740C' : (isDarkMode ? 'rgba(255,255,255,0.2)' : '#E5E7EB'),
+              }}
+            />
+          ))}
+        </div>
+      </div>
+    )
+  }
+
   // 역할 선택 화면
   if (screen === 'role') {
     return (
       <div style={{ maxWidth: 430, margin: '0 auto', minHeight: '100vh', background: bgColor, color: textColor, fontFamily: 'Pretendard, sans-serif', position: 'relative' }}>
-        <button
-          onClick={() => router.push('/login')}
-          style={{
-            position: 'absolute',
-            top: 16,
-            right: 20,
-            padding: '8px 14px',
-            background: isDarkMode ? 'rgba(255,255,255,0.1)' : 'rgba(232,116,12,0.15)',
-            border: '1px solid #E8740C',
-            borderRadius: 10,
-            color: '#E8740C',
-            fontSize: 13,
-            fontWeight: 600,
-            cursor: 'pointer',
-            zIndex: 10,
-          }}
-        >
-          로그인
-        </button>
+        <div style={{ position: 'absolute', top: 16, right: 20, display: 'flex', alignItems: 'center', gap: 8, zIndex: 10 }}>
+          <button
+            onClick={() => setShowNotificationPanel((v) => !v)}
+            style={{
+              position: 'relative',
+              padding: '8px 12px',
+              background: isDarkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)',
+              border: `1px solid ${borderColor}`,
+              borderRadius: 10,
+              color: textColor,
+              fontSize: 18,
+              cursor: 'pointer',
+            }}
+          >
+            🔔
+            {unreadCount > 0 && (
+              <span style={{ position: 'absolute', top: -4, right: -4, minWidth: 18, height: 18, borderRadius: 9, background: '#EF4444', color: '#fff', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{unreadCount > 99 ? '99+' : unreadCount}</span>
+            )}
+          </button>
+          <button
+            onClick={() => router.push('/login')}
+            style={{
+              padding: '8px 14px',
+              background: isDarkMode ? 'rgba(255,255,255,0.1)' : 'rgba(232,116,12,0.15)',
+              border: '1px solid #E8740C',
+              borderRadius: 10,
+              color: '#E8740C',
+              fontSize: 13,
+              fontWeight: 600,
+              cursor: 'pointer',
+            }}
+          >
+            로그인
+          </button>
+        </div>
+        {showNotificationPanel && (
+          <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.4)', zIndex: 200, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', paddingTop: 60 }} onClick={() => setShowNotificationPanel(false)}>
+            <div style={{ width: '100%', maxWidth: 400, maxHeight: '70vh', overflow: 'auto', background: bgColor, borderRadius: 16, border: `1px solid ${borderColor}`, boxShadow: '0 8px 32px rgba(0,0,0,0.2)' }} onClick={(e) => e.stopPropagation()}>
+              <div style={{ padding: 16, borderBottom: `1px solid ${borderColor}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontWeight: 700, fontSize: 16 }}>알림</span>
+                <button onClick={() => setShowNotificationPanel(false)} style={{ background: 'none', border: 'none', fontSize: 18, cursor: 'pointer', color: textColor }}>×</button>
+              </div>
+              <div style={{ padding: 8 }}>
+                {notifications.length === 0 ? (
+                  <p style={{ padding: 24, textAlign: 'center', color: isDarkMode ? 'rgba(255,255,255,0.5)' : '#9CA3AF', fontSize: 14 }}>알림이 없어요</p>
+                ) : (
+                  notifications.slice(0, 30).map((n: { id: string; title: string; body?: string; read?: boolean; created_at?: string }) => (
+                    <div key={n.id} style={{ padding: '12px 16px', borderBottom: `1px solid ${borderColor}`, background: n.read ? 'transparent' : (isDarkMode ? 'rgba(232,116,12,0.08)' : 'rgba(232,116,12,0.06)') }}>
+                      <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 4 }}>{n.title}</div>
+                      {n.body && <div style={{ fontSize: 13, color: isDarkMode ? 'rgba(255,255,255,0.7)' : '#6B7280' }}>{n.body}</div>}
+                      {n.created_at && <div style={{ fontSize: 11, color: isDarkMode ? 'rgba(255,255,255,0.4)' : '#9CA3AF', marginTop: 6 }}>{new Date(n.created_at).toLocaleDateString('ko-KR')}</div>}
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        )}
         <div style={{ padding: '60px 20px 120px' }}>
           <div style={{ textAlign: 'center', marginBottom: 40 }}>
             <div style={{ fontSize: 48, marginBottom: 16 }}>🗺️</div>
             <h1 style={{ fontSize: 28, fontWeight: 900, marginBottom: 8, background: 'linear-gradient(90deg, #E8740C, #F59E0B)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
               WhereHere
             </h1>
+            <p style={{ fontSize: 15, fontWeight: 600, color: isDarkMode ? 'rgba(255,255,255,0.9)' : '#374151', marginBottom: 6 }}>기분과 역할에 맞는 장소를 퀘스트로 받아보세요</p>
+            <p style={{ fontSize: 13, color: isDarkMode ? 'rgba(255,255,255,0.5)' : '#9CA3AF', marginBottom: 8 }}>예: “지금 피곤한 당신에게 조용한 카페 한 곳”</p>
             <p style={{ fontSize: 14, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280' }}>오늘은 어떤 역할로 탐험할까요?</p>
           </div>
 
@@ -535,7 +770,7 @@ export function CompleteApp() {
               <div style={{ fontSize: 48, marginBottom: 16 }}>🔮</div>
               <div style={{ fontSize: 16, color: isDarkMode ? 'rgba(255,255,255,0.7)' : '#6B7280' }}>AI가 분석 중...</div>
             </div>
-          ) : questsData?.recommendations ? (
+          ) : questsData?.recommendations?.length ? (
             <div style={{ display: 'grid', gap: 16 }}>
               {questsData.recommendations.map((quest: any, i: number) => (
                 <div key={i} onClick={() => { setAcceptedQuest(quest); setScreen('accepted'); }}
@@ -557,14 +792,25 @@ export function CompleteApp() {
                       <div style={{ fontSize: 9, color: isDarkMode ? 'rgba(255,255,255,0.4)' : '#9CA3AF' }}>점수</div>
                     </div>
                   </div>
+                  {(quest.narrative || quest.reason) && (
+                    <p style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.55)' : '#6B7280', marginBottom: 8, lineHeight: 1.5 }}>{(quest.narrative || quest.reason).slice(0, 60)}{(quest.narrative || quest.reason).length > 60 ? '…' : ''}</p>
+                  )}
                   <div style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280', marginBottom: 12 }}>{quest.address}</div>
-                  <div style={{ display: 'flex', gap: 8, fontSize: 11 }}>
+                  <div style={{ display: 'flex', gap: 8, fontSize: 11, marginBottom: 8 }}>
                     <span>📍 {quest.distance_meters}m</span>
                     <span>⭐ {quest.average_rating || '-'}</span>
                     {quest.estimated_cost && <span>💰 {(quest.estimated_cost/1000).toFixed(0)}천원</span>}
                   </div>
+                  <button type="button" onClick={(e) => { e.stopPropagation(); setAcceptedQuest(quest); setScreen('accepted'); }} style={{ fontSize: 12, color: '#E8740C', fontWeight: 600, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>경로 보기 →</button>
                 </div>
               ))}
+            </div>
+          ) : questsData?.recommendations?.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: 48, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280' }}>
+              <div style={{ fontSize: 40, marginBottom: 16 }}>🔍</div>
+              <p style={{ fontSize: 16, fontWeight: 600, marginBottom: 8 }}>조금 더 넓은 범위로 찾아볼까요?</p>
+              <p style={{ fontSize: 13, marginBottom: 20 }}>역할·무드를 바꾸거나 위치를 허용하면 더 많은 퀘스트가 나와요</p>
+              <button onClick={() => { setScreen('role'); setSelectedRole(null); setSelectedMood(null); }} style={{ padding: '12px 24px', background: '#E8740C', border: 'none', borderRadius: 12, color: '#fff', fontWeight: 600, cursor: 'pointer' }}>역할 다시 고르기</button>
             </div>
           ) : (
             <div style={{ textAlign: 'center', padding: 60, color: isDarkMode ? 'rgba(255,255,255,0.5)' : '#9CA3AF' }}>
@@ -636,6 +882,18 @@ export function CompleteApp() {
                     }}
                   />
                 )}
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
+                  <button type="button" onClick={() => {
+                    if (typeof navigator !== 'undefined' && navigator.geolocation) {
+                      navigator.geolocation.getCurrentPosition(
+                        (p) => { setUserLocation({ lat: p.coords.latitude, lng: p.coords.longitude }); setArrivalMessage(null); },
+                        () => setArrivalMessage('위치를 가져올 수 없어요. 권한을 확인해주세요.')
+                      )
+                    }
+                  }} style={{ padding: '8px 14px', fontSize: 12, background: isDarkMode ? 'rgba(255,255,255,0.08)' : '#E5E7EB', border: `1px solid ${borderColor}`, borderRadius: 8, color: textColor, cursor: 'pointer', fontWeight: 600 }}>
+                    📍 현재 위치 새로고침
+                  </button>
+                </div>
                 {/* 앱 내 지도: 현재 위치 → 목적지 경로 표시 */}
                 <div
                   ref={routeMapContainerRef}
@@ -966,6 +1224,46 @@ export function CompleteApp() {
     )
   }
 
+  // 소셜 탭 (피드 · 당근/오픈채팅 느낌)
+  if (screen === 'social') {
+    return (
+      <div style={{ maxWidth: 430, margin: '0 auto', minHeight: '100vh', background: bgColor, color: textColor, fontFamily: 'Pretendard, sans-serif' }}>
+        <div style={{ padding: '60px 20px 120px' }}>
+          <div style={{ textAlign: 'center', marginBottom: 24 }}>
+            <div style={{ fontSize: 36, marginBottom: 8 }}>💬</div>
+            <h2 style={{ fontSize: 22, fontWeight: 800, marginBottom: 4 }}>소셜</h2>
+            <p style={{ fontSize: 13, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280' }}>동네 탐험가들의 체크인과 소식</p>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {feedActivities.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: 48, background: cardBg, borderRadius: 16, border: `1px solid ${borderColor}` }}>
+                <div style={{ fontSize: 40, marginBottom: 12 }}>🗺️</div>
+                <p style={{ fontSize: 15, marginBottom: 8 }}>아직 소식이 없어요</p>
+                <p style={{ fontSize: 13, color: isDarkMode ? 'rgba(255,255,255,0.5)' : '#9CA3AF' }}>퀘스트를 완료하거나 친구를 팔로우하면<br />여기에 체크인 소식이 쌓여요</p>
+              </div>
+            ) : (
+              feedActivities.map((a: { id: string; user_id: string; type: string; place_name?: string; xp_earned?: number; content?: string; created_at?: string }) => (
+                <div key={a.id} style={{ background: cardBg, border: `1px solid ${borderColor}`, borderRadius: 16, padding: 16 }}>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+                    <div style={{ width: 44, height: 44, borderRadius: '50%', background: 'linear-gradient(135deg, #E8740C, #F59E0B)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, flexShrink: 0 }}>👤</div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <p style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>
+                        {a.user_id === userId ? '나' : a.user_id.slice(0, 8) + '…'}님이 {a.place_name || '장소'}에서 체크인했어요
+                      </p>
+                      {a.xp_earned != null && <span style={{ fontSize: 12, color: '#E8740C', fontWeight: 600 }}>+{a.xp_earned} XP</span>}
+                      {a.created_at && <div style={{ fontSize: 11, color: isDarkMode ? 'rgba(255,255,255,0.4)' : '#9CA3AF', marginTop: 6 }}>{new Date(a.created_at).toLocaleString('ko-KR')}</div>}
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+        <BottomNav />
+      </div>
+    )
+  }
+
   // 프로필 화면
   if (screen === 'profile') {
     const level = userStats?.level ?? 1
@@ -1024,6 +1322,20 @@ export function CompleteApp() {
                 ✅ 퀘스트 <strong style={{ color: textColor }}>{completedQuests}</strong>개 완료
               </span>
             </div>
+            {/* 업적 뱃지 */}
+            {(userStats?.badges as { id: string; name: string; icon: string }[] | undefined)?.length ? (
+              <div style={{ marginTop: 16, paddingTop: 14, borderTop: `1px solid ${borderColor}` }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: isDarkMode ? 'rgba(255,255,255,0.7)' : '#6B7280', marginBottom: 10 }}>업적 뱃지</div>
+                <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                  {(userStats.badges as { id: string; name: string; icon: string }[]).map((b) => (
+                    <div key={b.id} title={b.name} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 12px', background: isDarkMode ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)', borderRadius: 10, border: `1px solid ${borderColor}` }}>
+                      <span style={{ fontSize: 18 }}>{b.icon}</span>
+                      <span style={{ fontSize: 12, fontWeight: 600, color: textColor }}>{b.name}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
           </div>
           <PersonalityProfile userId={userId} />
         </div>
@@ -1043,37 +1355,28 @@ export function CompleteApp() {
           </div>
 
           <div style={{ display: 'grid', gap: 16 }}>
-            {/* 다크모드 토글 */}
-            <div style={{
-              background: cardBg,
-              border: `1px solid ${borderColor}`,
-              borderRadius: 16, padding: 20,
-              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-            }}>
-              <div>
-                <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>
-                  {isDarkMode ? '🌙' : '☀️'} {isDarkMode ? '다크 모드' : '라이트 모드'}
-                </div>
-                <div style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280' }}>
-                  테마 변경
-                </div>
+            {/* 테마: 라이트 / 다크 / 시스템 따라가기 */}
+            <div style={{ background: cardBg, border: `1px solid ${borderColor}`, borderRadius: 16, padding: 20 }}>
+              <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>테마</div>
+              <div style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280', marginBottom: 12 }}>시스템 설정 따라가기 권장</div>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                {(['light', 'dark', 'system'] as const).map((mode) => (
+                  <button key={mode} onClick={() => setThemeMode(mode)} style={{
+                    padding: '10px 16px',
+                    borderRadius: 10,
+                    border: `2px solid ${themeMode === mode ? '#E8740C' : borderColor}`,
+                    background: themeMode === mode ? (isDarkMode ? 'rgba(232,116,12,0.2)' : 'rgba(232,116,12,0.1)') : 'transparent',
+                    color: themeMode === mode ? '#E8740C' : textColor,
+                    fontWeight: themeMode === mode ? 700 : 500,
+                    fontSize: 13,
+                    cursor: 'pointer',
+                  }}>
+                    {mode === 'light' && '☀️ 라이트'}
+                    {mode === 'dark' && '🌙 다크'}
+                    {mode === 'system' && '🖥️ 시스템 따라가기'}
+                  </button>
+                ))}
               </div>
-              <button onClick={() => setIsDarkMode(!isDarkMode)} style={{
-                width: 60, height: 32, borderRadius: 16,
-                background: isDarkMode ? '#E8740C' : '#E5E7EB',
-                border: 'none', cursor: 'pointer',
-                position: 'relative', transition: 'all 0.3s',
-              }}>
-                <div style={{
-                  width: 28, height: 28, borderRadius: '50%',
-                  background: '#FFFFFF',
-                  position: 'absolute',
-                  top: 2,
-                  left: isDarkMode ? 30 : 2,
-                  transition: 'left 0.3s',
-                  boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
-                }} />
-              </button>
             </div>
 
             {/* 알림 설정 */}
@@ -1226,6 +1529,35 @@ export function CompleteApp() {
                       </button>
                     )}
                   </div>
+                </div>
+              )}
+            </div>
+
+            {/* 크리에이터: 장소 제안하기 */}
+            <div style={{ background: cardBg, border: `1px solid ${borderColor}`, borderRadius: 16, padding: 20 }}>
+              <div onClick={() => setShowCreatorSettings(!showCreatorSettings)} style={{ display: 'flex', alignItems: 'center', gap: 16, cursor: 'pointer' }}>
+                <div style={{ fontSize: 24 }}>✨</div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>장소 제안하기</div>
+                  <div style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280' }}>새 장소를 등록해보세요 (검수 후 반영)</div>
+                </div>
+                <div style={{ fontSize: 16, color: '#E8740C' }}>{showCreatorSettings ? '▼' : '→'}</div>
+              </div>
+              {showCreatorSettings && (
+                <div style={{ marginTop: 16, paddingTop: 16, borderTop: `1px solid ${borderColor}` }} onClick={(e) => e.stopPropagation()}>
+                  <input placeholder="장소 이름 *" value={placeSuggestionForm.name} onChange={(e) => setPlaceSuggestionForm((f) => ({ ...f, name: e.target.value }))} style={{ width: '100%', padding: 12, marginBottom: 8, borderRadius: 8, border: `1px solid ${borderColor}`, background: isDarkMode ? 'rgba(0,0,0,0.2)' : '#fff', color: textColor }} />
+                  <input placeholder="주소" value={placeSuggestionForm.address} onChange={(e) => setPlaceSuggestionForm((f) => ({ ...f, address: e.target.value }))} style={{ width: '100%', padding: 12, marginBottom: 8, borderRadius: 8, border: `1px solid ${borderColor}`, background: isDarkMode ? 'rgba(0,0,0,0.2)' : '#fff', color: textColor }} />
+                  <select value={placeSuggestionForm.category} onChange={(e) => setPlaceSuggestionForm((f) => ({ ...f, category: e.target.value }))} style={{ width: '100%', padding: 12, marginBottom: 8, borderRadius: 8, border: `1px solid ${borderColor}`, background: isDarkMode ? 'rgba(0,0,0,0.2)' : '#fff', color: textColor }}>
+                    <option value="기타">기타</option>
+                    <option value="카페">카페</option>
+                    <option value="음식점">음식점</option>
+                    <option value="술집/바">술집/바</option>
+                    <option value="공원">공원</option>
+                    <option value="문화시설">문화시설</option>
+                  </select>
+                  <textarea placeholder="설명 (선택)" value={placeSuggestionForm.description} onChange={(e) => setPlaceSuggestionForm((f) => ({ ...f, description: e.target.value }))} rows={2} style={{ width: '100%', padding: 12, marginBottom: 8, borderRadius: 8, border: `1px solid ${borderColor}`, background: isDarkMode ? 'rgba(0,0,0,0.2)' : '#fff', color: textColor, resize: 'vertical' }} />
+                  {placeSuggestionMessage && <p style={{ fontSize: 12, marginBottom: 8, color: '#E8740C' }}>{placeSuggestionMessage}</p>}
+                  <button onClick={submitPlaceSuggestion} disabled={placeSuggestionSubmitting} style={{ width: '100%', padding: 12, background: '#E8740C', border: 'none', borderRadius: 8, color: '#fff', fontWeight: 600, cursor: placeSuggestionSubmitting ? 'not-allowed' : 'pointer', opacity: placeSuggestionSubmitting ? 0.7 : 1 }}>{placeSuggestionSubmitting ? '제출 중…' : '제안 제출'}</button>
                 </div>
               )}
             </div>

@@ -169,7 +169,22 @@ async def create_visit(
         }
         
         result = await db.insert_visit(visit_data)
-        
+        try:
+            await db.create_notification(
+                visit.user_id,
+                "quest_complete",
+                "퀘스트 완료!",
+                f"+{xp_earned} XP를 획득했어요.",
+                {"xp_earned": xp_earned, "place_id": visit.place_id}
+            )
+        except Exception:
+            pass
+        try:
+            place = await db.get_place_by_id(visit.place_id)
+            place_name = place.get("name") if place else None
+            await db.create_feed_activity(visit.user_id, "checkin", visit.place_id, place_name, xp_earned, None)
+        except Exception:
+            pass
         return {
             "success": True,
             "visit_id": result.get("id"),

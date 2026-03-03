@@ -209,3 +209,45 @@ async def get_share_data(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================
+# 피드 & 팔로우 (당근/오픈채팅 느낌)
+# ============================================================
+
+@router.get("/feed")
+async def get_feed(user_id: str, limit: int = 50, db=Depends(get_db)):
+    """팔로우한 사람 + 내 활동 피드"""
+    if db is None:
+        return {"activities": [], "following_ids": []}
+    following_ids = await db.get_following_ids(user_id)
+    user_ids = list(set([user_id] + following_ids))
+    activities = await db.get_feed_activities(user_ids, limit=limit)
+    return {"activities": activities, "following_ids": following_ids}
+
+
+@router.post("/follow")
+async def follow(follower_id: str, following_id: str, db=Depends(get_db)):
+    """팔로우하기"""
+    if db is None:
+        return {"success": False, "message": "DB not connected"}
+    ok = await db.follow_user(follower_id, following_id)
+    return {"success": ok}
+
+
+@router.delete("/follow")
+async def unfollow(follower_id: str, following_id: str, db=Depends(get_db)):
+    """팔로우 해제"""
+    if db is None:
+        return {"success": False}
+    ok = await db.unfollow_user(follower_id, following_id)
+    return {"success": ok}
+
+
+@router.get("/following")
+async def get_following(user_id: str, db=Depends(get_db)):
+    """내가 팔로우하는 목록"""
+    if db is None:
+        return {"following_ids": []}
+    ids = await db.get_following_ids(user_id)
+    return {"following_ids": ids}

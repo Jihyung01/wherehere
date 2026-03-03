@@ -1,12 +1,13 @@
 """
-User Routes - Simplified for Phase 1
-Works without authentication
+User Routes - Real stats from visits when DB connected
 """
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime
+
+from core.dependencies import get_db
 
 router = APIRouter(prefix="/api/v1/users", tags=["users"])
 
@@ -53,8 +54,17 @@ async def update_profile(update: UserUpdateRequest):
 
 
 @router.get("/me/stats")
-async def get_user_stats():
-    """사용자 통계"""
+async def get_user_stats(user_id: Optional[str] = None, db=Depends(get_db)):
+    """사용자 통계. user_id 쿼리 있으면 visits 기반 실데이터, 없으면 목(mock) 반환."""
+    if user_id and db is not None:
+        try:
+            stats = await db.get_user_stats_full(user_id)
+            stats["favorite_categories"] = []
+            stats["role_distribution"] = {}
+            return stats
+        except Exception as e:
+            import logging
+            logging.getLogger("uvicorn.error").exception("get_user_stats_full failed: %s", e)
     return {
         "level": _mock_user["level"],
         "total_xp": _mock_user["total_xp"],
