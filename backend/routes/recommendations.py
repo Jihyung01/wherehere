@@ -57,6 +57,8 @@ class PlaceRecommendation(BaseModel):
     typical_crowd_level: str = "medium"
     narrative: str = ""
     description: str = ""
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
 
 
 class RecommendationResponse(BaseModel):
@@ -270,11 +272,53 @@ async def get_recommendations(request: RecommendationRequest):
                         }
                     )
 
-            # 2) 점수 순 정렬 후 상위 N개 중에서 3개를 랜덤 샘플링 → 매번 다른 조합
-            candidates.sort(key=lambda c: c["score"], reverse=True)
-            top_n = candidates[:10] if len(candidates) > 10 else candidates
-            random.shuffle(top_n)
-            selected_wrapped = top_n[:3]
+            # 2) 1km 이내 우선: 3곳 중 최소 2곳은 1km 이내에서 선택
+            NEAR_METERS = 1000
+            within_1km = [c for c in candidates if c["distance"] <= NEAR_METERS]
+            beyond_1km = [c for c in candidates if c["distance"] > NEAR_METERS]
+            within_1km.sort(key=lambda c: c["score"], reverse=True)
+            beyond_1km.sort(key=lambda c: c["score"], reverse=True)
+
+            selected_ids: set = set()
+            selected_wrapped: list = []
+
+            def add_if_new(c):
+                pid = c["place"].get("id")
+                if pid and pid in selected_ids:
+                    return False
+                if pid:
+                    selected_ids.add(pid)
+                selected_wrapped.append(c)
+                return True
+
+            # 1km 이내에서 2곳 (점수 상위 풀에서 랜덤)
+            near_pool = within_1km[:12]
+            random.shuffle(near_pool)
+            for c in near_pool:
+                if len(selected_wrapped) >= 2:
+                    break
+                add_if_new(c)
+
+            # 나머지 1곳: 1km 초과 후보 중 1곳
+            if len(selected_wrapped) < 3 and beyond_1km:
+                far_pool = beyond_1km[:8]
+                random.shuffle(far_pool)
+                for c in far_pool:
+                    if add_if_new(c):
+                        break
+
+            # 2곳 미만이면 1km 이내에서 더 채우기
+            for c in within_1km:
+                if len(selected_wrapped) >= 3:
+                    break
+                add_if_new(c)
+            # 그래도 부족하면 1km 초과에서 채우기
+            for c in beyond_1km:
+                if len(selected_wrapped) >= 3:
+                    break
+                add_if_new(c)
+
+            random.shuffle(selected_wrapped)
             selected = [c["place"] for c in selected_wrapped]
 
             # 🤖 AI 서사 생성 준비
@@ -323,6 +367,8 @@ async def get_recommendations(request: RecommendationRequest):
                         typical_crowd_level=place.get("typical_crowd_level", "medium"),
                         narrative=ai_narratives[idx],
                         description=place.get("description", ""),
+                        latitude=place.get("latitude"),
+                        longitude=place.get("longitude"),
                     )
                 )
 

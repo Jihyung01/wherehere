@@ -32,6 +32,28 @@ const MOODS = [
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
+/** 도착 인정 거리(미터): 이 거리 이내면 "장소 도착하기" 조건 충족 */
+const ARRIVAL_THRESHOLD_METERS = 200
+
+function getDistanceMeters(
+  lat1: number,
+  lng1: number,
+  lat2: number,
+  lng2: number
+): number {
+  const R = 6371000 // Earth radius in meters
+  const dLat = ((lat2 - lat1) * Math.PI) / 180
+  const dLng = ((lng2 - lng1) * Math.PI) / 180
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLng / 2) *
+      Math.sin(dLng / 2)
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+  return R * c
+}
+
 function formatAccountDate(iso?: string | null): string {
   if (!iso) return '—'
   try {
@@ -63,6 +85,8 @@ export function CompleteApp() {
   const [showLocationSettings, setShowLocationSettings] = useState(false)
   const [showPrivacySettings, setShowPrivacySettings] = useState(false)
   const [showHelpSettings, setShowHelpSettings] = useState(false)
+  const [arrivalCheckLoading, setArrivalCheckLoading] = useState(false)
+  const [arrivalMessage, setArrivalMessage] = useState<string | null>(null)
 
   // 테마 로드 및 저장
   useEffect(() => {
@@ -84,6 +108,11 @@ export function CompleteApp() {
       )
     }
   }, [])
+
+  // 퀘스트가 바뀌면 도착 인정 메시지 초기화
+  useEffect(() => {
+    setArrivalMessage(null)
+  }, [acceptedQuest?.place_id])
 
   const { data: questsData, isLoading: questsLoading } = useQuery({
     queryKey: ['recommendations', userLocation.lat, userLocation.lng, selectedRole, selectedMood],
@@ -249,6 +278,45 @@ export function CompleteApp() {
     const newChecklist = [...checklist]
     newChecklist[index] = !newChecklist[index]
     setChecklist(newChecklist)
+  }
+
+  // 도착 인정: 현재 위치가 목적지 200m 이내면 "장소 도착하기" 체크
+  const handleArrivalCheck = () => {
+    const quest = acceptedQuest
+    if (!quest || quest.latitude == null || quest.longitude == null) {
+      setArrivalMessage('이 장소는 위치 정보가 없어 도착 인정을 사용할 수 없어요.')
+      return
+    }
+    setArrivalMessage(null)
+    setArrivalCheckLoading(true)
+    if (!navigator.geolocation) {
+      setArrivalMessage('위치 권한을 사용할 수 없어요.')
+      setArrivalCheckLoading(false)
+      return
+    }
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const lat = position.coords.latitude
+        const lng = position.coords.longitude
+        const dist = getDistanceMeters(lat, lng, quest.latitude, quest.longitude)
+        setArrivalCheckLoading(false)
+        if (dist <= ARRIVAL_THRESHOLD_METERS) {
+          setChecklist((prev) => {
+            const next = [...prev]
+            next[0] = true
+            return next
+          })
+          setArrivalMessage(`도착 인정됐어요! (${Math.round(dist)}m 이내)`)
+        } else {
+          setArrivalMessage(`아직 멀어요. 약 ${Math.round(dist)}m 남았어요. (${ARRIVAL_THRESHOLD_METERS}m 이내에서 눌러주세요)`)
+        }
+      },
+      () => {
+        setArrivalCheckLoading(false)
+        setArrivalMessage('위치를 가져올 수 없어요. 위치 권한을 확인해주세요.')
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
+    )
   }
 
   // 모든 체크리스트 완료 확인
@@ -486,6 +554,71 @@ export function CompleteApp() {
                 </button>
               ))}
             </div>
+          </div>
+
+          {/* 경로 탐색: 카카오맵 길찾기 + 도착 인정 */}
+          <div style={{ background: cardBg, border: `1px solid ${borderColor}`, borderRadius: 16, padding: 20, marginBottom: 16 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 12, color: isDarkMode ? '#F59E0B' : '#B45309' }}>
+              🧭 경로 탐색
+            </div>
+            {acceptedQuest?.latitude != null && acceptedQuest?.longitude != null ? (
+              <>
+                <a
+                  href={`https://map.kakao.com/link/to/${encodeURIComponent(acceptedQuest.name)},${acceptedQuest.latitude},${acceptedQuest.longitude}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{ textDecoration: 'none' }}
+                >
+                  <button
+                    type="button"
+                    style={{
+                      width: '100%',
+                      padding: 14,
+                      background: isDarkMode ? 'rgba(255,255,255,0.08)' : '#FFF',
+                      border: `1px solid ${borderColor}`,
+                      borderRadius: 12,
+                      color: '#E8740C',
+                      fontWeight: 600,
+                      fontSize: 14,
+                      cursor: 'pointer',
+                      marginBottom: 10,
+                    }}
+                  >
+                    📍 카카오맵으로 길찾기
+                  </button>
+                </a>
+                <button
+                  type="button"
+                  onClick={handleArrivalCheck}
+                  disabled={arrivalCheckLoading || checklist[0]}
+                  style={{
+                    width: '100%',
+                    padding: 14,
+                    background: checklist[0]
+                      ? (isDarkMode ? 'rgba(16,185,129,0.2)' : '#D1FAE5')
+                      : 'linear-gradient(135deg, #E8740C, #C65D00)',
+                    border: 'none',
+                    borderRadius: 12,
+                    color: checklist[0] ? (isDarkMode ? '#6EE7B7' : '#059669') : '#fff',
+                    fontWeight: 600,
+                    fontSize: 14,
+                    cursor: arrivalCheckLoading || checklist[0] ? 'default' : 'pointer',
+                    opacity: arrivalCheckLoading ? 0.8 : 1,
+                  }}
+                >
+                  {checklist[0] ? '✅ 장소 도착 완료' : arrivalCheckLoading ? '위치 확인 중...' : `도착했어요 (${ARRIVAL_THRESHOLD_METERS}m 이내)`}
+                </button>
+                {arrivalMessage && (
+                  <div style={{ marginTop: 10, fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.7)' : '#6B7280' }}>
+                    {arrivalMessage}
+                  </div>
+                )}
+              </>
+            ) : (
+              <p style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.5)' : '#9CA3AF' }}>
+                이 장소는 경로 탐색/도착 인정을 지원하지 않아요. 체크리스트에서 직접 완료해주세요.
+              </p>
+            )}
           </div>
 
           <div style={{ background: isDarkMode ? 'rgba(232,116,12,0.1)' : '#FEF3C7', border: '1px solid rgba(232,116,12,0.3)', borderRadius: 16, padding: 20, marginBottom: 16 }}>
