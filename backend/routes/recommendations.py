@@ -142,12 +142,12 @@ async def get_recommendations(request: RecommendationRequest):
             # 방문 기록 조회 실패 시에도 추천 자체는 계속 진행
             completed_place_ids = set()
 
-        # DB에서 장소 가져오기
+        # DB에서 장소 가져오기 (추천 3곳 채우기 위해 충분히 많이 조회)
         places = await helpers.get_places_nearby(
             request.current_location.latitude,
             request.current_location.longitude,
             radius,
-            50
+            250
         )
 
         if places and len(places) > 0:
@@ -317,6 +317,15 @@ async def get_recommendations(request: RecommendationRequest):
                 if len(selected_wrapped) >= 3:
                     break
                 add_if_new(c)
+
+            # 3곳 미만이면 점수 순으로 남은 후보에서 채우기 (항상 3곳 노출)
+            if len(selected_wrapped) < 3:
+                remaining = [c for c in candidates if c["place"].get("id") not in selected_ids]
+                remaining.sort(key=lambda c: c["score"], reverse=True)
+                for c in remaining:
+                    if len(selected_wrapped) >= 3:
+                        break
+                    add_if_new(c)
 
             random.shuffle(selected_wrapped)
             selected = [c["place"] for c in selected_wrapped]

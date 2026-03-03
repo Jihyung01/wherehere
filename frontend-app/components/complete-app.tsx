@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
+import Script from 'next/script'
 import { useQuery } from '@tanstack/react-query'
 import { getRecommendations } from '@/lib/api-client'
 import { useUser } from '@/hooks/useUser'
@@ -9,6 +10,12 @@ import { useAuth } from '@/hooks/useAuth'
 import { ChallengeCard } from './challenge-card'
 import { PersonalityProfile } from './personality-profile'
 import { ShareButton } from './share-button'
+
+declare global {
+  interface Window {
+    kakao: any
+  }
+}
 
 type Screen = 'role' | 'mood' | 'quests' | 'accepted' | 'checkin' | 'review' | 'challenges' | 'profile' | 'social' | 'settings'
 type RoleType = 'explorer' | 'healer' | 'artist' | 'foodie' | 'challenger'
@@ -33,7 +40,7 @@ const MOODS = [
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
 /** 도착 인정 거리(미터): 이 거리 이내면 "장소 도착하기" 조건 충족 */
-const ARRIVAL_THRESHOLD_METERS = 200
+const ARRIVAL_THRESHOLD_METERS = 100
 
 function getDistanceMeters(
   lat1: number,
@@ -87,6 +94,8 @@ export function CompleteApp() {
   const [showHelpSettings, setShowHelpSettings] = useState(false)
   const [arrivalCheckLoading, setArrivalCheckLoading] = useState(false)
   const [arrivalMessage, setArrivalMessage] = useState<string | null>(null)
+  const [kakaoMapLoaded, setKakaoMapLoaded] = useState(false)
+  const routeMapContainerRef = useRef<HTMLDivElement>(null)
 
   // 테마 로드 및 저장
   useEffect(() => {
@@ -114,11 +123,55 @@ export function CompleteApp() {
     setArrivalMessage(null)
   }, [acceptedQuest?.place_id])
 
+  // 앱 내 경로 지도: 출발(현재위치) → 목적지 마커 + 경로선
+  useEffect(() => {
+    if (screen !== 'accepted' || !acceptedQuest?.latitude || !acceptedQuest?.longitude || !kakaoMapLoaded || !routeMapContainerRef.current || !window.kakao?.maps) return
+    const el = routeMapContainerRef.current
+    while (el.firstChild) el.removeChild(el.firstChild)
+    const startLat = userLocation.lat
+    const startLng = userLocation.lng
+    const endLat = acceptedQuest.latitude
+    const endLng = acceptedQuest.longitude
+    const centerLat = (startLat + endLat) / 2
+    const centerLng = (startLng + endLng) / 2
+    try {
+      const map = new window.kakao.maps.Map(el, {
+        center: new window.kakao.maps.LatLng(centerLat, centerLng),
+        level: 5,
+      })
+      const startPos = new window.kakao.maps.LatLng(startLat, startLng)
+      const endPos = new window.kakao.maps.LatLng(endLat, endLng)
+      new window.kakao.maps.Marker({ position: startPos, map, title: '현재 위치' })
+      new window.kakao.maps.Marker({ position: endPos, map, title: acceptedQuest.name || '목적지' })
+      const path = [startPos, endPos]
+      const polyline = new window.kakao.maps.Polyline({
+        path,
+        strokeWeight: 4,
+        strokeColor: '#E8740C',
+        strokeOpacity: 0.9,
+        strokeStyle: 'solid',
+      })
+      polyline.setMap(map)
+    } catch (e) {
+      console.warn('Route map init failed:', e)
+    }
+  }, [screen, acceptedQuest?.place_id, acceptedQuest?.latitude, acceptedQuest?.longitude, acceptedQuest?.name, userLocation.lat, userLocation.lng, kakaoMapLoaded])
+
   const { data: questsData, isLoading: questsLoading } = useQuery({
     queryKey: ['recommendations', userLocation.lat, userLocation.lng, selectedRole, selectedMood],
     queryFn: () => getRecommendations(userLocation.lat, userLocation.lng, selectedRole!, selectedMood!),
     enabled: !!selectedRole && !!selectedMood && screen === 'quests',
     retry: 1,
+  })
+
+  const { data: userStats, refetch: refetchUserStats } = useQuery({
+    queryKey: ['userStats', userId],
+    queryFn: async () => {
+      const res = await fetch(`${API_BASE}/api/v1/users/me/stats`)
+      if (!res.ok) return null
+      return res.json()
+    },
+    enabled: screen === 'profile' && !!userId,
   })
 
   const handleCheckIn = async () => {
@@ -150,17 +203,25 @@ export function CompleteApp() {
           rating: reviewData.rating,
           mood: selectedMood,
           spent_amount: null,
-          companions: 1
+          companions: 1,
+          user_latitude: userLocation.lat,
+          user_longitude: userLocation.lng,
         })
       })
       
-      const data = await response.json()
+      const data = await response.json().catch(() => ({}))
       console.log('방문 기록 응답:', data)
+      
+      if (response.status === 400 && data.detail) {
+        alert(data.detail)
+        return
+      }
       
       if (data.success) {
         // 성공 알림 - 더 명확하게
         const xpEarned = data.xp_earned || 100
-        alert(`🎉 방문 완료!\n\n+${xpEarned} XP 획득\n총 XP는 "나의 지도"에서 확인하세요!`)
+        const locBonus = data.location_verified ? '\n📍 위치 인증 보너스 적용!' : ''
+        alert(`🎉 방문 완료!\n\n+${xpEarned} XP 획득${locBonus}\n총 XP는 프로필에서 확인하세요!`)
         
         // 상태 초기화
         setReviewData({ rating: 0, review: '', photos: [] })
@@ -280,7 +341,7 @@ export function CompleteApp() {
     setChecklist(newChecklist)
   }
 
-  // 도착 인정: 현재 위치가 목적지 200m 이내면 "장소 도착하기" 체크
+  // 도착 인정: 현재 위치가 목적지 100m 이내면 "장소 도착하기" 체크
   const handleArrivalCheck = () => {
     const quest = acceptedQuest
     if (!quest || quest.latitude == null || quest.longitude == null) {
@@ -556,13 +617,43 @@ export function CompleteApp() {
             </div>
           </div>
 
-          {/* 경로 탐색: 카카오맵 길찾기 + 도착 인정 */}
+          {/* 경로 탐색: 앱 내 지도에 경로 표시 + 카카오맵 길찾기 + 도착 인정 */}
           <div style={{ background: cardBg, border: `1px solid ${borderColor}`, borderRadius: 16, padding: 20, marginBottom: 16 }}>
             <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 12, color: isDarkMode ? '#F59E0B' : '#B45309' }}>
               🧭 경로 탐색
             </div>
             {acceptedQuest?.latitude != null && acceptedQuest?.longitude != null ? (
               <>
+                {/* 카카오맵 스크립트 (수락한 퀘스트 화면에서만 로드) */}
+                {!kakaoMapLoaded && (
+                  <Script
+                    src={`https://dapi.kakao.com/v2/maps/sdk.js?appkey=${process.env.NEXT_PUBLIC_KAKAO_MAP_KEY || '160238a590f3d2957230d764fb745322'}&autoload=false`}
+                    strategy="afterInteractive"
+                    onLoad={() => {
+                      if (typeof window !== 'undefined' && window.kakao?.maps?.load) {
+                        window.kakao.maps.load(() => setKakaoMapLoaded(true))
+                      }
+                    }}
+                  />
+                )}
+                {/* 앱 내 지도: 현재 위치 → 목적지 경로 표시 */}
+                <div
+                  ref={routeMapContainerRef}
+                  style={{
+                    width: '100%',
+                    height: 200,
+                    borderRadius: 12,
+                    marginBottom: 12,
+                    overflow: 'hidden',
+                    background: isDarkMode ? '#1a1d24' : '#e5e7eb',
+                    border: `1px solid ${borderColor}`,
+                  }}
+                />
+                {kakaoMapLoaded && (
+                  <div style={{ fontSize: 11, color: isDarkMode ? 'rgba(255,255,255,0.5)' : '#9CA3AF', marginBottom: 10 }}>
+                    지도 위 선: 현재 위치 → 목적지
+                  </div>
+                )}
                 <a
                   href={`https://map.kakao.com/link/to/${encodeURIComponent(acceptedQuest.name)},${acceptedQuest.latitude},${acceptedQuest.longitude}`}
                   target="_blank"
@@ -877,9 +968,63 @@ export function CompleteApp() {
 
   // 프로필 화면
   if (screen === 'profile') {
+    const level = userStats?.level ?? 1
+    const totalXP = userStats?.total_xp ?? 0
+    const nextXP = userStats?.xp_to_next_level ?? 1000
+    const xpProgress = nextXP > 0 ? Math.min(100, (totalXP / nextXP) * 100) : 0
+    const streak = userStats?.current_streak ?? 0
+    const longestStreak = userStats?.longest_streak ?? 0
+    const completedQuests = userStats?.completed_quests ?? 0
+    const placesVisited = userStats?.total_places_visited ?? 0
+
     return (
       <div style={{ maxWidth: 430, margin: '0 auto', minHeight: '100vh', background: bgColor, color: textColor, fontFamily: 'Pretendard, sans-serif' }}>
         <div style={{ padding: '60px 20px 120px' }}>
+          {/* 레벨 & XP 진행바 */}
+          <div style={{
+            background: isDarkMode ? 'linear-gradient(135deg, rgba(232,116,12,0.15), rgba(232,116,12,0.05))' : 'linear-gradient(135deg, #FEF3C7, #FFFBEB)',
+            border: '1px solid rgba(232,116,12,0.3)',
+            borderRadius: 16,
+            padding: 20,
+            marginBottom: 20,
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <span style={{ fontSize: 14, fontWeight: 700, color: '#E8740C' }}>레벨 & XP</span>
+              <span style={{ fontSize: 18, fontWeight: 800, color: '#E8740C' }}>Lv.{level}</span>
+            </div>
+            <div style={{
+              height: 12,
+              borderRadius: 6,
+              background: isDarkMode ? 'rgba(0,0,0,0.2)' : 'rgba(0,0,0,0.08)',
+              overflow: 'hidden',
+              marginBottom: 8,
+            }}>
+              <div style={{
+                width: `${xpProgress}%`,
+                height: '100%',
+                background: 'linear-gradient(90deg, #E8740C, #F59E0B)',
+                borderRadius: 6,
+                transition: 'width 0.3s ease',
+              }} />
+            </div>
+            <div style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.7)' : '#6B7280' }}>
+              {totalXP.toLocaleString()} / {nextXP.toLocaleString()} XP
+              {nextXP > totalXP && (
+                <span style={{ marginLeft: 8 }}>· 다음 레벨까지 {(nextXP - totalXP).toLocaleString()} XP</span>
+              )}
+            </div>
+            <div style={{ display: 'flex', gap: 16, marginTop: 14, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280' }}>
+                🔥 연속 <strong style={{ color: textColor }}>{streak}</strong>일
+              </span>
+              <span style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280' }}>
+                📍 방문 <strong style={{ color: textColor }}>{placesVisited}</strong>곳
+              </span>
+              <span style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280' }}>
+                ✅ 퀘스트 <strong style={{ color: textColor }}>{completedQuests}</strong>개 완료
+              </span>
+            </div>
+          </div>
           <PersonalityProfile userId={userId} />
         </div>
         <BottomNav />

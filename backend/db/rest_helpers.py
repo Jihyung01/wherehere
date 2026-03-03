@@ -28,9 +28,9 @@ class RestDatabaseHelpers:
         latitude: float,
         longitude: float,
         radius_meters: int = 3000,
-        limit: int = 50
+        limit: int = 200
     ) -> List[Dict[str, Any]]:
-        """주변 장소 조회"""
+        """주변 장소 조회 (추천 3곳 채우기 위해 기본 200건)"""
         async with httpx.AsyncClient(timeout=30.0) as client:
             url = f"{self.base_url}/rest/v1/places"
             params = {

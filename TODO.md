@@ -30,28 +30,28 @@
 
 ## 🎯 지금 할 수 있는 일 (우선순위)
 
-### [ ] 1. places 실데이터 채우기 (스키마만 있으면 다음 단계)
+### [x] 1. places 실데이터 채우기 (스키마만 있으면 다음 단계)
 
-- 스키마는 적용됐고, **places가 비어 있으면** 추천/나의 지도에 쓸 장소가 없음
-- **할 일**: `python scripts/collect_simple.py` 실행 (터미널에서 KAKAO + Supabase 키 설정 후)
-- **가이드**: [docs/실데이터_설정_가이드.md](docs/실데이터_설정_가이드.md) 2단계
+- 스키마 적용 후 **places 3000곳 이상 수집 완료** 시 완료로 간주
+- 수집 방법: `python scripts/collect_simple.py` (KAKAO + Supabase 키 설정 후), [docs/실데이터_설정_가이드.md](docs/실데이터_설정_가이드.md) 2단계
 
 ### [ ] 2. 추천 엔진 고도화 (선택)
 
 - **이미 구현된 것**: DB `places`에서 장소 조회 → 거리·역할·카테고리 반영 스코어링 → 상위 추천
 - **고도화** = 개선 단계: PostGIS로 DB에서 거리 필터링 쿼리, 더 세밀한 스코어링 등 (필요 시)
 
-### [ ] 3. 퀘스트 Geofencing
+### [x] 3. 퀘스트 Geofencing (일부 완료)
 
-- 체크인 시 **위치 검증** (실제로 그 장소 근처인지), XP 보상 계산 정교화
+- [x] **도착 인정**: 퀘스트 화면에서 100m 이내일 때 "도착했어요" 버튼으로 "장소 도착하기" 자동 체크 (프론트)
+- [x] **체크인 API 위치 검증**: POST /visits 시 `user_latitude`/`user_longitude` 전달하면 100m 이내만 체크인 허용, 위치 검증 시 XP 보너스
 
-### [ ] 4. AI 서사 생성
+### [x] 4. AI 서사 생성
 
-- Claude API 연동, 서사 생성 API·프론트
+- [x] Claude API 연동 (`backend/services/narrative_generator.py`), 추천 API에서 서사 배치 생성·응답 포함, 프론트에서 퀘스트 서사 표시
 
-### [ ] 5. 레벨 & XP UI
+### [x] 5. 레벨 & XP UI
 
-- 프로필 진행바, 업적 배지, 스트릭 표시
+- [x] 프로필 화면에 레벨·XP 진행바, 스트릭(연속 방문일) 표시 (GET /api/v1/users/me/stats 연동)
 
 ---
 

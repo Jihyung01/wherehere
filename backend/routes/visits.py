@@ -3,6 +3,7 @@
 방문 기록 API
 """
 
+import math
 from fastapi import APIRouter, HTTPException, Depends
 from typing import List, Optional
 from datetime import datetime, timedelta
@@ -11,6 +12,22 @@ from pydantic import BaseModel
 from core.dependencies import get_db
 
 router = APIRouter(prefix="/api/v1/visits", tags=["Visits"])
+
+# 체크인 허용 거리(미터). 이 거리 이내일 때만 서버에서 체크인 허용
+CHECKIN_RADIUS_METERS = 100
+
+
+def _distance_meters(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Haversine 거리(미터)"""
+    R = 6371000
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+    a = (
+        math.sin(dlat / 2) ** 2
+        + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2) ** 2
+    )
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+    return R * c
 
 
 class VisitCreate(BaseModel):
@@ -21,6 +38,8 @@ class VisitCreate(BaseModel):
     mood: Optional[str] = None
     spent_amount: Optional[int] = None
     companions: int = 1
+    user_latitude: Optional[float] = None
+    user_longitude: Optional[float] = None
 
 
 @router.get("/{user_id}")
@@ -99,7 +118,7 @@ async def create_visit(
     visit: VisitCreate,
     db = Depends(get_db)
 ):
-    """방문 기록 생성"""
+    """방문 기록 생성. user_latitude/user_longitude 있으면 100m 이내에서만 체크인 허용."""
     
     try:
         if db is None:
@@ -108,12 +127,34 @@ async def create_visit(
                 "message": "Database not connected"
             }
         
-        # XP 계산
+        location_verified = False
+        if visit.user_latitude is not None and visit.user_longitude is not None:
+            place = await db.get_place_by_id(visit.place_id)
+            if place:
+                plat = place.get("latitude")
+                plon = place.get("longitude")
+                if plat is not None and plon is not None:
+                    dist = _distance_meters(
+                        visit.user_latitude,
+                        visit.user_longitude,
+                        float(plat),
+                        float(plon),
+                    )
+                    if dist > CHECKIN_RADIUS_METERS:
+                        raise HTTPException(
+                            status_code=400,
+                            detail=f"체크인은 장소 {CHECKIN_RADIUS_METERS}m 이내에서만 가능해요. (현재 약 {int(dist)}m)"
+                        )
+                    location_verified = True
+        
+        # XP 계산: 기본 + 체류시간 보너스 + 별점 보너스 + 위치 검증 보너스
         xp_earned = 100
         if visit.duration_minutes > 60:
             xp_earned += 50
-        if visit.rating and visit.rating >= 4.0:
+        if visit.rating is not None and visit.rating >= 4.0:
             xp_earned += 30
+        if location_verified:
+            xp_earned += 20
         
         visit_data = {
             "user_id": visit.user_id,
@@ -132,9 +173,12 @@ async def create_visit(
         return {
             "success": True,
             "visit_id": result.get("id"),
-            "xp_earned": xp_earned
+            "xp_earned": xp_earned,
+            "location_verified": location_verified
         }
     
+    except HTTPException:
+        raise
     except Exception as e:
         import logging
         logger = logging.getLogger("uvicorn.error")
