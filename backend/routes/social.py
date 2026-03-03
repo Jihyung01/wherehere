@@ -14,6 +14,7 @@ from pydantic import BaseModel
 from services.social_matching import SocialMatchingService
 from services.social_share import SocialShareService
 from core.dependencies import get_db
+from services.push_service import send_push_for_user
 
 
 router = APIRouter(prefix="/api/v1/social", tags=["Social"])
@@ -312,3 +313,109 @@ async def update_social_profile(
         avatar_url=req.avatar_url,
     )
     return {"success": ok}
+
+
+# ============================================================
+# DM / 채팅
+# ============================================================
+
+
+class ChatStartRequest(BaseModel):
+    user_id: str
+    target_id: str
+
+
+class ChatMessageCreate(BaseModel):
+    conversation_id: str
+    sender_id: str
+    body: str
+
+
+@router.post("/chat/start")
+async def start_chat(
+    req: ChatStartRequest,
+    db=Depends(get_db)
+):
+    """
+    두 사용자 사이의 대화를 시작하거나 기존 대화 반환.
+    """
+    if db is None:
+        raise HTTPException(status_code=500, detail="DB not connected")
+    try:
+        conv = await db.get_or_create_conversation(req.user_id, req.target_id)
+        if not conv:
+            raise HTTPException(status_code=500, detail="대화를 시작할 수 없습니다.")
+        return conv
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/chat/messages")
+async def get_chat_messages(
+    conversation_id: str,
+    limit: int = 50,
+    before: Optional[str] = None,
+    db=Depends(get_db)
+):
+    """
+    대화 메시지 목록 조회 (최신순, 최대 50개)
+    """
+    if db is None:
+        return {"messages": []}
+    try:
+        msgs = await db.get_messages(conversation_id, limit=limit, before=before)
+        return {"messages": msgs}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/chat/messages")
+async def send_chat_message(
+    req: ChatMessageCreate,
+    db=Depends(get_db)
+):
+    """
+    채팅 메시지 전송
+    - messages 테이블에 저장
+    - 상대방에게 알림(Notification) 생성
+    """
+    if db is None:
+        raise HTTPException(status_code=500, detail="DB not connected")
+    if not req.body.strip():
+        raise HTTPException(status_code=400, detail="메시지가 비어 있습니다.")
+    try:
+        conv = await db.get_conversation(req.conversation_id)
+        if not conv:
+            raise HTTPException(status_code=404, detail="대화를 찾을 수 없습니다.")
+        # 메시지 저장
+        message = await db.insert_message(req.conversation_id, req.sender_id, req.body.strip())
+        # 상대방 ID 계산
+        user_a_id = str(conv.get("user_a_id"))
+        user_b_id = str(conv.get("user_b_id"))
+        if req.sender_id == user_a_id:
+            receiver_id = user_b_id
+        else:
+            receiver_id = user_a_id
+        # 알림 생성 (실제 푸시는 별도)
+        try:
+            snippet = req.body.strip()
+            if len(snippet) > 40:
+                snippet = snippet[:40] + "…"
+            await db.create_notification(
+                receiver_id,
+                "dm_new",
+                "새 메시지가 도착했어요",
+                snippet,
+                {"conversation_id": req.conversation_id, "sender_id": req.sender_id},
+            )
+            await send_push_for_user(db, receiver_id, "새 메시지가 도착했어요", snippet)
+        except Exception:
+            # 알림 실패는 채팅 자체를 막지는 않음
+            pass
+        return {"success": True, "message": message}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

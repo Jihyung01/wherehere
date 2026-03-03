@@ -7,6 +7,7 @@ asyncpg 대신 HTTP API 사용
 import httpx
 from typing import List, Dict, Any, Optional
 from datetime import datetime
+from urllib.parse import quote
 from core.config import settings
 
 
@@ -325,6 +326,35 @@ class RestDatabaseHelpers:
             response = await client.patch(url, headers=self.headers, json={"read": True})
             return response.status_code in (200, 204)
 
+    # ---------- Web Push 구독 ----------
+    async def get_push_subscriptions(self, user_id: str) -> List[Dict[str, Any]]:
+        """사용자 푸시 구독 목록"""
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            url = f"{self.base_url}/rest/v1/push_subscriptions"
+            params = {"user_id": f"eq.{user_id}", "select": "endpoint,p256dh,auth"}
+            response = await client.get(url, headers=self.headers, params=params)
+            if response.status_code == 200:
+                return response.json()
+            return []
+
+    async def save_push_subscription(
+        self, user_id: str, endpoint: str, p256dh: str, auth: str
+    ) -> bool:
+        """푸시 구독 저장 (endpoint 기준 upsert)"""
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            # 기존 동일 endpoint 있으면 삭제 후 삽입 (간단 upsert)
+            del_url = f"{self.base_url}/rest/v1/push_subscriptions?endpoint=eq.{quote(endpoint, safe='')}"
+            await client.delete(del_url, headers=self.headers)
+            url = f"{self.base_url}/rest/v1/push_subscriptions"
+            payload = {
+                "user_id": user_id,
+                "endpoint": endpoint,
+                "p256dh": p256dh,
+                "auth": auth,
+            }
+            response = await client.post(url, headers=self.headers, json=payload)
+            return response.status_code in (200, 201)
+
     # ---------- 소셜: 팔로우 ----------
     async def follow_user(self, follower_id: str, following_id: str) -> bool:
         """팔로우 추가 (자기 자신은 불가)"""
@@ -393,6 +423,103 @@ class RestDatabaseHelpers:
             if response.status_code != 200:
                 return []
             return response.json()
+
+    # ---------- 소셜: 채팅 (conversations / messages) ----------
+
+    async def get_or_create_conversation(self, user_a_id: str, user_b_id: str) -> Optional[Dict[str, Any]]:
+        """
+        두 사용자 사이의 대화를 가져오거나 없으면 생성.
+        conversations 테이블은 (user_a_id, user_b_id) 쌍으로 한 번만 존재한다고 가정.
+        """
+        if not user_a_id or not user_b_id or user_a_id == user_b_id:
+            return None
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            base = f"{self.base_url}/rest/v1/conversations"
+            # 1) (user_a_id, user_b_id) 조합 검색
+            async def _find(a: str, b: str) -> Optional[Dict[str, Any]]:
+                params = {
+                    "select": "*",
+                    "user_a_id": f"eq.{a}",
+                    "user_b_id": f"eq.{b}",
+                    "limit": 1,
+                }
+                resp = await client.get(base, headers=self.headers, params=params)
+                if resp.status_code == 200:
+                    rows = resp.json()
+                    return rows[0] if rows else None
+                return None
+
+            existing = await _find(user_a_id, user_b_id)
+            if not existing:
+                existing = await _find(user_b_id, user_a_id)
+            if existing:
+                return existing
+
+            # 없으면 새 대화 생성
+            payload = {
+                "user_a_id": user_a_id,
+                "user_b_id": user_b_id,
+            }
+            resp = await client.post(base, headers=self.headers, json=payload)
+            if resp.status_code in (200, 201):
+                out = resp.json()
+                return out[0] if isinstance(out, list) else out
+            return None
+
+    async def get_conversation(self, conversation_id: str) -> Optional[Dict[str, Any]]:
+        """대화 한 건 조회"""
+        if not conversation_id:
+            return None
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            url = f"{self.base_url}/rest/v1/conversations"
+            params = {"select": "*", "id": f"eq.{conversation_id}", "limit": 1}
+            resp = await client.get(url, headers=self.headers, params=params)
+            if resp.status_code != 200:
+                return None
+            rows = resp.json()
+            return rows[0] if rows else None
+
+    async def get_messages(self, conversation_id: str, limit: int = 50, before: Optional[str] = None) -> List[Dict[str, Any]]:
+        """대화의 메시지 목록"""
+        if not conversation_id:
+            return []
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            url = f"{self.base_url}/rest/v1/messages"
+            params: Dict[str, Any] = {
+                "select": "*",
+                "conversation_id": f"eq.{conversation_id}",
+                "order": "created_at.desc",
+                "limit": limit,
+            }
+            if before:
+                params["created_at"] = f"lt.{before}"
+            resp = await client.get(url, headers=self.headers, params=params)
+            if resp.status_code != 200:
+                return []
+            return resp.json()
+
+    async def insert_message(self, conversation_id: str, sender_id: str, body: str) -> Optional[Dict[str, Any]]:
+        """메시지 한 건 저장"""
+        if not conversation_id or not sender_id or not body:
+            return None
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            url = f"{self.base_url}/rest/v1/messages"
+            payload = {
+                "conversation_id": conversation_id,
+                "sender_id": sender_id,
+                "body": body,
+            }
+            resp = await client.post(url, headers=self.headers, json=payload)
+            if resp.status_code not in (200, 201):
+                return None
+            out = resp.json()
+            # last_message_at 업데이트
+            await client.patch(
+                f"{self.base_url}/rest/v1/conversations?id=eq.{conversation_id}",
+                headers=self.headers,
+                json={"last_message_at": datetime.utcnow().isoformat()},
+            )
+            return out[0] if isinstance(out, list) else out
 
     # ---------- 소셜: 사용자 검색 & 프로필 ----------
     async def search_public_users(self, query: str, limit: int = 20) -> List[Dict[str, Any]]:

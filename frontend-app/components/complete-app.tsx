@@ -6,6 +6,7 @@ import Script from 'next/script'
 import { useQuery } from '@tanstack/react-query'
 import { getRecommendations } from '@/lib/api-client'
 import { useUser } from '@/hooks/useUser'
+import { createClient } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
 import { ChallengeCard } from './challenge-card'
 import { PersonalityProfile } from './personality-profile'
@@ -17,7 +18,7 @@ declare global {
   }
 }
 
-type Screen = 'role' | 'mood' | 'quests' | 'accepted' | 'checkin' | 'review' | 'challenges' | 'profile' | 'social' | 'settings'
+type Screen = 'role' | 'mood' | 'quests' | 'accepted' | 'checkin' | 'review' | 'challenges' | 'profile' | 'social' | 'chat' | 'settings'
 type RoleType = 'explorer' | 'healer' | 'artist' | 'foodie' | 'challenger'
 type MoodType = 'curious' | 'tired' | 'creative' | 'hungry' | 'adventurous'
 
@@ -108,6 +109,10 @@ export function CompleteApp() {
   const [friendQuery, setFriendQuery] = useState('')
   const [friendSearchResults, setFriendSearchResults] = useState<any[]>([])
   const [friendSearchLoading, setFriendSearchLoading] = useState(false)
+  const [currentConversation, setCurrentConversation] = useState<any | null>(null)
+  const [chatMessages, setChatMessages] = useState<any[]>([])
+  const [chatLoading, setChatLoading] = useState(false)
+  const [chatInput, setChatInput] = useState('')
 
   // 온보딩: 이미 본 적 있으면 건너뛰기
   useEffect(() => {
@@ -285,11 +290,88 @@ export function CompleteApp() {
       return res.json()
     },
     enabled: !!userId,
-    refetchInterval: 60000,
   })
   const notifications = notificationsData?.notifications ?? []
   const unreadCount = notificationsData?.unread_count ?? 0
   const [showNotificationPanel, setShowNotificationPanel] = useState(false)
+
+  // Supabase Realtime: 알림 테이블 구독 → 새 알림 시 즉시 refetch
+  useEffect(() => {
+    if (!userId) return
+    const supabase = createClient()
+    if (typeof (supabase as any).channel !== 'function') return
+    const channel = (supabase as any)
+      .channel('notifications-' + userId)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'notifications',
+          filter: 'user_id=eq.' + userId,
+        },
+        () => refetchNotifications()
+      )
+      .subscribe()
+    return () => {
+      (supabase as any).removeChannel(channel)
+    }
+  }, [userId, refetchNotifications])
+
+  // Web Push: 권한 요청 후 구독 등록 (VAPID 공개키 설정 시에만)
+  useEffect(() => {
+    const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
+    if (!userId || !vapidKey || typeof window === 'undefined' || !('serviceWorker' in navigator) || !('PushManager' in window)) return
+    const urlBase64ToUint8Array = (base64: string) => {
+      const padding = '='.repeat((4 - (base64.length % 4)) % 4)
+      const base64Safe = (base64 + padding).replace(/-/g, '+').replace(/_/g, '/')
+      const raw = atob(base64Safe)
+      const out = new Uint8Array(raw.length)
+      for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i)
+      return out
+    }
+    const arrayBufferToBase64Url = (buffer: ArrayBuffer) => {
+      const bytes = new Uint8Array(buffer)
+      let binary = ''
+      for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i])
+      return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+    }
+    let cancelled = false
+    navigator.serviceWorker.register('/sw.js')
+      .then(() => Notification.requestPermission())
+      .then((perm) => perm === 'granted' ? navigator.serviceWorker.ready : Promise.reject(new Error('denied')))
+      .then((reg) => reg.pushManager.getSubscription())
+      .then((sub) => {
+        if (cancelled) return
+        if (sub) return sub
+        return navigator.serviceWorker.ready.then((reg) =>
+          reg.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: urlBase64ToUint8Array(vapidKey),
+          })
+        )
+      })
+      .then((sub) => {
+        if (!sub || cancelled) return
+        const payload = {
+          user_id: userId,
+          subscription: {
+            endpoint: sub.endpoint,
+            keys: {
+              p256dh: arrayBufferToBase64Url(sub.getKey('p256dh')!),
+              auth: arrayBufferToBase64Url(sub.getKey('auth')!),
+            },
+          },
+        }
+        return fetch(`${API_BASE}/api/v1/push/subscribe`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        })
+      })
+      .catch(() => { /* 권한 거부 등 무시 */ })
+    return () => { cancelled = true }
+  }, [userId])
 
   const { data: feedData, refetch: refetchFeed } = useQuery({
     queryKey: ['socialFeed', userId],
@@ -335,6 +417,99 @@ export function CompleteApp() {
       }
     } catch (_) {
       // noop
+    }
+  }
+
+  // 채팅 메시지: Supabase Realtime 구독 또는 폴링
+  useEffect(() => {
+    let timer: ReturnType<typeof setInterval> | undefined
+    const convId = currentConversation?.id
+    const loadMessages = async () => {
+      if (screen !== 'chat' || !convId) return
+      try {
+        const res = await fetch(`${API_BASE}/api/v1/social/chat/messages?conversation_id=${encodeURIComponent(convId)}&limit=50`)
+        const data = await res.json().catch(() => ({ messages: [] }))
+        const list = (data.messages || []).slice().reverse()
+        setChatMessages(list)
+      } catch (_) {
+        // ignore
+      }
+    }
+    if (screen === 'chat' && convId) {
+      setChatLoading(true)
+      loadMessages().finally(() => setChatLoading(false))
+      const supabase = createClient()
+      if (typeof (supabase as any).channel === 'function') {
+        const channel = (supabase as any)
+          .channel('messages-' + convId)
+          .on(
+            'postgres_changes',
+            { event: 'INSERT', schema: 'public', table: 'messages', filter: 'conversation_id=eq.' + convId },
+            () => loadMessages()
+          )
+          .subscribe()
+        return () => (supabase as any).removeChannel(channel)
+      }
+      timer = setInterval(loadMessages, 5000)
+    }
+    return () => {
+      if (timer) clearInterval(timer)
+    }
+  }, [screen, currentConversation?.id])
+
+  const openChatWithUser = async (targetUser: any) => {
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/social/chat/start`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: userId, target_id: targetUser.user_id }),
+      })
+      const conv = await res.json()
+      if (!conv?.id) return
+      setCurrentConversation({
+        id: conv.id,
+        user_a_id: conv.user_a_id,
+        user_b_id: conv.user_b_id,
+        other: {
+          user_id: targetUser.user_id,
+          display_name: targetUser.display_name || targetUser.username || '친구',
+          avatar_url: targetUser.avatar_url,
+          code: targetUser.code ?? String(targetUser.user_id).slice(0, 8),
+        },
+      })
+      setScreen('chat')
+    } catch (_) {
+      // noop
+    }
+  }
+
+  const sendChatMessage = async () => {
+    const text = chatInput.trim()
+    if (!text || !currentConversation?.id) return
+    setChatInput('')
+    try {
+      await fetch(`${API_BASE}/api/v1/social/chat/messages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          conversation_id: currentConversation.id,
+          sender_id: userId,
+          body: text,
+        }),
+      })
+      // 낙관적 업데이트: 바로 리스트에 추가
+      setChatMessages((prev) => [
+        ...prev,
+        {
+          id: `local-${Date.now()}`,
+          conversation_id: currentConversation.id,
+          sender_id: userId,
+          body: text,
+          created_at: new Date().toISOString(),
+        },
+      ])
+    } catch (_) {
+      // 실패해도 치명적이진 않음
     }
   }
 
@@ -1401,23 +1576,42 @@ export function CompleteApp() {
                           </div>
                         </div>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => toggleFollow(u.user_id, !!u.is_following)}
-                        style={{
-                          padding: '8px 12px',
-                          borderRadius: 999,
-                          border: u.is_following ? `1px solid ${borderColor}` : 'none',
-                          background: u.is_following ? 'transparent' : '#E8740C',
-                          color: u.is_following ? textColor : '#fff',
-                          fontSize: 12,
-                          fontWeight: 600,
-                          cursor: 'pointer',
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        {u.is_following ? '팔로잉' : '팔로우'}
-                      </button>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-end' }}>
+                        <button
+                          type="button"
+                          onClick={() => toggleFollow(u.user_id, !!u.is_following)}
+                          style={{
+                            padding: '6px 12px',
+                            borderRadius: 999,
+                            border: u.is_following ? `1px solid ${borderColor}` : 'none',
+                            background: u.is_following ? 'transparent' : '#E8740C',
+                            color: u.is_following ? textColor : '#fff',
+                            fontSize: 11,
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          {u.is_following ? '팔로잉' : '팔로우'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => openChatWithUser(u)}
+                          style={{
+                            padding: '6px 12px',
+                            borderRadius: 999,
+                            border: `1px solid ${borderColor}`,
+                            background: 'transparent',
+                            color: textColor,
+                            fontSize: 11,
+                            fontWeight: 500,
+                            cursor: 'pointer',
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          채팅
+                        </button>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -1532,6 +1726,159 @@ export function CompleteApp() {
           <PersonalityProfile userId={userId} />
         </div>
         <BottomNav />
+      </div>
+    )
+  }
+
+  // 채팅 화면
+  if (screen === 'chat' && currentConversation) {
+    const other = currentConversation.other
+    return (
+      <div style={{ maxWidth: 430, margin: '0 auto', minHeight: '100vh', background: bgColor, color: textColor, fontFamily: 'Pretendard, sans-serif' }}>
+        <div style={{ padding: '20px 16px 90px' }}>
+          {/* 상단 헤더 */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+            <button
+              type="button"
+              onClick={() => setScreen('social')}
+              style={{ border: 'none', background: 'transparent', color: textColor, cursor: 'pointer', fontSize: 18 }}
+            >
+              ←
+            </button>
+            <div
+              style={{
+                width: 40,
+                height: 40,
+                borderRadius: '50%',
+                overflow: 'hidden',
+                background: 'linear-gradient(135deg, #E8740C, #F59E0B)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+              }}
+            >
+              {other?.avatar_url ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={other.avatar_url} alt={other.display_name || 'avatar'} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              ) : (
+                <span style={{ fontSize: 18, color: '#fff' }}>{(other?.display_name || '친구').slice(0, 1)}</span>
+              )}
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 15, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {other?.display_name || '친구'}
+              </div>
+              <div style={{ fontSize: 11, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280' }}>
+                코드 {other?.code}
+              </div>
+            </div>
+          </div>
+
+          {/* 메시지 리스트 */}
+          <div
+            style={{
+              borderRadius: 16,
+              border: `1px solid ${borderColor}`,
+              background: cardBg,
+              padding: 12,
+              height: 'calc(100vh - 180px)',
+              overflowY: 'auto',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 8,
+            }}
+          >
+            {chatLoading && chatMessages.length === 0 && (
+              <div style={{ textAlign: 'center', fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280', marginTop: 16 }}>메시지 불러오는 중...</div>
+            )}
+            {!chatLoading && chatMessages.length === 0 && (
+              <div style={{ textAlign: 'center', fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280', marginTop: 16 }}>
+                아직 대화가 없어요. 첫 메시지를 보내보세요!
+              </div>
+            )}
+            {chatMessages.map((m) => {
+              const isMine = m.sender_id === userId
+              return (
+                <div key={m.id} style={{ display: 'flex', justifyContent: isMine ? 'flex-end' : 'flex-start' }}>
+                  <div
+                    style={{
+                      maxWidth: '70%',
+                      padding: '8px 12px',
+                      borderRadius: 16,
+                      background: isMine ? '#E8740C' : (isDarkMode ? 'rgba(255,255,255,0.06)' : '#E5E7EB'),
+                      color: isMine ? '#fff' : textColor,
+                      fontSize: 13,
+                      lineHeight: 1.5,
+                      wordBreak: 'break-word',
+                    }}
+                  >
+                    {m.body}
+                    {m.created_at && (
+                      <div style={{ fontSize: 10, marginTop: 4, opacity: 0.7, textAlign: 'right' }}>
+                        {new Date(m.created_at).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+
+        {/* 입력창 */}
+        <div
+          style={{
+            position: 'fixed',
+            left: 0,
+            right: 0,
+            bottom: 0,
+            maxWidth: 430,
+            margin: '0 auto',
+            padding: '10px 12px 16px',
+            background: isDarkMode ? 'rgba(10,14,20,0.98)' : 'rgba(255,255,255,0.98)',
+            borderTop: `1px solid ${borderColor}`,
+            display: 'flex',
+            gap: 8,
+          }}
+        >
+          <input
+            value={chatInput}
+            onChange={(e) => setChatInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault()
+                sendChatMessage()
+              }
+            }}
+            placeholder="메시지를 입력하세요"
+            style={{
+              flex: 1,
+              padding: 10,
+              borderRadius: 999,
+              border: `1px solid ${borderColor}`,
+              background: isDarkMode ? 'rgba(0,0,0,0.3)' : '#F9FAFB',
+              color: textColor,
+              fontSize: 13,
+            }}
+          />
+          <button
+            type="button"
+            onClick={sendChatMessage}
+            style={{
+              padding: '10px 14px',
+              borderRadius: 999,
+              border: 'none',
+              background: chatInput.trim() ? '#E8740C' : (isDarkMode ? 'rgba(255,255,255,0.1)' : '#E5E7EB'),
+              color: chatInput.trim() ? '#fff' : (isDarkMode ? 'rgba(255,255,255,0.5)' : '#9CA3AF'),
+              fontSize: 13,
+              fontWeight: 600,
+              cursor: chatInput.trim() ? 'pointer' : 'default',
+            }}
+          >
+            전송
+          </button>
+        </div>
       </div>
     )
   }

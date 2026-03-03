@@ -10,6 +10,7 @@ from datetime import datetime, timedelta
 from pydantic import BaseModel
 
 from core.dependencies import get_db
+from services.push_service import send_push_for_user
 
 router = APIRouter(prefix="/api/v1/visits", tags=["Visits"])
 
@@ -177,6 +178,7 @@ async def create_visit(
                 f"+{xp_earned} XP를 획득했어요.",
                 {"xp_earned": xp_earned, "place_id": visit.place_id}
             )
+            await send_push_for_user(db, visit.user_id, "퀘스트 완료!", f"+{xp_earned} XP를 획득했어요.")
         except Exception:
             pass
         try:

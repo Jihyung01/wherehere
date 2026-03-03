@@ -39,6 +39,10 @@ class Settings(BaseSettings):
     # OpenWeatherMap
     OPENWEATHER_API_KEY: str = ""
 
+    # Web Push (VAPID) - optional; 없으면 푸시 전송 스킵
+    VAPID_PRIVATE_KEY: str = ""
+    VAPID_EMAIL: str = "mailto:admin@wherehere.app"
+
     # CORS
     ALLOWED_ORIGINS: Union[List[str], str] = [
         "http://localhost:3000",

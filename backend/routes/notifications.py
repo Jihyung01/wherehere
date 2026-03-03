@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from typing import Optional, List
 
 from core.dependencies import get_db
+from services.push_service import send_push_for_user
 
 router = APIRouter(prefix="/api/v1/notifications", tags=["notifications"])
 
@@ -39,6 +40,8 @@ async def create_notification(req: CreateNotificationRequest, db=Depends(get_db)
     if db is None:
         return {"success": False, "id": None}
     out = await db.create_notification(req.user_id, req.type, req.title, req.body, req.extra)
+    if out:
+        await send_push_for_user(db, req.user_id, req.title, req.body)
     return {"success": out is not None, "id": out.get("id") if out else None}
 
 
