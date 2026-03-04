@@ -12,6 +12,7 @@ import { ChallengeCard } from './challenge-card'
 import { PersonalityProfile } from './personality-profile'
 import { ShareButton } from './share-button'
 import { LocalHub } from './local/LocalHub'
+import { RoleScreen, MoodScreen, ROLES, MOODS, type RoleType, type MoodType } from './screens'
 import { makeStoryCard, blobToFile, makeCaption, shareOrDownload } from '@/lib/instagram-cards'
 import { compressImageFile } from '@/lib/image-compress'
 
@@ -21,25 +22,7 @@ declare global {
   }
 }
 
-type Screen = 'role' | 'mood' | 'quests' | 'accepted' | 'checkin' | 'review' | 'challenges' | 'profile' | 'social' | 'chat' | 'settings'
-type RoleType = 'explorer' | 'healer' | 'artist' | 'foodie' | 'challenger'
-type MoodType = 'curious' | 'tired' | 'creative' | 'hungry' | 'adventurous'
-
-const ROLES = [
-  { id: 'explorer' as RoleType, name: '탐험가', icon: '🧭', description: '숨겨진 보석을 찾아 떠나는 모험가', color: '#E8740C' },
-  { id: 'healer' as RoleType, name: '힐러', icon: '🌿', description: '지친 마음을 달래는 휴식 전문가', color: '#10B981' },
-  { id: 'artist' as RoleType, name: '예술가', icon: '🎨', description: '영감을 찾아 떠나는 창작자', color: '#8B5CF6' },
-  { id: 'foodie' as RoleType, name: '미식가', icon: '🍜', description: '맛의 세계를 탐험하는 미각 전문가', color: '#F59E0B' },
-  { id: 'challenger' as RoleType, name: '도전자', icon: '⚡', description: '한계를 넘어서는 도전 정신', color: '#EF4444' },
-]
-
-const MOODS = [
-  { id: 'curious' as MoodType, name: '호기심 가득', icon: '🔍', color: '#E8740C' },
-  { id: 'tired' as MoodType, name: '지쳐있어요', icon: '😴', color: '#10B981' },
-  { id: 'creative' as MoodType, name: '영감 필요', icon: '✨', color: '#8B5CF6' },
-  { id: 'hungry' as MoodType, name: '배고파요', icon: '🍽️', color: '#F59E0B' },
-  { id: 'adventurous' as MoodType, name: '모험 준비됨', icon: '🚀', color: '#EF4444' },
-]
+type Screen = 'home' | 'role' | 'mood' | 'quests' | 'accepted' | 'checkin' | 'review' | 'challenges' | 'profile' | 'social' | 'chat' | 'settings'
 
 // 브라우저에서는 같은 출처 사용 → Next API 프록시가 백엔드로 전달 (405/CORS 방지)
 const API_BASE = typeof window !== 'undefined' ? window.location.origin : (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000')
@@ -83,7 +66,7 @@ export function CompleteApp() {
   const userId = user?.id ?? 'user-demo-001'
   const displayName = user?.user_metadata?.name ?? user?.user_metadata?.full_name ?? user?.user_metadata?.user_name ?? user?.user_metadata?.kakao_account?.profile?.nickname ?? user?.email ?? (user ? '로그인한 사용자' : null)
   const isLoggedIn = !!user
-  const [screen, setScreen] = useState<Screen>('role')
+  const [screen, setScreen] = useState<Screen>('home')
   const [selectedRole, setSelectedRole] = useState<RoleType | null>(null)
   const [selectedMood, setSelectedMood] = useState<MoodType | null>(null)
   const [acceptedQuest, setAcceptedQuest] = useState<any>(null)
@@ -107,6 +90,7 @@ export function CompleteApp() {
   const [arrivalMessage, setArrivalMessage] = useState<string | null>(null)
   const [kakaoMapLoaded, setKakaoMapLoaded] = useState(false)
   const routeMapContainerRef = useRef<HTMLDivElement>(null)
+  const homeMapContainerRef = useRef<HTMLDivElement>(null)
   const [showOnboarding, setShowOnboarding] = useState(true)
   const [onboardingStep, setOnboardingStep] = useState(0)
   const [narrativeLoading, setNarrativeLoading] = useState(false)
@@ -275,12 +259,65 @@ export function CompleteApp() {
     }
   }, [screen, acceptedQuest?.place_id, acceptedQuest?.latitude, acceptedQuest?.longitude, acceptedQuest?.name, userLocation.lat, userLocation.lng, kakaoMapLoaded])
 
+  // 역할/기분 텍스트 (API로 전달할 한국어 이름)
+  const moodTextForApi = selectedMood
+    ? (MOODS.find((m) => m.id === selectedMood)?.name ?? selectedMood)
+    : ''
+
+  // 홈 화면: 오늘의 한 곳 (기본 역할/기분 기준)
+  const defaultRoleForHome: RoleType = selectedRole || 'healer'
+  const defaultMoodForHome: MoodType = selectedMood || 'tired'
+  const defaultMoodTextForHome =
+    MOODS.find((m) => m.id === defaultMoodForHome)?.name ?? defaultMoodForHome
+
+  const { data: homeData, isLoading: homeLoading } = useQuery({
+    queryKey: ['homeRecommendation', userLocation.lat, userLocation.lng, defaultRoleForHome, defaultMoodForHome],
+    queryFn: () => getRecommendations(userLocation.lat, userLocation.lng, defaultRoleForHome, defaultMoodTextForHome),
+    enabled: screen === 'home',
+    retry: 1,
+  })
+
   const { data: questsData, isLoading: questsLoading } = useQuery({
     queryKey: ['recommendations', userLocation.lat, userLocation.lng, selectedRole, selectedMood],
-    queryFn: () => getRecommendations(userLocation.lat, userLocation.lng, selectedRole!, selectedMood!),
+    queryFn: () => getRecommendations(userLocation.lat, userLocation.lng, selectedRole!, moodTextForApi || ''),
     enabled: !!selectedRole && !!selectedMood && screen === 'quests',
     retry: 1,
   })
+
+  // 홈: 오늘의 한 곳 지도 (현재 위치 → 추천 장소 1곳)
+  useEffect(() => {
+    const first = homeData?.recommendations?.[0]
+    if (screen !== 'home' || !first?.latitude || !first?.longitude || !kakaoMapLoaded || !homeMapContainerRef.current || !window.kakao?.maps) return
+    const el = homeMapContainerRef.current
+    while (el.firstChild) el.removeChild(el.firstChild)
+    const startLat = userLocation.lat
+    const startLng = userLocation.lng
+    const endLat = first.latitude
+    const endLng = first.longitude
+    const centerLat = (startLat + endLat) / 2
+    const centerLng = (startLng + endLng) / 2
+    try {
+      const map = new window.kakao.maps.Map(el, {
+        center: new window.kakao.maps.LatLng(centerLat, centerLng),
+        level: 5,
+      })
+      const startPos = new window.kakao.maps.LatLng(startLat, startLng)
+      const endPos = new window.kakao.maps.LatLng(endLat, endLng)
+      new window.kakao.maps.Marker({ position: startPos, map, title: '현재 위치' })
+      new window.kakao.maps.Marker({ position: endPos, map, title: first.name || '오늘의 장소' })
+      const path = [startPos, endPos]
+      const polyline = new window.kakao.maps.Polyline({
+        path,
+        strokeWeight: 4,
+        strokeColor: '#E8740C',
+        strokeOpacity: 0.9,
+        strokeStyle: 'solid',
+      })
+      polyline.setMap(map)
+    } catch (e) {
+      console.warn('Home map init failed:', e)
+    }
+  }, [screen, homeData, userLocation.lat, userLocation.lng, kakaoMapLoaded])
 
   const { data: userStats, refetch: refetchUserStats } = useQuery({
     queryKey: ['userStats', userId],
@@ -780,7 +817,8 @@ export function CompleteApp() {
     )
   }
 
-  // 모든 체크리스트 완료 확인
+  // 필수 체크리스트만: 도착(0) + 리뷰(3). 사진·특별한 순간은 선택
+  const essentialChecklistCompleted = checklist[0] && checklist[3]
   const allChecklistCompleted = checklist.every(item => item)
 
   const bgColor = isDarkMode ? '#0A0E14' : '#FFFFFF'
@@ -800,9 +838,9 @@ export function CompleteApp() {
       boxShadow: '0 -2px 10px rgba(0,0,0,0.1)',
     }}>
       {[
-        { icon: '🏠', label: '홈', onClick: () => { setScreen('role'); setAcceptedQuest(null); } },
+        { icon: '🏠', label: '홈', onClick: () => { setScreen('home'); setAcceptedQuest(null); } },
         { icon: '🗺️', label: '지도', onClick: () => router.push('/my-map-real') },
-        { icon: '💬', label: '소셜', onClick: () => setScreen('social') },
+        { icon: '💬', label: '동네 피드', onClick: () => setScreen('social') },
         { icon: '🎯', label: '챌린지', onClick: () => setScreen('challenges') },
         { icon: '👤', label: '프로필', onClick: () => setScreen('profile') },
         { icon: '⚙️', label: '설정', onClick: () => setScreen('settings') },
@@ -964,6 +1002,203 @@ export function CompleteApp() {
     )
   }
 
+  // 홈 화면: 오늘의 한 곳 + 지도
+  if (screen === 'home') {
+    return (
+      <div style={{ maxWidth: 430, margin: '0 auto', minHeight: '100vh', background: bgColor, color: textColor, fontFamily: 'Pretendard, sans-serif', position: 'relative' }}>
+        <div style={{ position: 'absolute', top: 16, right: 20, display: 'flex', alignItems: 'center', gap: 8, zIndex: 10 }}>
+          <button
+            onClick={() => setShowNotificationPanel((v) => !v)}
+            style={{
+              position: 'relative',
+              padding: '8px 12px',
+              background: isDarkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)',
+              border: `1px solid ${borderColor}`,
+              borderRadius: 10,
+              color: textColor,
+              fontSize: 18,
+              cursor: 'pointer',
+            }}
+          >
+            🔔
+            {unreadCount > 0 && (
+              <span style={{ position: 'absolute', top: -4, right: -4, minWidth: 18, height: 18, borderRadius: 9, background: '#EF4444', color: '#fff', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{unreadCount > 99 ? '99+' : unreadCount}</span>
+            )}
+          </button>
+          <button
+            onClick={() => router.push('/login')}
+            style={{
+              padding: '8px 14px',
+              background: isDarkMode ? 'rgba(255,255,255,0.1)' : 'rgba(232,116,12,0.15)',
+              border: '1px solid #E8740C',
+              borderRadius: 10,
+              color: '#E8740C',
+              fontSize: 13,
+              fontWeight: 600,
+              cursor: 'pointer',
+            }}
+          >
+            로그인
+          </button>
+        </div>
+        {showNotificationPanel && (
+          <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.4)', zIndex: 200, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', paddingTop: 60 }} onClick={() => setShowNotificationPanel(false)}>
+            <div style={{ width: '100%', maxWidth: 400, maxHeight: '70vh', overflow: 'auto', background: bgColor, borderRadius: 16, border: `1px solid ${borderColor}`, boxShadow: '0 8px 32px rgba(0,0,0,0.2)' }} onClick={(e) => e.stopPropagation()}>
+              <div style={{ padding: 16, borderBottom: `1px solid ${borderColor}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontWeight: 700, fontSize: 16 }}>알림</span>
+                <button onClick={() => setShowNotificationPanel(false)} style={{ background: 'none', border: 'none', fontSize: 18, cursor: 'pointer', color: textColor }}>×</button>
+              </div>
+              <div style={{ padding: 8 }}>
+                {notifications.length === 0 ? (
+                  <p style={{ padding: 24, textAlign: 'center', color: isDarkMode ? 'rgba(255,255,255,0.5)' : '#9CA3AF', fontSize: 14 }}>알림이 없어요</p>
+                ) : (
+                  notifications.slice(0, 30).map((n: { id: string; title: string; body?: string; read?: boolean; created_at?: string }) => (
+                    <div key={n.id} style={{ padding: '12px 16px', borderBottom: `1px solid ${borderColor}`, background: n.read ? 'transparent' : (isDarkMode ? 'rgba(232,116,12,0.08)' : 'rgba(232,116,12,0.06)') }}>
+                      <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 4 }}>{n.title}</div>
+                      {n.body && <div style={{ fontSize: 13, color: isDarkMode ? 'rgba(255,255,255,0.7)' : '#6B7280' }}>{n.body}</div>}
+                      {n.created_at && <div style={{ fontSize: 11, color: isDarkMode ? 'rgba(255,255,255,0.4)' : '#9CA3AF', marginTop: 6 }}>{new Date(n.created_at).toLocaleDateString('ko-KR')}</div>}
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+        <div style={{ padding: '60px 20px 120px' }}>
+          <div style={{ marginBottom: 24 }}>
+            <h1 style={{ fontSize: 24, fontWeight: 900, marginBottom: 6, background: 'linear-gradient(90deg, #E8740C, #F59E0B)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+              WhereHere
+            </h1>
+            <p style={{ fontSize: 14, color: isDarkMode ? 'rgba(255,255,255,0.7)' : '#6B7280', marginBottom: 8 }}>오늘의 한 곳에서 동네 커뮤니티까지 한 번에.</p>
+            <div style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.5)' : '#9CA3AF' }}>
+              홈 · 기분 맞춤 탐험 · 동네 피드
+            </div>
+          </div>
+
+          {/* 1) 오늘의 한 곳 + 지도 */}
+          <div style={{ fontSize: 13, fontWeight: 700, color: isDarkMode ? 'rgba(255,255,255,0.8)' : '#374151', marginBottom: 10 }}>오늘의 한 곳</div>
+          {homeLoading ? (
+            <div style={{ textAlign: 'center', padding: 60 }}>
+              <div style={{ fontSize: 40, marginBottom: 16 }}>🔮</div>
+              <div style={{ fontSize: 15, color: isDarkMode ? 'rgba(255,255,255,0.7)' : '#6B7280' }}>근처 장소를 찾고 있어요...</div>
+            </div>
+          ) : homeData?.recommendations?.[0] ? (
+            <>
+              {(() => {
+                const rec: any = homeData.recommendations[0]
+                return (
+                  <div style={{ marginBottom: 20 }}>
+                    <div style={{
+                      background: isDarkMode ? 'linear-gradient(135deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02))' : cardBg,
+                      border: `1px solid ${borderColor}`,
+                      borderRadius: 18,
+                      padding: 18,
+                      boxShadow: isDarkMode ? 'none' : '0 4px 16px rgba(0,0,0,0.06)',
+                    }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+                        <div>
+                          <div style={{ fontSize: 11, color: '#E8740C', fontWeight: 600, marginBottom: 4 }}>오늘의 한 곳</div>
+                          <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 4 }}>{rec.name}</div>
+                          <div style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280' }}>{rec.address}</div>
+                        </div>
+                        <div style={{ textAlign: 'right' }}>
+                          <div style={{ fontSize: 20, fontWeight: 800, color: '#E8740C' }}>{rec.score}</div>
+                          <div style={{ fontSize: 9, color: isDarkMode ? 'rgba(255,255,255,0.4)' : '#9CA3AF' }}>점수</div>
+                          <div style={{ marginTop: 6, fontSize: 11 }}>
+                            <span>📍 {rec.distance_meters}m</span>
+                          </div>
+                        </div>
+                      </div>
+                      {rec.reason && (
+                        <p style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.7)' : '#4B5563', marginBottom: 10 }}>{rec.reason}</p>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => { setAcceptedQuest(rec); setScreen('accepted') }}
+                        style={{
+                          width: '100%',
+                          padding: 12,
+                          borderRadius: 12,
+                          border: 'none',
+                          background: 'linear-gradient(135deg, #E8740C, #C65D00)',
+                          color: '#fff',
+                          fontSize: 14,
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                          marginTop: 4,
+                        }}
+                      >
+                        경로 보기 →
+                      </button>
+                    </div>
+                  </div>
+                )
+              })()}
+
+              <div style={{ marginBottom: 24 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>지도에서 오늘의 한 곳 보기</div>
+                <div ref={homeMapContainerRef} style={{ width: '100%', height: 220, borderRadius: 16, overflow: 'hidden', border: `1px solid ${borderColor}`, background: isDarkMode ? 'rgba(0,0,0,0.3)' : '#E5E7EB' }} />
+              </div>
+            </>
+          ) : (
+            <div style={{ textAlign: 'center', padding: 48, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280' }}>
+              <div style={{ fontSize: 40, marginBottom: 16 }}>🔍</div>
+              <p style={{ fontSize: 15, fontWeight: 600, marginBottom: 8 }}>근처에서 추천할 장소를 찾지 못했어요.</p>
+              <p style={{ fontSize: 13, marginBottom: 16 }}>위치 권한을 허용하거나, 아래에서 기분 맞춤 탐험을 시도해보세요.</p>
+            </div>
+          )}
+
+          {/* 2) 기분 맞춤 탐험 / 3) 동네 피드 — 3축 구조 */}
+          <div style={{ display: 'flex', gap: 12, marginTop: 24, flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              onClick={() => setScreen('role')}
+              style={{
+                flex: 1,
+                minWidth: 140,
+                padding: 16,
+                borderRadius: 14,
+                border: `1px solid ${borderColor}`,
+                background: isDarkMode ? 'rgba(255,255,255,0.06)' : '#FFFFFF',
+                color: textColor,
+                fontSize: 14,
+                fontWeight: 700,
+                cursor: 'pointer',
+                textAlign: 'left',
+                boxShadow: isDarkMode ? 'none' : '0 2px 8px rgba(0,0,0,0.06)',
+              }}
+            >
+              <span style={{ display: 'block', fontSize: 22, marginBottom: 6 }}>🎯</span>
+              기분 맞춤 탐험
+            </button>
+            <button
+              type="button"
+              onClick={() => setScreen('social')}
+              style={{
+                flex: 1,
+                minWidth: 140,
+                padding: 16,
+                borderRadius: 14,
+                border: `1px solid ${borderColor}`,
+                background: isDarkMode ? 'rgba(255,255,255,0.06)' : '#FFFFFF',
+                color: textColor,
+                fontSize: 14,
+                fontWeight: 700,
+                cursor: 'pointer',
+                textAlign: 'left',
+                boxShadow: isDarkMode ? 'none' : '0 2px 8px rgba(0,0,0,0.06)',
+              }}
+            >
+              <span style={{ display: 'block', fontSize: 22, marginBottom: 6 }}>💬</span>
+              동네 피드
+            </button>
+          </div>
+        </div>
+        <BottomNav />
+      </div>
+    )
+  }
+
   // 역할 선택 화면
   if (screen === 'role') {
     return (
@@ -1026,40 +1261,7 @@ export function CompleteApp() {
             </div>
           </div>
         )}
-        <div style={{ padding: '60px 20px 120px' }}>
-          <div style={{ textAlign: 'center', marginBottom: 40 }}>
-            <div style={{ fontSize: 48, marginBottom: 16 }}>🗺️</div>
-            <h1 style={{ fontSize: 28, fontWeight: 900, marginBottom: 8, background: 'linear-gradient(90deg, #E8740C, #F59E0B)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
-              WhereHere
-            </h1>
-            <p style={{ fontSize: 15, fontWeight: 600, color: isDarkMode ? 'rgba(255,255,255,0.9)' : '#374151', marginBottom: 6 }}>기분과 역할에 맞는 장소를 퀘스트로 받아보세요</p>
-            <p style={{ fontSize: 13, color: isDarkMode ? 'rgba(255,255,255,0.5)' : '#9CA3AF', marginBottom: 8 }}>예: “지금 피곤한 당신에게 조용한 카페 한 곳”</p>
-            <p style={{ fontSize: 14, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280' }}>오늘은 어떤 역할로 탐험할까요?</p>
-          </div>
-
-          <div style={{ display: 'grid', gap: 12 }}>
-            {ROLES.map((role, i) => (
-              <div key={role.id} onClick={() => { setSelectedRole(role.id); setScreen('mood'); }}
-                style={{
-                  background: isDarkMode ? `linear-gradient(135deg, ${role.color}15, ${role.color}05)` : cardBg,
-                  border: `1px solid ${role.color}30`,
-                  borderRadius: 16, padding: 20, cursor: 'pointer',
-                  transition: 'all 0.3s',
-                  boxShadow: isDarkMode ? 'none' : '0 2px 4px rgba(0,0,0,0.05)',
-                }} onMouseEnter={(e) => { e.currentTarget.style.transform = 'scale(1.02)'; e.currentTarget.style.borderColor = `${role.color}60`; }}
-                   onMouseLeave={(e) => { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.borderColor = `${role.color}30`; }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-                  <div style={{ fontSize: 40 }}>{role.icon}</div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 4 }}>{role.name}</div>
-                    <div style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280' }}>{role.description}</div>
-                  </div>
-                  <div style={{ fontSize: 20, color: role.color }}>→</div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
+        <RoleScreen setScreen={setScreen} setSelectedRole={setSelectedRole} isDarkMode={isDarkMode} cardBg={cardBg} borderColor={borderColor} textColor={textColor} />
         <BottomNav />
       </div>
     )
@@ -1069,34 +1271,7 @@ export function CompleteApp() {
   if (screen === 'mood') {
     return (
       <div style={{ maxWidth: 430, margin: '0 auto', minHeight: '100vh', background: bgColor, color: textColor, fontFamily: 'Pretendard, sans-serif' }}>
-        <div style={{ padding: '60px 20px 120px' }}>
-          <button onClick={() => setScreen('role')} style={{ background: cardBg, border: `1px solid ${borderColor}`, borderRadius: 12, padding: '8px 16px', color: textColor, cursor: 'pointer', marginBottom: 24 }}>
-            ← 뒤로
-          </button>
-
-          <div style={{ textAlign: 'center', marginBottom: 40 }}>
-            <div style={{ fontSize: 48, marginBottom: 16 }}>💭</div>
-            <h2 style={{ fontSize: 24, fontWeight: 800, marginBottom: 8 }}>지금 기분은 어때요?</h2>
-            <p style={{ fontSize: 14, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280' }}>당신의 감정에 맞는 장소를 추천해드릴게요</p>
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            {MOODS.map((mood, i) => (
-              <div key={mood.id} onClick={() => { setSelectedMood(mood.id); setScreen('quests'); }}
-                style={{
-                  background: isDarkMode ? `linear-gradient(135deg, ${mood.color}15, ${mood.color}05)` : cardBg,
-                  border: `1px solid ${mood.color}30`,
-                  borderRadius: 16, padding: 24, cursor: 'pointer', textAlign: 'center',
-                  transition: 'all 0.3s',
-                  boxShadow: isDarkMode ? 'none' : '0 2px 4px rgba(0,0,0,0.05)',
-                }} onMouseEnter={(e) => { e.currentTarget.style.transform = 'scale(1.05)'; e.currentTarget.style.borderColor = `${mood.color}60`; }}
-                   onMouseLeave={(e) => { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.borderColor = `${mood.color}30`; }}>
-                <div style={{ fontSize: 36, marginBottom: 12 }}>{mood.icon}</div>
-                <div style={{ fontSize: 14, fontWeight: 600 }}>{mood.name}</div>
-              </div>
-            ))}
-          </div>
-        </div>
+        <MoodScreen setScreen={setScreen} setSelectedMood={setSelectedMood} isDarkMode={isDarkMode} cardBg={cardBg} borderColor={borderColor} textColor={textColor} />
         <BottomNav />
       </div>
     )
@@ -1145,11 +1320,14 @@ export function CompleteApp() {
                     </div>
                   </div>
                   <div style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280', marginBottom: 12 }}>{quest.address}</div>
-                  <div style={{ display: 'flex', gap: 8, fontSize: 11, marginBottom: 8 }}>
+                  <div style={{ display: 'flex', gap: 8, fontSize: 11, marginBottom: 6 }}>
                     <span>📍 {quest.distance_meters}m</span>
                     <span>⭐ {quest.average_rating || '-'}</span>
                     {quest.estimated_cost && <span>💰 {(quest.estimated_cost/1000).toFixed(0)}천원</span>}
                   </div>
+                  {quest.reason && (
+                    <p style={{ fontSize: 11, color: isDarkMode ? 'rgba(255,255,255,0.7)' : '#4B5563', marginBottom: 8 }}>{quest.reason}</p>
+                  )}
                   <button type="button" onClick={(e) => { e.stopPropagation(); setAcceptedQuest(quest); setScreen('accepted'); }} style={{ fontSize: 12, color: '#E8740C', fontWeight: 600, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>경로 보기 →</button>
                 </div>
               ))}
@@ -1323,7 +1501,7 @@ export function CompleteApp() {
 
           <div style={{ background: isDarkMode ? 'rgba(232,116,12,0.1)' : '#FEF3C7', border: '1px solid rgba(232,116,12,0.3)', borderRadius: 16, padding: 20, marginBottom: 16 }}>
             <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 12, color: '#E8740C' }}>
-              📋 미션 체크리스트 ({checklist.filter(c => c).length}/4)
+              📋 미션 체크리스트 (필수: 도착 + 리뷰)
             </div>
             {['장소 도착하기', '사진 찍기', '특별한 순간 기록하기', '리뷰 남기기'].map((mission, i) => (
               <div key={i} onClick={() => toggleChecklistItem(i)} style={{ 
@@ -1345,7 +1523,7 @@ export function CompleteApp() {
             ))}
           </div>
 
-          {allChecklistCompleted && (
+          {essentialChecklistCompleted && (
             <div style={{ 
               background: 'linear-gradient(135deg, #10B981, #059669)', 
               border: 'none', 
@@ -1358,23 +1536,23 @@ export function CompleteApp() {
               fontSize: 14,
               animation: 'pulse 2s ease-in-out infinite',
             }}>
-              🎉 모든 미션 완료! 이제 체크인하세요!
+              🎉 필수 미션 완료! 이제 체크인하세요!
             </div>
           )}
 
-          <button onClick={handleCheckIn} disabled={!allChecklistCompleted} style={{
+          <button onClick={handleCheckIn} disabled={!essentialChecklistCompleted} style={{
             width: '100%', padding: 18, 
-            background: allChecklistCompleted ? 'linear-gradient(135deg, #E8740C, #C65D00)' : (isDarkMode ? 'rgba(255,255,255,0.1)' : '#E5E7EB'),
+            background: essentialChecklistCompleted ? 'linear-gradient(135deg, #E8740C, #C65D00)' : (isDarkMode ? 'rgba(255,255,255,0.1)' : '#E5E7EB'),
             border: 'none', borderRadius: 16, 
-            color: allChecklistCompleted ? '#fff' : (isDarkMode ? 'rgba(255,255,255,0.3)' : '#9CA3AF'), 
+            color: essentialChecklistCompleted ? '#fff' : (isDarkMode ? 'rgba(255,255,255,0.3)' : '#9CA3AF'), 
             fontSize: 16, fontWeight: 700,
-            cursor: allChecklistCompleted ? 'pointer' : 'not-allowed', 
+            cursor: essentialChecklistCompleted ? 'pointer' : 'not-allowed', 
             transition: 'all 0.3s', 
-            boxShadow: allChecklistCompleted ? '0 4px 20px rgba(232,116,12,0.3)' : 'none',
-            opacity: allChecklistCompleted ? 1 : 0.5,
-          }} onMouseEnter={(e) => { if (allChecklistCompleted) e.currentTarget.style.transform = 'scale(1.02)'; }}
+            boxShadow: essentialChecklistCompleted ? '0 4px 20px rgba(232,116,12,0.3)' : 'none',
+            opacity: essentialChecklistCompleted ? 1 : 0.5,
+          }} onMouseEnter={(e) => { if (essentialChecklistCompleted) e.currentTarget.style.transform = 'scale(1.02)'; }}
              onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}>
-            {allChecklistCompleted ? '✅ 체크인하기' : '🔒 미션을 완료하세요'}
+            {essentialChecklistCompleted ? '✅ 체크인하기' : '🔒 필수: 도착 + 리뷰 완료 후 체크인'}
           </button>
         </div>
         <BottomNav />
@@ -1669,14 +1847,17 @@ export function CompleteApp() {
     const submitProfileComment = async () => {
       if (!selectedProfilePost?.id || !profileCommentInput.trim()) return
       try {
-        await fetch(`${API_BASE}/api/v1/local/posts/${selectedProfilePost.id}/comments`, {
+        const res = await fetch(`${API_BASE}/api/v1/local/posts/${selectedProfilePost.id}/comments`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ author_id: userId, body: profileCommentInput.trim() }),
         })
+        if (!res.ok) throw new Error('API error')
         setProfileCommentInput('')
         refetchProfilePostComments()
-      } catch (_) {}
+      } catch (_) {
+        alert('댓글 저장에 실패했어요. 네트워크를 확인하고 다시 시도해주세요.')
+      }
     }
 
     return (
@@ -2137,12 +2318,15 @@ export function CompleteApp() {
                           onBlur={async (e) => {
                             const name = e.target.value.trim()
                             try {
-                              await fetch(`${API_BASE}/api/v1/social/profile`, {
+                              const res = await fetch(`${API_BASE}/api/v1/social/profile`, {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
                                 body: JSON.stringify({ user_id: userId, display_name: name || undefined }),
                               })
-                            } catch (_) {}
+                              if (!res.ok) throw new Error('API error')
+                            } catch (_) {
+                              alert('저장에 실패했어요. 네트워크를 확인하고 다시 시도해주세요.')
+                            }
                           }}
                           style={{
                             width: '100%',
@@ -2195,12 +2379,15 @@ export function CompleteApp() {
                           onBlur={async (e) => {
                             const url = e.target.value.trim()
                             try {
-                              await fetch(`${API_BASE}/api/v1/social/profile`, {
+                              const res = await fetch(`${API_BASE}/api/v1/social/profile`, {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
                                 body: JSON.stringify({ user_id: userId, avatar_url: url || undefined }),
                               })
-                            } catch (_) {}
+                              if (!res.ok) throw new Error('API error')
+                            } catch (_) {
+                              alert('저장에 실패했어요. 네트워크를 확인하고 다시 시도해주세요.')
+                            }
                           }}
                           style={{
                             width: '100%',
