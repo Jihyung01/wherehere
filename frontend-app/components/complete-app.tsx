@@ -693,78 +693,109 @@ export function CompleteApp() {
     }
   }
 
-  // 소셜 공유 함수 - Web Share API + 네이티브 공유
+  // 소셜 공유 함수 - 카카오톡 SDK + 인스타그램 스토리 카드
   const handleShare = async (platform: string) => {
-    const shareTitle = `🗺️ WhereHere`
-    const shareText = `${acceptedQuest?.name || '멋진 장소'}를 발견했어요!`
+    const shareTitle = `${acceptedQuest?.name || '멋진 장소'}를 발견했어요!`
     const shareUrl = `${window.location.origin}?quest=${acceptedQuest?.place_id || ''}`
-    const fullText = `${shareText}\n\n${shareUrl}`
-    
+    const placeName = acceptedQuest?.name || '멋진 장소'
+    const placeAddress = acceptedQuest?.address || ''
+    const placeImage = uploadedPhotos[0] || acceptedQuest?.image_url || ''
+
     try {
       if (platform === 'kakao') {
-        // 카카오톡 - Web Share API 시도
-        if (navigator.share) {
+        // 카카오톡 SDK로 공유
+        const kakao = typeof window !== 'undefined' ? (window as any).Kakao : undefined
+        if (kakao?.Share?.sendDefault) {
           try {
-            await navigator.share({
-              title: shareTitle,
-              text: fullText,
+            await kakao.Share.sendDefault({
+              objectType: 'location',
+              address: placeAddress,
+              addressTitle: placeName,
+              content: {
+                title: placeName,
+                description: `🗺️ WhereHere에서 발견한 특별한 장소\n${placeAddress}`,
+                imageUrl: placeImage || 'https://wherehere-seven.vercel.app/og-image.png',
+                link: {
+                  mobileWebUrl: shareUrl,
+                  webUrl: shareUrl,
+                },
+              },
+              buttons: [
+                {
+                  title: 'WhereHere 열기',
+                  link: {
+                    mobileWebUrl: shareUrl,
+                    webUrl: shareUrl,
+                  },
+                },
+              ],
             })
-            console.log('공유 성공')
+            alert('카카오톡으로 공유했어요!')
             return
-          } catch (shareError: any) {
-            if (shareError.name !== 'AbortError') {
-              console.log('Web Share 실패, 대체 방법 사용')
-            } else {
-              return // 사용자가 취소함
-            }
+          } catch (err) {
+            console.error('카카오톡 SDK 공유 실패:', err)
           }
         }
-        
+
         // 대체: 클립보드 복사
-        await navigator.clipboard.writeText(fullText)
+        await navigator.clipboard.writeText(`${shareTitle}\n${placeName}\n${placeAddress}\n\n${shareUrl}`)
         alert('📋 링크가 복사되었습니다!\n카카오톡에서 붙여넣기 해주세요.')
-        
+
+      } else if (platform === 'instagram') {
+        // 인스타그램 - 스토리 카드 생성 후 공유
+        try {
+          const storyBlob = await makeStoryCard({
+            title: placeName,
+            body: placeAddress,
+            imageUrl: placeImage,
+            placeLine: `📍 ${placeName}${placeAddress ? '\n' + placeAddress : ''}`,
+          })
+          const storyFile = blobToFile(storyBlob, 'wherehere-story.png')
+          const caption = makeCaption({
+            title: placeName,
+            body: placeAddress,
+            place_name: placeName,
+            place_address: placeAddress,
+          })
+
+          await shareOrDownload({
+            file: storyFile,
+            caption,
+            filename: 'wherehere-story.png',
+            onToast: (msg) => {
+              const notification = document.createElement('div')
+              notification.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#000;color:#fff;padding:20px 30px;border-radius:12px;z-index:10000;font-size:14px;text-align:center;box-shadow:0 4px 20px rgba(0,0,0,0.3);'
+              notification.textContent = msg
+              document.body.appendChild(notification)
+              setTimeout(() => document.body.removeChild(notification), 3000)
+            },
+          })
+        } catch (err) {
+          console.error('인스타그램 카드 생성 실패:', err)
+          // 대체: 클립보드 복사
+          await navigator.clipboard.writeText(`${shareTitle}\n${placeName}\n${placeAddress}\n\n${shareUrl}\n\n#WhereHere #${placeName.replace(/\s/g, '')} #맛집 #카페`)
+          alert('📋 링크가 복사되었습니다!\n인스타그램 스토리/DM에서 붙여넣기 해주세요.')
+        }
+
       } else if (platform === 'twitter') {
         // 트위터 - 실제 공유창
-        const twitterUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(shareText)}&url=${encodeURIComponent(shareUrl)}&hashtags=WhereHere,여행,맛집`
+        const twitterUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(shareTitle + '\n' + placeName)}&url=${encodeURIComponent(shareUrl)}&hashtags=WhereHere,여행,맛집`
         window.open(twitterUrl, '_blank', 'width=600,height=400,scrollbars=yes')
-        
+
       } else if (platform === 'facebook') {
         // 페이스북 - 실제 공유창
-        const facebookUrl = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareUrl)}&quote=${encodeURIComponent(shareText)}`
+        const facebookUrl = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareUrl)}&quote=${encodeURIComponent(shareTitle + '\n' + placeName + '\n' + placeAddress)}`
         window.open(facebookUrl, '_blank', 'width=600,height=600,scrollbars=yes')
-        
-      } else if (platform === 'instagram') {
-        // 인스타그램 - Web Share API 또는 클립보드
-        if (navigator.share) {
-          try {
-            await navigator.share({
-              title: shareTitle,
-              text: fullText,
-            })
-            return
-          } catch (shareError: any) {
-            if (shareError.name === 'AbortError') return
-          }
-        }
-        
-        // 클립보드 복사
-        try {
-          await navigator.clipboard.writeText(fullText)
-          // 사용자 친화적 알림
-          const notification = document.createElement('div')
-          notification.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#000;color:#fff;padding:20px 30px;border-radius:12px;z-index:10000;font-size:14px;text-align:center;box-shadow:0 4px 20px rgba(0,0,0,0.3);'
-          notification.innerHTML = '📋 링크가 복사되었습니다!<br><small style="opacity:0.8;margin-top:8px;display:block;">인스타그램 스토리/DM에서 붙여넣기 해주세요</small>'
-          document.body.appendChild(notification)
-          setTimeout(() => document.body.removeChild(notification), 3000)
-        } catch (err) {
-          alert('📋 링크: ' + fullText)
-        }
       }
     } catch (error) {
       console.error('공유 실패:', error)
-      // 최종 대체: 텍스트 표시
-      alert(`📋 이 링크를 복사해주세요:\n\n${fullText}`)
+      // 최종 대체: 텍스트 복사
+      try {
+        await navigator.clipboard.writeText(`${shareTitle}\n${placeName}\n${placeAddress}\n\n${shareUrl}`)
+        alert(`📋 링크가 복사되었습니다!`)
+      } catch {
+        alert(`📋 이 링크를 복사해주세요:\n\n${shareUrl}`)
+      }
     }
   }
 
