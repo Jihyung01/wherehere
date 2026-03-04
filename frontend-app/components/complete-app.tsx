@@ -11,6 +11,8 @@ import { useAuth } from '@/hooks/useAuth'
 import { ChallengeCard } from './challenge-card'
 import { PersonalityProfile } from './personality-profile'
 import { ShareButton } from './share-button'
+import { LocalHub } from './local/LocalHub'
+import { makeStoryCard, blobToFile, makeCaption, shareOrDownload } from '@/lib/instagram-cards'
 
 declare global {
   interface Window {
@@ -113,6 +115,12 @@ export function CompleteApp() {
   const [chatMessages, setChatMessages] = useState<any[]>([])
   const [chatLoading, setChatLoading] = useState(false)
   const [chatInput, setChatInput] = useState('')
+  const [demoAccepted, setDemoAccepted] = useState(false)
+  const [selectedProfilePost, setSelectedProfilePost] = useState<{ id: string; title: string; body?: string; type?: string; image_url?: string; place_name?: string; rating?: number; created_at?: string; author_id?: string } | null>(null)
+  const [profileCommentInput, setProfileCommentInput] = useState('')
+
+  // 로그인 유도: 비로그인 시 데모 수락 전에는 로그인 화면 강조
+  const showLoginGate = !isLoggedIn && typeof window !== 'undefined' && typeof sessionStorage !== 'undefined' && sessionStorage.getItem('wherehere_demo_accepted') !== '1'
 
   // 온보딩: 이미 본 적 있으면 건너뛰기
   useEffect(() => {
@@ -281,6 +289,29 @@ export function CompleteApp() {
     },
     enabled: screen === 'profile' && !!userId,
   })
+
+  const { data: profilePostsData } = useQuery({
+    queryKey: ['profilePosts', userId],
+    queryFn: async () => {
+      const res = await fetch(`${API_BASE}/api/v1/local/posts?scope=user&author_id=${encodeURIComponent(userId)}&limit=100`)
+      if (!res.ok) return { posts: [] }
+      return res.json()
+    },
+    enabled: screen === 'profile' && !!userId,
+  })
+  const profilePosts = profilePostsData?.posts ?? []
+
+  const { data: profilePostCommentsData, refetch: refetchProfilePostComments } = useQuery({
+    queryKey: ['postComments', selectedProfilePost?.id],
+    queryFn: async () => {
+      if (!selectedProfilePost?.id) return { comments: [] }
+      const res = await fetch(`${API_BASE}/api/v1/local/posts/${selectedProfilePost.id}/comments`)
+      if (!res.ok) return { comments: [] }
+      return res.json()
+    },
+    enabled: !!selectedProfilePost?.id,
+  })
+  const profilePostComments = profilePostCommentsData?.comments ?? []
 
   const { data: notificationsData, refetch: refetchNotifications } = useQuery({
     queryKey: ['notifications', userId],
@@ -757,6 +788,56 @@ export function CompleteApp() {
       ))}
     </div>
   )
+
+  // 로그인 유도 화면: 비로그인 사용자에게 로그인 후 이용 유도
+  if (showLoginGate) {
+    return (
+      <div style={{ maxWidth: 430, margin: '0 auto', minHeight: '100vh', background: bgColor, color: textColor, fontFamily: 'Pretendard, sans-serif', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+        <div style={{ textAlign: 'center', marginBottom: 32 }}>
+          <div style={{ fontSize: 56, marginBottom: 16 }}>🗺️</div>
+          <h1 style={{ fontSize: 26, fontWeight: 900, marginBottom: 12, background: 'linear-gradient(90deg, #E8740C, #F59E0B)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>WhereHere</h1>
+          <p style={{ fontSize: 16, fontWeight: 600, marginBottom: 8 }}>로그인하고 나만의 추천을 받아보세요</p>
+          <p style={{ fontSize: 14, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280' }}>퀘스트, 지도, 소셜 피드가 계정에 저장돼요</p>
+        </div>
+        <div style={{ width: '100%', maxWidth: 320, display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <button
+            onClick={() => router.push('/login')}
+            style={{
+              width: '100%',
+              padding: 16,
+              background: 'linear-gradient(135deg, #E8740C, #C65D00)',
+              border: 'none',
+              borderRadius: 14,
+              color: '#fff',
+              fontWeight: 700,
+              fontSize: 16,
+              cursor: 'pointer',
+            }}
+          >
+            로그인 / 회원가입
+          </button>
+          <button
+            onClick={() => {
+              try { sessionStorage.setItem('wherehere_demo_accepted', '1') } catch (_) {}
+              setDemoAccepted(true)
+            }}
+            style={{
+              width: '100%',
+              padding: 12,
+              background: 'transparent',
+              border: `1px solid ${borderColor}`,
+              borderRadius: 14,
+              color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#9CA3AF',
+              fontSize: 14,
+              cursor: 'pointer',
+            }}
+          >
+            데모로 체험하기
+          </button>
+        </div>
+      </div>
+    )
+  }
 
   // 온보딩 (첫 방문 시 2~3장, 건너뛰기 가능)
   if (showOnboarding) {
@@ -1464,189 +1545,64 @@ export function CompleteApp() {
     )
   }
 
-  // 소셜 탭 (피드 · 당근/오픈채팅 느낌)
+  // 소셜 탭: 동네(홈/작성/피드) + 친구(기존 체크인 피드)
   if (screen === 'social') {
+    const sharePostText = (post: { title: string; body?: string; place_name?: string } | null) => {
+      if (!post) return
+      const appUrl = typeof window !== 'undefined' ? window.location.origin + '/' : ''
+      const text = [post.title, post.body || '', post.place_name ? '장소: ' + post.place_name : '', '#동네생활 #wherehere', appUrl].filter(Boolean).join('\n')
+      if (typeof navigator !== 'undefined' && navigator.share) {
+        navigator.share({ title: post.title, text }).catch(() => { navigator.clipboard?.writeText(text); alert('공유 문구를 복사했어요.') })
+      } else {
+        navigator.clipboard?.writeText(text)
+        alert('공유 문구를 복사했어요.')
+      }
+    }
+    const sharePostInstagramCard = async (post: { title: string; body?: string; place_name?: string; image_url?: string } | null) => {
+      if (!post) return
+      const caption = makeCaption(post)
+      try {
+        const blob = await makeStoryCard({
+          title: post.title,
+          body: (post.body || '').slice(0, 200),
+          imageUrl: post.image_url,
+          placeLine: post.place_name ? '장소: ' + post.place_name : undefined,
+        })
+        const file = blobToFile(blob, 'wherehere-story.png')
+        await shareOrDownload({ file, caption, filename: 'wherehere-story.png', onToast: (msg) => alert(msg) })
+      } catch (e) {
+        console.error(e)
+        try {
+          await navigator.clipboard.writeText(caption)
+          alert('캡션을 복사했어요. 카드 생성에 실패했을 수 있어요.')
+        } catch {
+          alert('공유 준비에 실패했어요.')
+        }
+      }
+    }
     return (
-      <div style={{ maxWidth: 430, margin: '0 auto', minHeight: '100vh', background: bgColor, color: textColor, fontFamily: 'Pretendard, sans-serif' }}>
-        <div style={{ padding: '60px 20px 120px' }}>
-          <div style={{ textAlign: 'center', marginBottom: 24 }}>
-            <div style={{ fontSize: 36, marginBottom: 8 }}>💬</div>
-            <h2 style={{ fontSize: 22, fontWeight: 800, marginBottom: 4 }}>소셜</h2>
-            <p style={{ fontSize: 13, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280' }}>동네 탐험가들의 체크인과 소식</p>
-          </div>
-
-          {/* 내 친구 코드 & 프로필 설정 */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 16 }}>
-            <div style={{ background: cardBg, borderRadius: 16, border: `1px solid ${borderColor}`, padding: 16 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                <div style={{ fontSize: 14, fontWeight: 700 }}>내 친구 코드</div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    try {
-                      navigator.clipboard.writeText(myFriendCode)
-                      alert('친구 코드가 복사되었어요')
-                    } catch (_) {}
-                  }}
-                  style={{ fontSize: 11, padding: '6px 10px', borderRadius: 999, border: `1px solid ${borderColor}`, background: 'transparent', cursor: 'pointer', color: textColor }}
-                >
-                  복사
-                </button>
-              </div>
-              <div style={{ fontSize: 20, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, Courier New, monospace', letterSpacing: 2, marginBottom: 6 }}>
-                {myFriendCode}
-              </div>
-              <div style={{ fontSize: 11, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280' }}>
-                카카오톡/인스타 DM으로 이 코드를 보내서 친구를 초대해 보세요.
-              </div>
-            </div>
-
-            {/* 친구 검색 */}
-            <div style={{ background: cardBg, borderRadius: 16, border: `1px solid ${borderColor}`, padding: 16 }}>
-              <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 8 }}>친구 찾기</div>
-              <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-                <input
-                  placeholder="닉네임 또는 아이디 일부"
-                  value={friendQuery}
-                  onChange={(e) => setFriendQuery(e.target.value)}
-                  style={{
-                    flex: 1,
-                    padding: 10,
-                    borderRadius: 10,
-                    border: `1px solid ${borderColor}`,
-                    background: isDarkMode ? 'rgba(0,0,0,0.2)' : '#fff',
-                    color: textColor,
-                    fontSize: 13,
-                  }}
-                />
-                <button
-                  type="button"
-                  onClick={searchFriends}
-                  style={{
-                    padding: '10px 14px',
-                    borderRadius: 10,
-                    border: 'none',
-                    background: '#E8740C',
-                    color: '#fff',
-                    fontWeight: 600,
-                    fontSize: 13,
-                    cursor: 'pointer',
-                  }}
-                >
-                  검색
-                </button>
-              </div>
-              {friendSearchLoading && (
-                <p style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280' }}>검색 중...</p>
-              )}
-              {!friendSearchLoading && friendSearchResults.length === 0 && friendQuery.trim() && (
-                <p style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280' }}>일치하는 사용자를 찾지 못했어요.</p>
-              )}
-              {!friendSearchLoading && friendSearchResults.length > 0 && (
-                <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {friendSearchResults.map((u) => (
-                    <div key={u.user_id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
-                        <div
-                          style={{
-                            width: 40,
-                            height: 40,
-                            borderRadius: '50%',
-                            overflow: 'hidden',
-                            background: 'linear-gradient(135deg, #E8740C, #F59E0B)',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            flexShrink: 0,
-                          }}
-                        >
-                          {u.avatar_url ? (
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img src={u.avatar_url} alt={u.display_name || u.username || 'avatar'} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                          ) : (
-                            <span style={{ fontSize: 18, color: '#fff' }}>{(u.display_name || u.username || '친구').slice(0, 1)}</span>
-                          )}
-                        </div>
-                        <div style={{ minWidth: 0 }}>
-                          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 2, whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
-                            {u.display_name || u.username || '친구'}
-                          </div>
-                          <div style={{ fontSize: 11, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280' }}>
-                            @{u.username || 'user'} · 코드 {u.code}
-                          </div>
-                        </div>
-                      </div>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-end' }}>
-                        <button
-                          type="button"
-                          onClick={() => toggleFollow(u.user_id, !!u.is_following)}
-                          style={{
-                            padding: '6px 12px',
-                            borderRadius: 999,
-                            border: u.is_following ? `1px solid ${borderColor}` : 'none',
-                            background: u.is_following ? 'transparent' : '#E8740C',
-                            color: u.is_following ? textColor : '#fff',
-                            fontSize: 11,
-                            fontWeight: 600,
-                            cursor: 'pointer',
-                            whiteSpace: 'nowrap',
-                          }}
-                        >
-                          {u.is_following ? '팔로잉' : '팔로우'}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => openChatWithUser(u)}
-                          style={{
-                            padding: '6px 12px',
-                            borderRadius: 999,
-                            border: `1px solid ${borderColor}`,
-                            background: 'transparent',
-                            color: textColor,
-                            fontSize: 11,
-                            fontWeight: 500,
-                            cursor: 'pointer',
-                            whiteSpace: 'nowrap',
-                          }}
-                        >
-                          채팅
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* 피드 */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {feedActivities.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: 48, background: cardBg, borderRadius: 16, border: `1px solid ${borderColor}` }}>
-                <div style={{ fontSize: 40, marginBottom: 12 }}>🗺️</div>
-                <p style={{ fontSize: 15, marginBottom: 8 }}>아직 소식이 없어요</p>
-                <p style={{ fontSize: 13, color: isDarkMode ? 'rgba(255,255,255,0.5)' : '#9CA3AF' }}>퀘스트를 완료하거나 친구를 팔로우하면<br />여기에 체크인 소식이 쌓여요</p>
-              </div>
-            ) : (
-              feedActivities.map((a: { id: string; user_id: string; type: string; place_name?: string; xp_earned?: number; content?: string; created_at?: string }) => (
-                <div key={a.id} style={{ background: cardBg, border: `1px solid ${borderColor}`, borderRadius: 16, padding: 16 }}>
-                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-                    <div style={{ width: 44, height: 44, borderRadius: '50%', background: 'linear-gradient(135deg, #E8740C, #F59E0B)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, flexShrink: 0 }}>👤</div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <p style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>
-                        {a.user_id === userId ? '나' : a.user_id.slice(0, 8) + '…'}님이 {a.place_name || '장소'}에서 체크인했어요
-                      </p>
-                      {a.xp_earned != null && <span style={{ fontSize: 12, color: '#E8740C', fontWeight: 600 }}>+{a.xp_earned} XP</span>}
-                      {a.created_at && <div style={{ fontSize: 11, color: isDarkMode ? 'rgba(255,255,255,0.4)' : '#9CA3AF', marginTop: 6 }}>{new Date(a.created_at).toLocaleString('ko-KR')}</div>}
-                    </div>
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-        <BottomNav />
-      </div>
+      <LocalHub
+        apiBase={API_BASE}
+        userId={userId}
+        isDarkMode={isDarkMode}
+        cardBg={cardBg}
+        borderColor={borderColor}
+        textColor={textColor}
+        areaName=""
+        myFriendCode={myFriendCode}
+        friendQuery={friendQuery}
+        setFriendQuery={setFriendQuery}
+        searchFriends={searchFriends}
+        friendSearchLoading={friendSearchLoading}
+        friendSearchResults={friendSearchResults}
+        toggleFollow={toggleFollow}
+        openChatWithUser={openChatWithUser}
+        feedActivities={feedActivities}
+        onShareKakao={sharePostText}
+        onShareInstagramCard={sharePostInstagramCard}
+        onToast={(msg) => alert(msg)}
+        BottomNav={<BottomNav />}
+      />
     )
   }
 
@@ -1660,10 +1616,40 @@ export function CompleteApp() {
     const longestStreak = userStats?.longest_streak ?? 0
     const completedQuests = userStats?.completed_quests ?? 0
     const placesVisited = userStats?.total_places_visited ?? 0
+    const profileAvatarUrl = user?.user_metadata?.avatar_url ?? user?.user_metadata?.picture ?? user?.user_metadata?.profile_image_url
+
+    const submitProfileComment = async () => {
+      if (!selectedProfilePost?.id || !profileCommentInput.trim()) return
+      try {
+        await fetch(`${API_BASE}/api/v1/local/posts/${selectedProfilePost.id}/comments`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ author_id: userId, body: profileCommentInput.trim() }),
+        })
+        setProfileCommentInput('')
+        refetchProfilePostComments()
+      } catch (_) {}
+    }
 
     return (
       <div style={{ maxWidth: 430, margin: '0 auto', minHeight: '100vh', background: bgColor, color: textColor, fontFamily: 'Pretendard, sans-serif' }}>
         <div style={{ padding: '60px 20px 120px' }}>
+          {/* 프로필 헤더: 아바타, 닉네임, 아이디(친구코드) */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 20 }}>
+            <div style={{ width: 72, height: 72, borderRadius: '50%', overflow: 'hidden', background: 'linear-gradient(135deg, #E8740C, #F59E0B)', flexShrink: 0 }}>
+              {profileAvatarUrl ? (
+                <img src={profileAvatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              ) : (
+                <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 28, color: '#fff' }}>{(displayName || '?').slice(0, 1)}</div>
+              )}
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 4 }}>{displayName || '이름 없음'}</div>
+              <div style={{ fontSize: 13, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280' }}>@{myFriendCode}</div>
+              <button type="button" onClick={() => setScreen('settings')} style={{ marginTop: 8, fontSize: 12, color: '#E8740C', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>설정에서 프로필 수정</button>
+            </div>
+          </div>
+
           {/* 레벨 & XP 진행바 */}
           <div style={{
             background: isDarkMode ? 'linear-gradient(135deg, rgba(232,116,12,0.15), rgba(232,116,12,0.05))' : 'linear-gradient(135deg, #FEF3C7, #FFFBEB)',
@@ -1724,6 +1710,74 @@ export function CompleteApp() {
             ) : null}
           </div>
           <PersonalityProfile userId={userId} />
+
+          {/* 내 피드 (인스타 스타일 그리드) */}
+          <div style={{ marginTop: 24 }}>
+            <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 12 }}>내 피드</div>
+            {profilePosts.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: 32, background: cardBg, borderRadius: 16, border: `1px solid ${borderColor}` }}>
+                <p style={{ fontSize: 14, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280', marginBottom: 8 }}>아직 게시글이 없어요</p>
+                <button type="button" onClick={() => setScreen('social')} style={{ padding: '10px 20px', borderRadius: 10, border: 'none', background: '#E8740C', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>소셜에서 작성하기</button>
+              </div>
+            ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 4 }}>
+                {profilePosts.map((p: { id: string; title?: string; image_url?: string; type?: string }) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => setSelectedProfilePost(p)}
+                    style={{ aspectRatio: '1', padding: 0, border: 'none', borderRadius: 8, overflow: 'hidden', background: isDarkMode ? 'rgba(255,255,255,0.08)' : '#E5E7EB', cursor: 'pointer' }}
+                  >
+                    {p.image_url ? (
+                      <img src={p.image_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    ) : (
+                      <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24 }}>📝</div>
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* 게시글 상세 모달 (댓글 포함) */}
+          {selectedProfilePost && (
+            <div style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={() => setSelectedProfilePost(null)}>
+              <div style={{ width: '100%', maxWidth: 400, maxHeight: '85vh', background: cardBg, borderRadius: 20, border: `1px solid ${borderColor}`, overflow: 'hidden', display: 'flex', flexDirection: 'column' }} onClick={(e) => e.stopPropagation()}>
+                <div style={{ padding: 16, borderBottom: `1px solid ${borderColor}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontWeight: 700, fontSize: 16 }}>게시글</span>
+                  <button type="button" onClick={() => setSelectedProfilePost(null)} style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: textColor }}>×</button>
+                </div>
+                <div style={{ padding: 16, overflow: 'auto', flex: 1 }}>
+                  {selectedProfilePost.image_url && (
+                    <img src={selectedProfilePost.image_url} alt="" style={{ width: '100%', borderRadius: 12, marginBottom: 12, maxHeight: 240, objectFit: 'cover' }} />
+                  )}
+                  <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>{selectedProfilePost.title}</div>
+                  {selectedProfilePost.body && <div style={{ fontSize: 14, color: isDarkMode ? 'rgba(255,255,255,0.8)' : '#374151', marginBottom: 8, whiteSpace: 'pre-wrap' }}>{selectedProfilePost.body}</div>}
+                  {selectedProfilePost.place_name && <div style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.5)' : '#9CA3AF', marginBottom: 12 }}>📍 {selectedProfilePost.place_name}</div>}
+                  <div style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.4)' : '#9CA3AF', marginBottom: 16 }}>댓글 {profilePostComments.length}개</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    {profilePostComments.map((c: { id: string; body?: string; author_id?: string; created_at?: string }) => (
+                      <div key={c.id} style={{ padding: 10, background: isDarkMode ? 'rgba(0,0,0,0.2)' : 'rgba(0,0,0,0.05)', borderRadius: 10, fontSize: 13 }}>
+                        <span style={{ fontWeight: 600 }}>{c.author_id === userId ? '나' : (c.author_id?.slice(0, 8) ?? '') + '…'}</span>
+                        <span style={{ marginLeft: 6 }}>{c.body}</span>
+                        {c.created_at && <div style={{ fontSize: 11, color: isDarkMode ? 'rgba(255,255,255,0.4)' : '#9CA3AF', marginTop: 4 }}>{new Date(c.created_at).toLocaleString('ko-KR')}</div>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div style={{ padding: 12, borderTop: `1px solid ${borderColor}`, display: 'flex', gap: 8 }}>
+                  <input
+                    placeholder="댓글 입력..."
+                    value={profileCommentInput}
+                    onChange={(e) => setProfileCommentInput(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && submitProfileComment()}
+                    style={{ flex: 1, padding: 10, borderRadius: 10, border: `1px solid ${borderColor}`, background: isDarkMode ? 'rgba(0,0,0,0.2)' : '#fff', color: textColor, fontSize: 14 }}
+                  />
+                  <button type="button" onClick={submitProfileComment} style={{ padding: '10px 16px', borderRadius: 10, border: 'none', background: '#E8740C', color: '#fff', fontWeight: 600, cursor: 'pointer' }}>등록</button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
         <BottomNav />
       </div>
@@ -2014,7 +2068,7 @@ export function CompleteApp() {
                 <div style={{ fontSize: 16, color: '#E8740C' }}>{showPrivacySettings ? '▼' : '→'}</div>
               </div>
               {showPrivacySettings && (
-                <div style={{ marginTop: 16, paddingTop: 16, borderTop: `1px solid ${borderColor}` }}>
+                <div style={{ marginTop: 16, paddingTop: 16, borderTop: `1px solid ${borderColor}` }} onClick={(e) => e.stopPropagation()}>
                   {isLoggedIn ? (
                     <>
                       <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 6 }}>{displayName}</div>
@@ -2027,7 +2081,7 @@ export function CompleteApp() {
                       {/* 소셜 프로필 수정 */}
                       <div style={{ marginBottom: 12 }}>
                         <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 6, color: isDarkMode ? 'rgba(255,255,255,0.7)' : '#6B7280' }}>
-                          소셜 프로필
+                          소셜 프로필 (표시 이름 · 프로필 이미지 URL)
                         </div>
                         <input
                           placeholder="표시 이름"

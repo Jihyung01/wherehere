@@ -424,6 +424,96 @@ class RestDatabaseHelpers:
                 return []
             return response.json()
 
+    # ---------- 로컬 피드: local_posts / local_comments ----------
+    async def create_local_post(
+        self,
+        author_id: str,
+        type_: str,
+        title: str,
+        body: str = "",
+        rating: int = 0,
+        meet_time: Optional[str] = None,
+        image_url: Optional[str] = None,
+        place_name: Optional[str] = None,
+        place_address: Optional[str] = None,
+        area_name: str = "",
+    ) -> Optional[Dict[str, Any]]:
+        """동네 게시글 생성 (story/review/gathering)"""
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            url = f"{self.base_url}/rest/v1/local_posts"
+            payload = {
+                "author_id": author_id,
+                "type": type_,
+                "title": title,
+                "body": body or "",
+                "rating": max(0, min(5, rating)),
+                "meet_time": meet_time or "",
+                "image_url": image_url or "",
+                "place_name": place_name or "",
+                "place_address": place_address or "",
+                "area_name": area_name or "",
+            }
+            response = await client.post(url, headers=self.headers, json=payload)
+            if response.status_code in (200, 201):
+                out = response.json()
+                return out[0] if isinstance(out, list) else out
+            return None
+
+    async def list_local_posts(
+        self,
+        scope: str = "neighborhood",
+        area_name: Optional[str] = None,
+        user_id: Optional[str] = None,
+        following_ids: Optional[List[str]] = None,
+        author_id: Optional[str] = None,
+        limit: int = 50,
+    ) -> List[Dict[str, Any]]:
+        """
+        scope=neighborhood: area_name 기준 (비어 있으면 전체)
+        scope=following: user_id + following_ids 작성 글만
+        scope=user + author_id: 해당 사용자 작성 글만 (프로필 피드)
+        """
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            url = f"{self.base_url}/rest/v1/local_posts"
+            params = {"select": "*", "order": "created_at.desc", "limit": limit}
+            if scope == "neighborhood" and area_name:
+                params["area_name"] = f"eq.{area_name}"
+            elif scope == "following" and user_id and following_ids is not None:
+                author_ids = list(set([user_id] + following_ids))
+                params["author_id"] = "in.(" + ",".join(author_ids) + ")"
+            elif (scope == "user" or scope == "profile") and author_id:
+                params["author_id"] = f"eq.{author_id}"
+            response = await client.get(url, headers=self.headers, params=params)
+            if response.status_code != 200:
+                return []
+            return response.json()
+
+    async def create_local_comment(self, post_id: str, author_id: str, body: str) -> Optional[Dict[str, Any]]:
+        """댓글 생성"""
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            url = f"{self.base_url}/rest/v1/local_comments"
+            payload = {"post_id": post_id, "author_id": author_id, "body": body}
+            response = await client.post(url, headers=self.headers, json=payload)
+            if response.status_code in (200, 201):
+                out = response.json()
+                return out[0] if isinstance(out, list) else out
+            return None
+
+    async def list_local_comments(self, post_id: str, limit: int = 100) -> List[Dict[str, Any]]:
+        """게시글별 댓글 목록 (시간순)"""
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            url = f"{self.base_url}/rest/v1/local_comments"
+            params = {
+                "select": "*",
+                "post_id": f"eq.{post_id}",
+                "order": "created_at.asc",
+                "limit": limit,
+            }
+            response = await client.get(url, headers=self.headers, params=params)
+            if response.status_code != 200:
+                return []
+            return response.json()
+
     # ---------- 소셜: 채팅 (conversations / messages) ----------
 
     async def get_or_create_conversation(self, user_a_id: str, user_b_id: str) -> Optional[Dict[str, Any]]:

@@ -6,6 +6,7 @@
 - 매칭 시스템
 """
 
+import httpx
 from fastapi import APIRouter, HTTPException, Depends
 from typing import Optional, List, Dict
 from datetime import datetime
@@ -313,6 +314,40 @@ async def update_social_profile(
         avatar_url=req.avatar_url,
     )
     return {"success": ok}
+
+
+# ============================================================
+# 카카오 친구 목록 (초대용, 저장 금지)
+# ============================================================
+
+class KakaoFriendsRequest(BaseModel):
+    """카카오 액세스 토큰으로 친구 목록 조회 요청. 응답은 저장·보관하지 않음."""
+    access_token: str
+
+
+@router.post("/kakao-friends")
+async def get_kakao_friends(req: KakaoFriendsRequest):
+    """
+    카카오톡 친구 목록 조회 (실시간만, DB 저장 금지).
+    - 클라이언트가 Kakao Auth 토큰을 넘기면 kapi.kakao.com/v1/api/talk/friends 호출 후 그대로 반환.
+    - 친구 목록은 '초대하기' UI용으로만 사용하고 저장하지 않음.
+    """
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            r = await client.get(
+                "https://kapi.kakao.com/v1/api/talk/friends",
+                headers={"Authorization": f"Bearer {req.access_token}"},
+            )
+        if r.status_code != 200:
+            raise HTTPException(
+                status_code=r.status_code,
+                detail=r.json().get("msg", r.text) if r.text else "Kakao API error",
+            )
+        data = r.json()
+        # elements만 반환 (저장/가공 없음)
+        return {"elements": data.get("elements", []), "total_count": data.get("total_count", 0)}
+    except httpx.RequestError as e:
+        raise HTTPException(status_code=502, detail=f"Kakao API request failed: {str(e)}")
 
 
 # ============================================================
