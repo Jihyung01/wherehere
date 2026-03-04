@@ -1135,6 +1135,18 @@ export function CompleteApp() {
                 )
               })()}
 
+              {/* 홈 지도: 카카오맵 스크립트는 홈에서도 로드 (accepted에만 있으면 홈에서 지도 안 나옴) */}
+              {!kakaoMapLoaded && (
+                <Script
+                  src={`https://dapi.kakao.com/v2/maps/sdk.js?appkey=${process.env.NEXT_PUBLIC_KAKAO_MAP_KEY || '160238a590f3d2957230d764fb745322'}&autoload=false`}
+                  strategy="afterInteractive"
+                  onLoad={() => {
+                    if (typeof window !== 'undefined' && window.kakao?.maps?.load) {
+                      window.kakao.maps.load(() => setKakaoMapLoaded(true))
+                    }
+                  }}
+                />
+              )}
               <div style={{ marginBottom: 24 }}>
                 <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>지도에서 오늘의 한 곳 보기</div>
                 <div ref={homeMapContainerRef} style={{ width: '100%', height: 220, borderRadius: 16, overflow: 'hidden', border: `1px solid ${borderColor}`, background: isDarkMode ? 'rgba(0,0,0,0.3)' : '#E5E7EB' }} />
