@@ -2454,21 +2454,39 @@ export function CompleteApp() {
                           defaultValue={displayName || ''}
                           onBlur={async (e) => {
                             const name = e.target.value.trim()
+                            if (!name) return
+
+                            // 즉시 로컬 state 업데이트 (빠른 UX)
+                            setUserProfile(prev => ({
+                              ...prev,
+                              display_name: name,
+                              profile_image_url: prev?.profile_image_url
+                            }))
+
                             try {
                               const res = await fetch(`${API_BASE}/api/v1/social/profile`, {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ user_id: userId, display_name: name || undefined }),
+                                body: JSON.stringify({ user_id: userId, display_name: name }),
                               })
-                              if (!res.ok) throw new Error('API error')
-                              // 프로필 정보 다시 불러오기
+                              if (res.ok) {
+                                // 성공 시 백엔드에서 최신 데이터 가져오기
+                                const profileRes = await fetch(`${API_BASE}/api/v1/social/profile/${userId}`)
+                                const profileData = await profileRes.json()
+                                if (profileData.profile) {
+                                  setUserProfile(profileData.profile)
+                                }
+                              } else {
+                                throw new Error('API error')
+                              }
+                            } catch (_) {
+                              alert('저장에 실패했어요. 네트워크를 확인하고 다시 시도해주세요.')
+                              // 실패 시 원래 프로필로 되돌림
                               const profileRes = await fetch(`${API_BASE}/api/v1/social/profile/${userId}`)
                               const profileData = await profileRes.json()
                               if (profileData.profile) {
                                 setUserProfile(profileData.profile)
                               }
-                            } catch (_) {
-                              alert('저장에 실패했어요. 네트워크를 확인하고 다시 시도해주세요.')
                             }
                           }}
                           style={{
@@ -2492,6 +2510,19 @@ export function CompleteApp() {
                               onChange={async (e) => {
                                 const file = e.target.files?.[0]
                                 if (!file) return
+
+                                // 즉시 로컬 미리보기 (빠른 UX)
+                                const reader = new FileReader()
+                                reader.onload = (evt) => {
+                                  const tempUrl = evt.target?.result as string
+                                  setUserProfile(prev => ({
+                                    ...prev,
+                                    display_name: prev?.display_name || displayName || undefined,
+                                    profile_image_url: tempUrl
+                                  }))
+                                }
+                                reader.readAsDataURL(file)
+
                                 try {
                                   const compressed = await compressImageFile(file)
                                   const form = new FormData()
@@ -2500,23 +2531,42 @@ export function CompleteApp() {
                                   const res = await fetch(`${base}/api/upload`, { method: 'POST', body: form })
                                   const data = await res.json().catch(() => ({}))
                                   if (res.ok && data.url) {
-                                    await fetch(`${API_BASE}/api/v1/social/profile`, {
+                                    // 백엔드에 프로필 업데이트
+                                    const updateRes = await fetch(`${API_BASE}/api/v1/social/profile`, {
                                       method: 'POST',
                                       headers: { 'Content-Type': 'application/json' },
                                       body: JSON.stringify({ user_id: userId, avatar_url: data.url }),
                                     })
-                                    // 프로필 정보 다시 불러오기
+
+                                    if (updateRes.ok) {
+                                      // 실제 업로드된 URL로 state 업데이트
+                                      setUserProfile(prev => ({
+                                        ...prev,
+                                        display_name: prev?.display_name || displayName || undefined,
+                                        profile_image_url: data.url
+                                      }))
+                                      alert('프로필 사진이 저장되었어요!')
+                                    } else {
+                                      alert('프로필 업데이트에 실패했어요.')
+                                    }
+                                  } else {
+                                    alert(data.error || '업로드 실패')
+                                    // 실패 시 원래 프로필로 되돌림
                                     const profileRes = await fetch(`${API_BASE}/api/v1/social/profile/${userId}`)
                                     const profileData = await profileRes.json()
                                     if (profileData.profile) {
                                       setUserProfile(profileData.profile)
                                     }
-                                    alert('프로필 사진이 적용됐어요.')
-                                  } else {
-                                    alert(data.error || '업로드 실패')
                                   }
                                 } catch (err) {
+                                  console.error('Upload error:', err)
                                   alert('업로드 중 오류가 났어요.')
+                                  // 실패 시 원래 프로필로 되돌림
+                                  const profileRes = await fetch(`${API_BASE}/api/v1/social/profile/${userId}`)
+                                  const profileData = await profileRes.json()
+                                  if (profileData.profile) {
+                                    setUserProfile(profileData.profile)
+                                  }
                                 }
                                 e.target.value = ''
                               }}
