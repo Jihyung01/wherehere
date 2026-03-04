@@ -11,6 +11,7 @@ type Post = {
   meet_time?: string
   image_url?: string
   place_name?: string
+  place_address?: string
   author_id: string
   area_name?: string
   created_at?: string

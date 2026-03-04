@@ -212,13 +212,14 @@ export function blobToFile(blob: Blob, filename: string): File {
 }
 
 /** 캡션 생성 (게시글 공유용) */
-export function makeCaption(post: { title: string; body?: string; place_name?: string }): string {
+export function makeCaption(post: { title: string; body?: string; place_name?: string; place_address?: string }): string {
   const appUrl = typeof window !== 'undefined' ? window.location.origin + '/' : 'https://wherehere.app/'
   return [
     post.title,
     post.body || '',
-    post.place_name ? '장소: ' + post.place_name : '',
-    '#동네생활 #wherehere',
+    post.place_name ? `📍 ${post.place_name}` : '',
+    post.place_address ? `   ${post.place_address}` : '',
+    '#동네생활 #wherehere #맛집 #카페',
     appUrl,
   ]
     .filter(Boolean)

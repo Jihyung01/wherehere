@@ -645,6 +645,7 @@ export function CompleteApp() {
         
         // 옵트인: 동네 피드에 퀘스트 완료 스토리 올리기
         const placeName = acceptedQuest?.name || '장소'
+        const placeAddress = acceptedQuest?.address || ''
         const rating = reviewData.rating
         const postToFeed = window.confirm('이 퀘스트를 동네 피드에 올릴까요?')
         if (postToFeed) {
@@ -659,6 +660,8 @@ export function CompleteApp() {
                 body: `${placeName} 방문했어요. 별점 ${rating}점!`,
                 rating: rating,
                 place_name: placeName,
+                place_address: placeAddress,
+                image_url: reviewData.photos?.[0] || '',
                 area_name: (acceptedQuest as any)?.region || (acceptedQuest as any)?.area || '내 주변',
               }),
             })
@@ -1785,10 +1788,52 @@ export function CompleteApp() {
   // 소셜 탭: 동네(홈/작성/피드) + 친구(기존 체크인 피드)
   if (screen === 'social') {
     const kakaoJsKey = process.env.NEXT_PUBLIC_KAKAO_MAP_KEY || process.env.NEXT_PUBLIC_KAKAO_JS_KEY || '160238a590f3d2957230d764fb745322'
-    const sharePostText = (post: { title: string; body?: string; place_name?: string } | null) => {
+    const sharePostText = (post: { title: string; body?: string; place_name?: string; image_url?: string; place_address?: string } | null) => {
       if (!post) return
+      
+      const kakao = typeof window !== 'undefined' ? (window as any).Kakao : undefined
       const appUrl = typeof window !== 'undefined' ? window.location.origin + '/' : ''
-      const text = [post.title, post.body || '', post.place_name ? '장소: ' + post.place_name : '', '#동네생활 #wherehere', appUrl].filter(Boolean).join('\n')
+      
+      // 카카오톡 SDK로 공유
+      if (kakao?.Share?.sendDefault) {
+        try {
+          const description = [
+            post.body || '',
+            post.place_name ? `📍 ${post.place_name}` : '',
+            post.place_address ? `   ${post.place_address}` : ''
+          ].filter(Boolean).join('\n')
+          
+          kakao.Share.sendDefault({
+            objectType: 'feed',
+            content: {
+              title: post.title,
+              description: description,
+              imageUrl: post.image_url || appUrl + 'og.png',
+              link: {
+                webUrl: appUrl,
+                mobileWebUrl: appUrl,
+              },
+            },
+            buttons: [
+              {
+                title: 'WhereHere 열기',
+                link: {
+                  webUrl: appUrl,
+                  mobileWebUrl: appUrl,
+                },
+              },
+            ],
+          })
+          alert('카카오톡으로 공유했어요!')
+          return
+        } catch (err) {
+          console.error('카카오톡 공유 실패:', err)
+          alert('카카오톡 공유에 실패했어요. 기본 공유를 시도합니다.')
+        }
+      }
+      
+      // 카카오 SDK 없으면 기본 공유
+      const text = [post.title, post.body || '', post.place_name ? `📍 ${post.place_name}` : '', post.place_address ? `   ${post.place_address}` : '', '#동네생활 #wherehere', appUrl].filter(Boolean).join('\n')
       if (typeof navigator !== 'undefined' && navigator.share) {
         navigator.share({ title: post.title, text }).catch(() => { navigator.clipboard?.writeText(text); alert('공유 문구를 복사했어요.') })
       } else {
@@ -1796,15 +1841,20 @@ export function CompleteApp() {
         alert('공유 문구를 복사했어요.')
       }
     }
-    const sharePostInstagramCard = async (post: { title: string; body?: string; place_name?: string; image_url?: string } | null) => {
+    const sharePostInstagramCard = async (post: { title: string; body?: string; place_name?: string; place_address?: string; image_url?: string } | null) => {
       if (!post) return
       const caption = makeCaption(post)
       try {
+        const placeLine = [
+          post.place_name ? `📍 ${post.place_name}` : '',
+          post.place_address ? post.place_address : ''
+        ].filter(Boolean).join(' · ')
+        
         const blob = await makeStoryCard({
           title: post.title,
           body: (post.body || '').slice(0, 200),
           imageUrl: post.image_url,
-          placeLine: post.place_name ? '장소: ' + post.place_name : undefined,
+          placeLine: placeLine || undefined,
         })
         const file = blobToFile(blob, 'wherehere-story.png')
         await shareOrDownload({ file, caption, filename: 'wherehere-story.png', onToast: (msg) => alert(msg) })
