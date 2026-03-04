@@ -1,0 +1,26 @@
+-- ============================================================
+-- 업로드용 Storage 버킷 "uploads" 생성 안내
+-- ============================================================
+-- storage 스키마는 Supabase에서 읽기 전용으로 권장되므로,
+-- 버킷은 대시보드 또는 API로 생성해야 합니다.
+--
+-- 1) Supabase 대시보드: Storage > New bucket
+--    - Name: uploads
+--    - Public bucket: ON (체크)
+--    - File size limit: 4 MB (선택)
+--    - Allowed MIME types: image/jpeg, image/png, image/gif, image/webp (선택)
+--
+-- 2) 또는 프로젝트 설정 후 아래 SQL을 Supabase SQL Editor에서
+--    한 번만 실행 (가능한 경우):
+--
+--    INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+--    VALUES (gen_random_uuid(), 'uploads', true, 4194304,
+--            ARRAY['image/jpeg','image/png','image/gif','image/webp'])
+--    ON CONFLICT (name) DO NOTHING;
+--
+-- 3) 버킷 생성 후 Storage > Policies에서
+--    - INSERT: public 또는 authenticated 허용 (posts/ 폴더)
+--    - SELECT: public 허용 (public 버킷이면 기본 허용)
+-- ============================================================
+
+SELECT 1;

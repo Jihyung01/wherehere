@@ -29,7 +29,13 @@ async function proxy(
   }
   if (request.method !== 'GET' && request.method !== 'HEAD') {
     try {
-      init.body = await request.arrayBuffer()
+      const body = await request.arrayBuffer()
+      if (body.byteLength > 0) {
+        init.body = body
+        if (!headers.get('content-type')) {
+          headers.set('Content-Type', 'application/json')
+        }
+      }
     } catch {
       // no body
     }
