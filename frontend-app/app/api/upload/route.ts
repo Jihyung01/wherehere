@@ -5,9 +5,35 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { createServerSupabaseClient } from '@/lib/supabase/server'
+import { cookies } from 'next/headers'
+import { createServerClient } from '@supabase/ssr'
 
 const BUCKET = 'uploads'
+
+async function getSupabase() {
+  const cookieStore = await cookies()
+  return createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() {
+          return cookieStore.getAll()
+        },
+        setAll(cookiesToSet: { name: string; value: string; options?: object }[]) {
+          try {
+            cookiesToSet.forEach(({ name, value, options }) =>
+              cookieStore.set(name, value, options)
+            )
+          } catch {
+            // Route Handler only
+          }
+        },
+      },
+    }
+  )
+}
+
 const MAX_SIZE = 5 * 1024 * 1024 // 5MB
 const ALLOWED = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
 
@@ -25,7 +51,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'JPEG, PNG, GIF, WebP만 업로드할 수 있습니다.' }, { status: 400 })
     }
 
-    const supabase = await createServerSupabaseClient()
+    const supabase = await getSupabase()
     const ext = file.name.split('.').pop() || 'jpg'
     const path = `posts/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
 
