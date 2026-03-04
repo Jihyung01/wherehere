@@ -65,6 +65,7 @@ export function CompleteApp() {
   const { signOut } = useAuth()
   const userId = user?.id ?? 'user-demo-001'
   const isLoggedIn = !!user
+  const [kakaoSdkLoaded, setKakaoSdkLoaded] = useState(false)
   const [screen, setScreen] = useState<Screen>('home')
   const [selectedRole, setSelectedRole] = useState<RoleType | null>(null)
   const [selectedMood, setSelectedMood] = useState<MoodType | null>(null)
@@ -126,6 +127,36 @@ export function CompleteApp() {
     } catch (_) {}
     setShowOnboarding(false)
   }
+
+  // 카카오 SDK 전역 로드
+  useEffect(() => {
+    const kakaoJsKey = process.env.NEXT_PUBLIC_KAKAO_MAP_KEY || '160238a590f3d2957230d764fb745322'
+    if (typeof window === 'undefined' || kakaoSdkLoaded) return
+
+    // 스크립트가 이미 로드되어 있는지 확인
+    if ((window as any).Kakao) {
+      if (!(window as any).Kakao.isInitialized?.()) {
+        (window as any).Kakao.init(kakaoJsKey)
+      }
+      setKakaoSdkLoaded(true)
+      return
+    }
+
+    // 스크립트 로드
+    const script = document.createElement('script')
+    script.src = `https://t1.kakao.com/sdk/js/kakao.js?appkey=${kakaoJsKey}`
+    script.async = true
+    script.onload = () => {
+      if ((window as any).Kakao && !(window as any).Kakao.isInitialized?.()) {
+        (window as any).Kakao.init(kakaoJsKey)
+      }
+      setKakaoSdkLoaded(true)
+    }
+    script.onerror = () => {
+      console.error('카카오 SDK 로드 실패')
+    }
+    document.head.appendChild(script)
+  }, [])
 
   const submitPlaceSuggestion = async () => {
     if (!placeSuggestionForm.name.trim()) {
@@ -1890,7 +1921,7 @@ export function CompleteApp() {
               },
             ],
           })
-          alert('카카오톡으로 공유했어요!')
+          // 성공 - 카카오톡 친구 선택창이 열림
           return
         } catch (err) {
           console.error('카카오톡 공유 실패:', err)
@@ -1936,15 +1967,6 @@ export function CompleteApp() {
     }
     return (
       <>
-        <Script
-          src={`https://t1.kakao.com/sdk/js/kakao.js?appkey=${kakaoJsKey}`}
-          strategy="afterInteractive"
-          onLoad={() => {
-            if (typeof window !== 'undefined' && (window as any).Kakao && !(window as any).Kakao.isInitialized?.()) {
-              (window as any).Kakao.init(kakaoJsKey)
-            }
-          }}
-        />
       <LocalHub
         apiBase={API_BASE}
         userId={userId}
