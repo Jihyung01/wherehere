@@ -37,6 +37,7 @@ type LocalHubProps = {
   onShareInstagramCard: (postOrNull: Post | null) => void
   onToast: (msg: string) => void
   BottomNav: React.ReactNode
+  userAvatarUrl?: string
 }
 
 export function LocalHub({
@@ -60,6 +61,7 @@ export function LocalHub({
   onShareInstagramCard,
   onToast,
   BottomNav,
+  userAvatarUrl,
 }: LocalHubProps) {
   const [topTab, setTopTab] = useState<'neighborhood' | 'friend'>('neighborhood')
   const [subTab, setSubTab] = useState<'home' | 'compose' | 'feed'>('compose')

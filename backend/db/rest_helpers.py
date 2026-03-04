@@ -648,6 +648,33 @@ class RestDatabaseHelpers:
             rows = response.json()
             return {str(r.get("id")): {"display_name": r.get("display_name"), "profile_image_url": r.get("profile_image_url")} for r in rows if r.get("id")}
 
+    async def ensure_user_exists(self, user_id: str) -> bool:
+        """
+        users 테이블에 사용자가 없으면 기본 정보로 생성
+        """
+        if not user_id:
+            return False
+        
+        try:
+            # 이미 존재하는지 확인
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                url = f"{self.base_url}/rest/v1/users"
+                params = {"id": f"eq.{user_id}", "select": "id"}
+                response = await client.get(url, headers=self.headers, params=params)
+                
+                if response.status_code == 200:
+                    users = response.json()
+                    if users and len(users) > 0:
+                        return True
+                
+                # 없으면 생성
+                payload = {"id": user_id, "display_name": user_id[:8]}
+                headers = {**self.headers, "Prefer": "resolution=merge-duplicates"}
+                response = await client.post(url, headers=headers, json=payload)
+                return response.status_code in (200, 201)
+        except Exception:
+            return False
+
     async def update_user_profile_basic(
         self,
         user_id: str,

@@ -64,7 +64,7 @@ export function CompleteApp() {
   const { user } = useUser()
   const { signOut } = useAuth()
   const userId = user?.id ?? 'user-demo-001'
-  const displayName = user?.user_metadata?.name ?? user?.user_metadata?.full_name ?? user?.user_metadata?.user_name ?? user?.user_metadata?.kakao_account?.profile?.nickname ?? user?.email ?? (user ? '로그인한 사용자' : null)
+  const displayName = userProfile?.display_name ?? user?.user_metadata?.name ?? user?.user_metadata?.full_name ?? user?.user_metadata?.user_name ?? user?.user_metadata?.kakao_account?.profile?.nickname ?? user?.email ?? (user ? '로그인한 사용자' : null)
   const isLoggedIn = !!user
   const [screen, setScreen] = useState<Screen>('home')
   const [selectedRole, setSelectedRole] = useState<RoleType | null>(null)
@@ -104,6 +104,7 @@ export function CompleteApp() {
   const [demoAccepted, setDemoAccepted] = useState(false)
   const [selectedProfilePost, setSelectedProfilePost] = useState<{ id: string; title: string; body?: string; type?: string; image_url?: string; place_name?: string; rating?: number; created_at?: string; author_id?: string } | null>(null)
   const [profileCommentInput, setProfileCommentInput] = useState('')
+  const [userProfile, setUserProfile] = useState<{ display_name?: string; profile_image_url?: string } | null>(null)
 
   // 로그인 유도: 비로그인 시 데모 수락 전에는 로그인 화면 강조
   const showLoginGate = !isLoggedIn && typeof window !== 'undefined' && typeof sessionStorage !== 'undefined' && sessionStorage.getItem('wherehere_demo_accepted') !== '1'
@@ -184,6 +185,25 @@ export function CompleteApp() {
     localStorage.setItem('wherehere_themeMode', themeMode)
     if (themeMode !== 'system') localStorage.setItem('isDarkMode', isDarkMode.toString())
   }, [themeMode, isDarkMode])
+
+  // 프로필 정보 불러오기
+  useEffect(() => {
+    if (!userId || userId === 'user-demo-001') return
+    
+    const fetchProfile = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/v1/social/profile/${userId}`)
+        const data = await res.json()
+        if (data.profile) {
+          setUserProfile(data.profile)
+        }
+      } catch (err) {
+        console.error('프로필 조회 실패:', err)
+      }
+    }
+    
+    fetchProfile()
+  }, [userId])
 
   useEffect(() => {
     if (navigator.geolocation) {
@@ -1830,6 +1850,7 @@ export function CompleteApp() {
         onShareInstagramCard={sharePostInstagramCard}
         onToast={(msg) => alert(msg)}
         BottomNav={<BottomNav />}
+        userAvatarUrl={userProfile?.profile_image_url}
       />
       </>
     )
@@ -1845,7 +1866,7 @@ export function CompleteApp() {
     const longestStreak = userStats?.longest_streak ?? 0
     const completedQuests = userStats?.completed_quests ?? 0
     const placesVisited = userStats?.total_places_visited ?? 0
-    const profileAvatarUrl = user?.user_metadata?.avatar_url ?? user?.user_metadata?.picture ?? user?.user_metadata?.profile_image_url
+    const profileAvatarUrl = userProfile?.profile_image_url ?? user?.user_metadata?.avatar_url ?? user?.user_metadata?.picture ?? user?.user_metadata?.profile_image_url
 
     const submitProfileComment = async () => {
       if (!selectedProfilePost?.id || !profileCommentInput.trim()) return
@@ -2303,12 +2324,21 @@ export function CompleteApp() {
                 <div style={{ marginTop: 16, paddingTop: 16, borderTop: `1px solid ${borderColor}` }} onClick={(e) => e.stopPropagation()}>
                   {isLoggedIn ? (
                     <>
-                      <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 6 }}>{displayName}</div>
-                      <div style={{ fontSize: 12, marginBottom: 4, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280' }}>
-                        사용자 ID: {userId.slice(0, 8)}…
-                      </div>
-                      <div style={{ fontSize: 12, marginBottom: 12, color: isDarkMode ? 'rgba(255,255,255,0.5)' : '#9CA3AF' }}>
-                        계정 생성일: {formatAccountDate(user?.created_at)}
+                      {/* 현재 프로필 미리보기 */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16, padding: 12, background: isDarkMode ? 'rgba(232,116,12,0.1)' : '#FEF3C7', borderRadius: 12 }}>
+                        <div style={{ width: 56, height: 56, borderRadius: '50%', overflow: 'hidden', background: 'linear-gradient(135deg, #E8740C, #F59E0B)', flexShrink: 0 }}>
+                          {userProfile?.profile_image_url ? (
+                            <img src={userProfile.profile_image_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                          ) : (
+                            <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24, color: '#fff' }}>{(displayName || '?').slice(0, 1)}</div>
+                          )}
+                        </div>
+                        <div>
+                          <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 2 }}>{displayName}</div>
+                          <div style={{ fontSize: 11, color: isDarkMode ? 'rgba(255,255,255,0.5)' : '#6B7280' }}>
+                            ID: {userId.slice(0, 8)}… · {formatAccountDate(user?.created_at)}
+                          </div>
+                        </div>
                       </div>
                       {/* 소셜 프로필 수정 */}
                       <div style={{ marginBottom: 12 }}>
@@ -2327,6 +2357,12 @@ export function CompleteApp() {
                                 body: JSON.stringify({ user_id: userId, display_name: name || undefined }),
                               })
                               if (!res.ok) throw new Error('API error')
+                              // 프로필 정보 다시 불러오기
+                              const profileRes = await fetch(`${API_BASE}/api/v1/social/profile/${userId}`)
+                              const profileData = await profileRes.json()
+                              if (profileData.profile) {
+                                setUserProfile(profileData.profile)
+                              }
                             } catch (_) {
                               alert('저장에 실패했어요. 네트워크를 확인하고 다시 시도해주세요.')
                             }
@@ -2365,6 +2401,12 @@ export function CompleteApp() {
                                       headers: { 'Content-Type': 'application/json' },
                                       body: JSON.stringify({ user_id: userId, avatar_url: data.url }),
                                     })
+                                    // 프로필 정보 다시 불러오기
+                                    const profileRes = await fetch(`${API_BASE}/api/v1/social/profile/${userId}`)
+                                    const profileData = await profileRes.json()
+                                    if (profileData.profile) {
+                                      setUserProfile(profileData.profile)
+                                    }
                                     alert('프로필 사진이 적용됐어요.')
                                   } else {
                                     alert(data.error || '업로드 실패')
@@ -2388,6 +2430,12 @@ export function CompleteApp() {
                                 body: JSON.stringify({ user_id: userId, avatar_url: url || undefined }),
                               })
                               if (!res.ok) throw new Error('API error')
+                              // 프로필 정보 다시 불러오기
+                              const profileRes = await fetch(`${API_BASE}/api/v1/social/profile/${userId}`)
+                              const profileData = await profileRes.json()
+                              if (profileData.profile) {
+                                setUserProfile(profileData.profile)
+                              }
                             } catch (_) {
                               alert('저장에 실패했어요. 네트워크를 확인하고 다시 시도해주세요.')
                             }

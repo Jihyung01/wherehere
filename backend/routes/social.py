@@ -296,6 +296,35 @@ class SocialProfileUpdate(BaseModel):
     avatar_url: Optional[str] = None
 
 
+@router.get("/profile/{user_id}")
+async def get_social_profile(
+    user_id: str,
+    db=Depends(get_db)
+):
+    """
+    소셜 프로필 조회
+    - public.users.display_name
+    - public.users.profile_image_url
+    """
+    if db is None:
+        return {"profile": None}
+    
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            url = f"{db.base_url}/rest/v1/users"
+            params = {"id": f"eq.{user_id}", "select": "id,display_name,profile_image_url,username"}
+            response = await client.get(url, headers=db.headers, params=params)
+            
+            if response.status_code == 200:
+                users = response.json()
+                if users and len(users) > 0:
+                    return {"profile": users[0]}
+            
+            return {"profile": None}
+    except Exception as e:
+        return {"profile": None}
+
+
 @router.post("/profile")
 async def update_social_profile(
     req: SocialProfileUpdate,

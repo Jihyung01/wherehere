@@ -73,6 +73,10 @@ async def create_post(req: CreateLocalPostRequest, db=Depends(get_db)):
     """동네 게시글 작성"""
     if db is None:
         raise HTTPException(status_code=503, detail="Database not connected. Check backend SUPABASE_URL.")
+    
+    # users 테이블에 사용자 정보가 없으면 기본 정보 생성
+    await db.ensure_user_exists(req.author_id)
+    
     post = await db.create_local_post(
         author_id=req.author_id,
         type_=req.type,
