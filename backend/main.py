@@ -34,6 +34,7 @@ from routes.visits import router as visits_router
 from routes.notifications import router as notifications_router
 from routes.place_suggestions import router as place_suggestions_router
 from routes.push import router as push_router
+from routes.local_feed import router as local_feed_router
 
 
 @asynccontextmanager
@@ -68,30 +69,19 @@ app = FastAPI(
 )
 
 
-# CORS - 모든 origin 허용 (프로덕션용)
+# CORS - config.ALLOWED_ORIGINS 사용 시 제한, 없으면 "*" (docs/보안_전략.md)
+_cors_origins = ["*"]
+if getattr(settings, "ALLOWED_ORIGINS", None) and isinstance(settings.ALLOWED_ORIGINS, list) and len(settings.ALLOWED_ORIGINS) > 0:
+    _cors_origins = list(settings.ALLOWED_ORIGINS)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # 모든 origin 허용
-    allow_credentials=False,  # credentials와 "*" origin은 함께 사용 불가
+    allow_origins=_cors_origins,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
     expose_headers=["*"],
     max_age=3600,
 )
-
-
-# OPTIONS 요청 명시적 처리
-@app.options("/{full_path:path}")
-async def options_handler(request: Request):
-    return Response(
-        status_code=200,
-        headers={
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "*",
-            "Access-Control-Allow-Headers": "*",
-            "Access-Control-Max-Age": "3600",
-        }
-    )
 
 # Timing middleware
 @app.middleware("http")
@@ -114,6 +104,26 @@ app.include_router(visits_router)
 app.include_router(notifications_router)
 app.include_router(place_suggestions_router)
 app.include_router(push_router)
+app.include_router(local_feed_router)
+
+
+# OPTIONS는 라우터 등록 뒤에 두어야 함. 앞에 두면 /{full_path:path}가 먼저 매칭되어 GET/POST가 405 발생
+@app.options("/{full_path:path}")
+async def options_handler(request: Request):
+    origin = request.headers.get("origin", "*")
+    if _cors_origins != ["*"] and origin not in _cors_origins and _cors_origins:
+        origin = _cors_origins[0]
+    else:
+        origin = "*" if _cors_origins == ["*"] else origin
+    return Response(
+        status_code=200,
+        headers={
+            "Access-Control-Allow-Origin": origin,
+            "Access-Control-Allow-Methods": "*",
+            "Access-Control-Allow-Headers": "*",
+            "Access-Control-Max-Age": "3600",
+        }
+    )
 
 
 @app.get("/")
