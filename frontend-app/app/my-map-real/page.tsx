@@ -766,6 +766,7 @@ export default function MyMapReal() {
           {[
             { icon: "🏠", label: "홈", path: "/" },
             { icon: "🗺️", label: "나의 지도", path: "/my-map-real", active: true },
+            { icon: "💬", label: "소셜", path: "/" },
             { icon: "🎯", label: "챌린지", path: "/" },
             { icon: "👤", label: "프로필", path: "/" },
             { icon: "⚙️", label: "설정", path: "/" },

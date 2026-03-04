@@ -84,6 +84,26 @@ export function LocalHub({
 
   const openKakaoInvite = useCallback(async () => {
     const kakao = typeof window !== 'undefined' ? (window as any).Kakao : undefined
+    const url = typeof window !== 'undefined' ? window.location.origin + '/' : ''
+    // 1) 카카오 공유 SDK로 공유 창 열기 (친구 선택 후 보내기 가능)
+    if (kakao?.Share?.sendDefault) {
+      try {
+        await kakao.Share.sendDefault({
+          objectType: 'feed',
+          content: {
+            title: 'WhereHere 초대',
+            description: `친구 코드: ${myFriendCode}\n위 코드로 WhereHere 앱에서 나를 찾아줘!`,
+            imageUrl: url + 'og.png',
+            link: { webUrl: url, mobileWebUrl: url },
+          },
+        })
+        onToast('카카오톡으로 공유했어요.')
+        return
+      } catch (err) {
+        // 공유 취소 등이면 그냥 링크 복사로
+      }
+    }
+    // 2) 카카오 로그인 토큰 있으면 친구 목록 모달
     const token = kakao?.Auth?.getAccessToken?.()
     if (token) {
       setKakaoFriendsLoading(true)
@@ -111,7 +131,7 @@ export function LocalHub({
     } else {
       copyInviteAndToast()
     }
-  }, [apiBase, copyInviteAndToast, onToast])
+  }, [apiBase, copyInviteAndToast, myFriendCode, onToast])
 
   const fetchLocalPosts = useCallback(async () => {
     const params = new URLSearchParams({ scope: 'neighborhood', limit: '100' })

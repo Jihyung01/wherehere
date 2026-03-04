@@ -151,10 +151,15 @@ export function LocalFeed({
       {posts.map((post) => (
         <div key={post.id} style={{ background: cardBg, border: `1px solid ${borderColor}`, borderRadius: 16, padding: 16 }}>
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-            <div style={{ width: 44, height: 44, borderRadius: '50%', background: 'linear-gradient(135deg, #E8740C, #F59E0B)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0, color: '#fff' }}>
-              {(post.author_id === userId ? '나' : post.author_id?.slice(0, 1) || '?').slice(0, 1)}
+            <div style={{ width: 44, height: 44, borderRadius: '50%', overflow: 'hidden', background: 'linear-gradient(135deg, #E8740C, #F59E0B)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0, color: '#fff' }}>
+              {(post as any).author_avatar_url ? (
+                <img src={(post as any).author_avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              ) : (
+                ((post as any).author_display_name || (post.author_id === userId ? '나' : post.author_id?.slice(0, 1) || '?')).slice(0, 1)
+              )}
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: textColor }}>{(post as any).author_display_name || (post.author_id === userId ? '나' : post.author_id?.slice(0, 8) + '…')}</div>
               <span style={{ fontSize: 11, color: '#E8740C', fontWeight: 600 }}>{typeLabel(post.type)}</span>
               <h3 style={{ fontSize: 16, fontWeight: 700, marginTop: 4, marginBottom: 6, color: textColor }}>{post.title}</h3>
               <p style={{ fontSize: 13, color: isDarkMode ? 'rgba(255,255,255,0.8)' : '#374151', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{post.body}</p>
@@ -171,7 +176,7 @@ export function LocalFeed({
                 <p style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280', marginTop: 4 }}>장소: {post.place_name}</p>
               )}
               <div style={{ fontSize: 11, color: isDarkMode ? 'rgba(255,255,255,0.4)' : '#9CA3AF', marginTop: 8 }}>
-                {post.author_id === userId ? '나' : post.author_id?.slice(0, 8)} · {relativeTime(post.created_at)}
+                {relativeTime(post.created_at)}
               </div>
             </div>
           </div>

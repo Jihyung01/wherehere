@@ -634,6 +634,20 @@ class RestDatabaseHelpers:
                 return []
             return response.json()
 
+    async def get_users_basic(self, user_ids: List[str]) -> Dict[str, Dict[str, Any]]:
+        """여러 사용자의 display_name, profile_image_url 조회. 반환: { user_id: { display_name, profile_image_url } }"""
+        if not user_ids:
+            return {}
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            in_val = "in.(" + ",".join(user_ids[:50]) + ")"
+            url = f"{self.base_url}/rest/v1/users"
+            params = {"select": "id,display_name,profile_image_url", "id": in_val}
+            response = await client.get(url, headers=self.headers, params=params)
+            if response.status_code != 200:
+                return {}
+            rows = response.json()
+            return {str(r.get("id")): {"display_name": r.get("display_name"), "profile_image_url": r.get("profile_image_url")} for r in rows if r.get("id")}
+
     async def update_user_profile_basic(
         self,
         user_id: str,

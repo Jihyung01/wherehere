@@ -1547,6 +1547,7 @@ export function CompleteApp() {
 
   // 소셜 탭: 동네(홈/작성/피드) + 친구(기존 체크인 피드)
   if (screen === 'social') {
+    const kakaoJsKey = process.env.NEXT_PUBLIC_KAKAO_MAP_KEY || process.env.NEXT_PUBLIC_KAKAO_JS_KEY || '160238a590f3d2957230d764fb745322'
     const sharePostText = (post: { title: string; body?: string; place_name?: string } | null) => {
       if (!post) return
       const appUrl = typeof window !== 'undefined' ? window.location.origin + '/' : ''
@@ -1581,6 +1582,16 @@ export function CompleteApp() {
       }
     }
     return (
+      <>
+        <Script
+          src={`https://t1.kakao.com/sdk/js/kakao.js?appkey=${kakaoJsKey}`}
+          strategy="afterInteractive"
+          onLoad={() => {
+            if (typeof window !== 'undefined' && (window as any).Kakao && !(window as any).Kakao.isInitialized?.()) {
+              (window as any).Kakao.init(kakaoJsKey)
+            }
+          }}
+        />
       <LocalHub
         apiBase={API_BASE}
         userId={userId}
@@ -1603,6 +1614,7 @@ export function CompleteApp() {
         onToast={(msg) => alert(msg)}
         BottomNav={<BottomNav />}
       />
+      </>
     )
   }
 
@@ -2107,8 +2119,42 @@ export function CompleteApp() {
                             fontSize: 13,
                           }}
                         />
+                        <div style={{ marginBottom: 8 }}>
+                          <label style={{ display: 'inline-block', padding: '8px 14px', borderRadius: 8, border: `1px solid ${borderColor}`, background: isDarkMode ? 'rgba(0,0,0,0.2)' : '#fff', color: textColor, fontSize: 13, cursor: 'pointer' }}>
+                            📷 사진 선택 (앨범/파일)
+                            <input
+                              type="file"
+                              accept="image/jpeg,image/png,image/gif,image/webp"
+                              style={{ display: 'none' }}
+                              onChange={async (e) => {
+                                const file = e.target.files?.[0]
+                                if (!file) return
+                                try {
+                                  const form = new FormData()
+                                  form.append('file', file)
+                                  const base = typeof window !== 'undefined' ? window.location.origin : ''
+                                  const res = await fetch(`${base}/api/upload`, { method: 'POST', body: form })
+                                  const data = await res.json().catch(() => ({}))
+                                  if (res.ok && data.url) {
+                                    await fetch(`${API_BASE}/api/v1/social/profile`, {
+                                      method: 'POST',
+                                      headers: { 'Content-Type': 'application/json' },
+                                      body: JSON.stringify({ user_id: userId, avatar_url: data.url }),
+                                    })
+                                    alert('프로필 사진이 적용됐어요.')
+                                  } else {
+                                    alert(data.error || '업로드 실패')
+                                  }
+                                } catch (err) {
+                                  alert('업로드 중 오류가 났어요.')
+                                }
+                                e.target.value = ''
+                              }}
+                            />
+                          </label>
+                        </div>
                         <input
-                          placeholder="프로필 이미지 URL (선택)"
+                          placeholder="또는 프로필 이미지 URL 입력 (선택)"
                           onBlur={async (e) => {
                             const url = e.target.value.trim()
                             try {

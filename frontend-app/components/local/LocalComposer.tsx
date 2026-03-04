@@ -35,7 +35,29 @@ export function LocalComposer({
   const [rating, setRating] = useState(0)
   const [meetTime, setMeetTime] = useState('')
   const [imageUrl, setImageUrl] = useState('')
+  const [uploading, setUploading] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+
+  const uploadImage = async (file: File) => {
+    setUploading(true)
+    try {
+      const form = new FormData()
+      form.append('file', file)
+      const base = typeof window !== 'undefined' ? window.location.origin : ''
+      const res = await fetch(`${base}/api/upload`, { method: 'POST', body: form })
+      const data = await res.json().catch(() => ({}))
+      if (res.ok && data.url) {
+        setImageUrl(data.url)
+        onToast('사진이 추가됐어요.')
+      } else {
+        onToast(data.error || '사진 업로드에 실패했어요.')
+      }
+    } catch {
+      onToast('사진 업로드 중 오류가 났어요.')
+    } finally {
+      setUploading(false)
+    }
+  }
 
   const inputStyle = {
     width: '100%',
@@ -72,7 +94,7 @@ export function LocalComposer({
         }),
       })
       const data = await res.json().catch(() => ({}))
-      if (data.success) {
+      if (res.ok && data.success) {
         setTitle('')
         setBody('')
         setRating(0)
@@ -81,7 +103,8 @@ export function LocalComposer({
         onToast('동네 피드에 올렸어요.')
         onSuccess()
       } else {
-        onToast('작성에 실패했어요.')
+        const msg = data.detail || data.message || (res.status === 503 ? '서버 DB 연결을 확인해 주세요.' : '작성에 실패했어요.')
+        onToast(typeof msg === 'string' ? msg : '작성에 실패했어요.')
       }
     } catch {
       onToast('네트워크 오류가 났어요.')
@@ -140,13 +163,24 @@ export function LocalComposer({
             style={inputStyle}
           />
         )}
-        <input
-          type="text"
-          placeholder="이미지 URL (선택)"
-          value={imageUrl}
-          onChange={(e) => setImageUrl(e.target.value)}
-          style={inputStyle}
-        />
+        <div>
+          <label style={{ display: 'inline-block', padding: '10px 16px', borderRadius: 10, border: `1px solid ${borderColor}`, background: isDarkMode ? 'rgba(0,0,0,0.2)' : '#fff', color: textColor, fontSize: 14, cursor: uploading ? 'wait' : 'pointer' }}>
+            {uploading ? '업로드 중…' : '📷 사진 선택 (앨범/파일)'}
+            <input
+              type="file"
+              accept="image/jpeg,image/png,image/gif,image/webp"
+              style={{ display: 'none' }}
+              disabled={uploading}
+              onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadImage(f); e.target.value = ''; }}
+            />
+          </label>
+          {imageUrl && (
+            <div style={{ marginTop: 8, position: 'relative', display: 'inline-block' }}>
+              <img src={imageUrl} alt="미리보기" style={{ maxWidth: '100%', maxHeight: 200, borderRadius: 12, objectFit: 'cover', border: `1px solid ${borderColor}` }} />
+              <button type="button" onClick={() => setImageUrl('')} style={{ position: 'absolute', top: 6, right: 6, width: 28, height: 28, borderRadius: '50%', border: 'none', background: 'rgba(0,0,0,0.6)', color: '#fff', fontSize: 16, cursor: 'pointer', lineHeight: 1 }}>×</button>
+            </div>
+          )}
+        </div>
         <button
           type="submit"
           disabled={submitting}

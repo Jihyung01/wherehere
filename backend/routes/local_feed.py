@@ -3,7 +3,7 @@
 로컬 피드 API: 동네 게시글(local_posts) + 댓글(local_comments)
 """
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from typing import Optional, List
 
@@ -57,6 +57,14 @@ async def list_posts(
         author_id=author_id,
         limit=limit,
     )
+    # 소셜 프로필: 작성자 display_name, profile_image_url 붙이기
+    author_ids = list({p.get("author_id") for p in posts if p.get("author_id")})
+    users_map = await db.get_users_basic(author_ids) if author_ids else {}
+    for p in posts:
+        aid = p.get("author_id")
+        u = users_map.get(aid) or users_map.get(str(aid)) if aid else {}
+        p["author_display_name"] = u.get("display_name")
+        p["author_avatar_url"] = u.get("profile_image_url")
     return {"posts": posts}
 
 
@@ -64,7 +72,7 @@ async def list_posts(
 async def create_post(req: CreateLocalPostRequest, db=Depends(get_db)):
     """동네 게시글 작성"""
     if db is None:
-        return {"success": False, "id": None}
+        raise HTTPException(status_code=503, detail="Database not connected. Check backend SUPABASE_URL.")
     post = await db.create_local_post(
         author_id=req.author_id,
         type_=req.type,
