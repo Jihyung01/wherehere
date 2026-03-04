@@ -1,9 +1,11 @@
 /**
  * WhereHere API Client
- * 새로 추가된 8대 AI 기능 API
+ * 브라우저에서는 같은 출처(프록시) 사용 → CORS 방지. SSR에서는 백엔드 URL 사용.
  */
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+const API_BASE =
+  typeof window !== 'undefined'
+    ? window.location.origin
+    : (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000')
 
 // ============================================================
 // AI Features
