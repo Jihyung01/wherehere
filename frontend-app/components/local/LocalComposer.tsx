@@ -116,30 +116,71 @@ export function LocalComposer({
   }
 
   return (
-    <div style={{ background: cardBg, borderRadius: 16, border: `1px solid ${borderColor}`, padding: 16 }}>
-      <p style={{ fontSize: 11, color: isDarkMode ? 'rgba(255,255,255,0.5)' : '#9CA3AF', marginBottom: 8 }}>CREATE POST</p>
-      <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+    <div style={{ background: cardBg, borderRadius: 20, border: `1px solid ${borderColor}`, padding: 20, boxShadow: isDarkMode ? 'none' : '0 4px 20px rgba(0,0,0,0.06)' }}>
+      <div style={{ marginBottom: 16 }}>
+        <h2 style={{ fontSize: 18, fontWeight: 800, color: textColor, marginBottom: 4 }}>CREATE POST · 로컬 SNS 작성</h2>
+        <p style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.5)' : '#9CA3AF' }}>주변 장소와 실제 피드를 연결했습니다.</p>
+      </div>
+      <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        {/* 사진 우선: 큰 업로드 영역 + 미리보기 */}
+        <div style={{ marginBottom: 4 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: textColor, marginBottom: 10 }}>📷 사진 (선택)</div>
+          {imageUrl ? (
+            <div style={{ position: 'relative', borderRadius: 16, overflow: 'hidden', border: `2px solid ${borderColor}`, background: isDarkMode ? 'rgba(0,0,0,0.2)' : '#f3f4f6' }}>
+              <img src={imageUrl} alt="미리보기" style={{ width: '100%', maxHeight: 320, objectFit: 'cover', display: 'block' }} />
+              <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(0,0,0,0.5) 0%, transparent 50%)' }} />
+              <button type="button" onClick={() => setImageUrl('')} style={{ position: 'absolute', bottom: 12, right: 12, padding: '8px 14px', borderRadius: 999, border: 'none', background: 'rgba(0,0,0,0.7)', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>사진 제거</button>
+            </div>
+          ) : (
+            <label style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              minHeight: 180,
+              borderRadius: 16,
+              border: `2px dashed ${isDarkMode ? 'rgba(232,116,12,0.4)' : 'rgba(232,116,12,0.5)'}`,
+              background: isDarkMode ? 'rgba(232,116,12,0.08)' : 'rgba(232,116,12,0.06)',
+              color: '#E8740C',
+              fontSize: 15,
+              fontWeight: 600,
+              cursor: uploading ? 'wait' : 'pointer',
+              textAlign: 'center',
+              padding: 24,
+            }}>
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/gif,image/webp"
+                style={{ display: 'none' }}
+                disabled={uploading}
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadImage(f); e.target.value = ''; }}
+              />
+              {uploading ? '업로드 중…' : '📷 클릭해서 사진 추가'}
+            </label>
+          )}
+        </div>
+
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
           {(['story', 'review', 'gathering'] as const).map((t) => (
             <label key={t} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
               <input type="radio" name="type" checked={type === t} onChange={() => setType(t)} />
-              <span style={{ fontSize: 13, color: textColor }}>{t === 'story' ? '동네 이야기' : t === 'review' ? '리뷰' : '모임'}</span>
+              <span style={{ fontSize: 14, color: textColor, fontWeight: 500 }}>{t === 'story' ? '동네 이야기' : t === 'review' ? '리뷰' : '모임'}</span>
             </label>
           ))}
         </div>
         {type === 'review' && (
           <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ fontSize: 13, color: textColor }}>별점</span>
-            <select value={rating} onChange={(e) => setRating(Number(e.target.value))} style={inputStyle}>
-              {[0, 1, 2, 3, 4, 5].map((n) => (
-                <option key={n} value={n}>{n === 0 ? '선택' : `${n}점`}</option>
+            <span style={{ fontSize: 13, color: textColor, fontWeight: 600 }}>리뷰 별점</span>
+            <select value={rating} onChange={(e) => setRating(Number(e.target.value))} style={{ ...inputStyle, width: 'auto', minWidth: 100 }}>
+              <option value={0}>리뷰 아님</option>
+              {[1, 2, 3, 4, 5].map((n) => (
+                <option key={n} value={n}>{n}점</option>
               ))}
             </select>
           </label>
         )}
         <input
           type="text"
-          placeholder="제목"
+          placeholder="예: 오늘 저녁 근처에서 같이 달릴 사람?"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           maxLength={80}
@@ -147,7 +188,7 @@ export function LocalComposer({
           required
         />
         <textarea
-          placeholder="내용"
+          placeholder="동네 정보, 리뷰, 모임 공지, 후기 등을 자유롭게 적어보세요."
           value={body}
           onChange={(e) => setBody(e.target.value)}
           rows={4}
@@ -158,43 +199,26 @@ export function LocalComposer({
         {type === 'gathering' && (
           <input
             type="text"
-            placeholder="모임 시간 (예: 오늘 8시)"
+            placeholder="모임 시간 (예: 오늘 8시 / 토요일 오전 10시)"
             value={meetTime}
             onChange={(e) => setMeetTime(e.target.value)}
             maxLength={40}
             style={inputStyle}
           />
         )}
-        <div>
-          <label style={{ display: 'inline-block', padding: '10px 16px', borderRadius: 10, border: `1px solid ${borderColor}`, background: isDarkMode ? 'rgba(0,0,0,0.2)' : '#fff', color: textColor, fontSize: 14, cursor: uploading ? 'wait' : 'pointer' }}>
-            {uploading ? '업로드 중…' : '📷 사진 선택 (앨범/파일)'}
-            <input
-              type="file"
-              accept="image/jpeg,image/png,image/gif,image/webp"
-              style={{ display: 'none' }}
-              disabled={uploading}
-              onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadImage(f); e.target.value = ''; }}
-            />
-          </label>
-          {imageUrl && (
-            <div style={{ marginTop: 8, position: 'relative', display: 'inline-block' }}>
-              <img src={imageUrl} alt="미리보기" style={{ maxWidth: '100%', maxHeight: 200, borderRadius: 12, objectFit: 'cover', border: `1px solid ${borderColor}` }} />
-              <button type="button" onClick={() => setImageUrl('')} style={{ position: 'absolute', top: 6, right: 6, width: 28, height: 28, borderRadius: '50%', border: 'none', background: 'rgba(0,0,0,0.6)', color: '#fff', fontSize: 16, cursor: 'pointer', lineHeight: 1 }}>×</button>
-            </div>
-          )}
-        </div>
         <button
           type="submit"
           disabled={submitting}
           style={{
-            padding: 14,
-            borderRadius: 12,
+            padding: 16,
+            borderRadius: 14,
             border: 'none',
-            background: '#E8740C',
+            background: 'linear-gradient(135deg, #E8740C, #C65D00)',
             color: '#fff',
             fontWeight: 700,
-            fontSize: 15,
+            fontSize: 16,
             cursor: submitting ? 'not-allowed' : 'pointer',
+            boxShadow: submitting ? 'none' : '0 4px 16px rgba(232,116,12,0.35)',
           }}
         >
           {submitting ? '올리는 중…' : '동네 피드에 올리기'}

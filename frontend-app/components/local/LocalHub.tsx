@@ -62,7 +62,7 @@ export function LocalHub({
   BottomNav,
 }: LocalHubProps) {
   const [topTab, setTopTab] = useState<'neighborhood' | 'friend'>('neighborhood')
-  const [subTab, setSubTab] = useState<'home' | 'compose' | 'feed'>('home')
+  const [subTab, setSubTab] = useState<'home' | 'compose' | 'feed'>('compose')
   const [localPosts, setLocalPosts] = useState<Post[]>([])
   const [localPostsLoaded, setLocalPostsLoaded] = useState(false)
   const [kakaoFriendsOpen, setKakaoFriendsOpen] = useState(false)

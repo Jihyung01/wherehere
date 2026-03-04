@@ -11,9 +11,14 @@ import math
 import random
 
 from core.dependencies import Database
-from mock.mock_data import get_mock_recommendations
+from mock.mock_data import (
+    get_mock_recommendations,
+    ROLE_CATEGORY_MAP as MOCK_ROLE_CATEGORY_MAP,
+    ROLE_NARRATIVES,
+)
 from services.weather_service import get_weather, get_time_of_day
 from services.narrative_generator import generate_narrative
+from services.kakao_places import KakaoPlacesService
 
 router = APIRouter(
     prefix="/api/v1/recommendations",
@@ -70,6 +75,53 @@ class RecommendationResponse(BaseModel):
     weather: Optional[Dict] = None
     time_of_day: str = ""
     data_source: str = "mock"
+
+
+# ------------------------------------------------------------
+# 역할/기분 스코어링을 위한 룰 테이블
+# ------------------------------------------------------------
+
+# 역할별 기본 탐색 반경 (미터)
+ROLE_RADIUS_MAP: Dict[str, int] = {
+    "explorer": 3000,
+    "healer": 1200,
+    "archivist": 2500,
+    "relation": 2000,
+    "achiever": 4000,
+    "artist": 2500,
+    "foodie": 2000,
+    "challenger": 4000,
+}
+
+# 역할 → Kakao category_group_code 매핑
+ROLE_TO_KAKAO_CODES: Dict[str, List[str]] = {
+    # 관광 / 산책 / 이색 장소
+    "explorer": ["AT4", "AD5", "CT1"],
+    # 카페 / 공원 / 쉼
+    "healer": ["CE7", "AT4"],
+    # 전시 / 복합문화공간 + 카페
+    "artist": ["CT1", "CE7"],
+    # 맛집 / 카페
+    "foodie": ["FD6", "CE7"],
+    # 운동 / 액티비티 (문화시설 + 기타)
+    "challenger": ["CT1", "FD6"],
+    # 관계/모임: 맛집 + 카페
+    "relation": ["FD6", "CE7"],
+    # 성취/스터디: 카페 위주
+    "achiever": ["CE7"],
+}
+
+# 역할 한글 라벨 (reason 문구용)
+ROLE_LABELS_KO: Dict[str, str] = {
+    "explorer": "탐험가",
+    "healer": "힐러",
+    "artist": "예술가",
+    "foodie": "미식가",
+    "challenger": "도전자",
+    "archivist": "수집가",
+    "relation": "연결자",
+    "achiever": "달성자",
+}
 
 
 class NarrativeRequest(BaseModel):
@@ -138,267 +190,263 @@ async def get_recommendations(request: RecommendationRequest):
         mood_preferred_categories.update(["카페", "문화시설"])
         mood_vibe_keywords.update(["조용", "북카페", "갤러리", "전시"])
 
-    # Supabase REST API로 직접 추천
+    # Kakao Local API 기반 추천 (DB는 유저 행동 로그/캐시로만 사용)
     try:
-        from db.rest_helpers import RestDatabaseHelpers
-        helpers = RestDatabaseHelpers()
+        user_lat = request.current_location.latitude
+        user_lon = request.current_location.longitude
 
-        # 역할별 반경
-        radius_map = {
-            "explorer": 3000,
-            "healer": 800,
-            "archivist": 2000,
-            "relation": 2000,
-            "achiever": 5000,
-            "artist": 2500,
-            "foodie": 1500,
-            "challenger": 4000,
-        }
-        radius = radius_map.get(request.role_type, 2000)
-
-        # 이미 방문한(place_id가 visits에 존재하는) 장소를 추천에서 제외하기 위해 목록 가져오기
-        completed_place_ids = set()
+        # 방문 이력: 이미 완료한 장소는 추천에서 제외 (가능할 때만)
+        completed_place_ids: set[str] = set()
         try:
+            from db.rest_helpers import RestDatabaseHelpers
+
+            helpers = RestDatabaseHelpers()
             if request.user_id:
                 completed_ids = await helpers.get_completed_places(request.user_id)
                 completed_place_ids = set(completed_ids)
         except Exception:
-            # 방문 기록 조회 실패 시에도 추천 자체는 계속 진행
             completed_place_ids = set()
 
-        # DB에서 장소 가져오기 (추천 3곳 채우기 위해 충분히 많이 조회)
-        places = await helpers.get_places_nearby(
-            request.current_location.latitude,
-            request.current_location.longitude,
-            radius,
-            250
-        )
+        # 1단계: Kakao Local API로 역할에 맞는 카테고리 주변 장소 조회
+        kakao = KakaoPlacesService()
+        radius = ROLE_RADIUS_MAP.get(request.role_type, 2000)
+        category_codes = ROLE_TO_KAKAO_CODES.get(request.role_type, ["FD6", "CE7"])
 
-        if places and len(places) > 0:
-            from math import radians, sin, cos, sqrt, atan2
-            from mock.mock_data import ROLE_CATEGORY_MAP
-
-            def calculate_distance(lat1, lon1, lat2, lon2):
-                """Haversine 거리 계산 (미터)"""
-                R = 6371000
-                lat1_rad, lat2_rad = radians(lat1), radians(lat2)
-                delta_lat, delta_lon = radians(lat2 - lat1), radians(lon2 - lon1)
-                a = sin(delta_lat / 2) ** 2 + cos(lat1_rad) * cos(lat2_rad) * sin(delta_lon / 2) ** 2
-                c = 2 * atan2(sqrt(a), sqrt(1 - a))
-                return R * c
-
-            user_lat = request.current_location.latitude
-            user_lon = request.current_location.longitude
-            role_preferred_categories = ROLE_CATEGORY_MAP.get(request.role_type, [])
-
-            # 1) 각 장소의 거리/점수 계산 후 후보 리스트 생성
-            candidates: list[Dict] = []
-            for p in places:
-                place_lat = p.get("latitude")
-                place_lon = p.get("longitude")
-                place_id = p.get("id")
-
-                # 이미 방문한(place_id가 visits에 있는) 장소는 건너뛰기
-                if place_id and place_id in completed_place_ids:
-                    continue
-
-                if place_lat is None or place_lon is None:
-                    continue
-
-                dist = calculate_distance(user_lat, user_lon, place_lat, place_lon)
-                if dist > radius:
-                    continue
-
-                primary_cat = (p.get("primary_category") or "").strip()
-                vibe_tags = p.get("vibe_tags") or []
-                vibe_text = " ".join(vibe_tags)
-
-                # 역할 매칭 점수 (탐험가/힐러/예술가/미식가/도전자 등)
-                role_match = primary_cat in role_preferred_categories
-                role_score = 22.0 if role_match else 10.0
-
-                # 기분 매칭 점수 (mood_text + vibe_tags 기반)
-                mood_cat_match = primary_cat in mood_preferred_categories
-                mood_vibe_match = any(kw in vibe_text for kw in mood_vibe_keywords) if vibe_text else False
-                mood_score = 0.0
-                if mood_cat_match or mood_vibe_match:
-                    # 강도(intensity)에 따라 가중 (0.0~1.0)
-                    intensity = request.mood.intensity if request.mood else 0.5
-                    mood_score = 10.0 * (0.5 + intensity / 2.0)
-
-                # 평점/거리 점수
-                base = 70.0
-                rating = p.get("average_rating") or 0.0
-                rating_score = rating * 4.0  # 0~20점 정도
-                distance_km = dist / 1000.0
-                distance_score = max(0.0, 12.0 - distance_km * 2.0)  # 가까울수록 가산
-
-                # 숨은 스팟/탐험 보너스
-                hidden_bonus = 8.0 if (p.get("is_hidden_gem") and request.user_level >= 6) else 0.0
-
-                # 약간의 랜덤 탐색(매 호출마다 살짝 다른 결과)
-                explore_noise = random.uniform(0.0, 5.0)
-
-                score = base + rating_score + distance_score + role_score + mood_score + hidden_bonus + explore_noise
-
-                candidates.append(
-                    {
-                        "place": p,
-                        "score": score,
-                        "distance": dist,
-                        "role_score": role_score,
-                        "mood_score": mood_score,
-                        "rating_score": rating_score,
-                        "distance_score": distance_score,
-                    }
+        kakao_docs: list[Dict] = []
+        for code in category_codes:
+            try:
+                result = await kakao.search_by_category(
+                    x=user_lon,
+                    y=user_lat,
+                    category_group_code=code,
+                    radius=radius,
+                    size=15,
                 )
+                kakao_docs.extend(result.get("documents", []))
+            except Exception:
+                continue
 
-            if not candidates:
-                # 반경 이내 후보가 없으면 전체 places에서 거리 제한 없이 점수 계산
-                for p in places:
-                    place_lat = p.get("latitude")
-                    place_lon = p.get("longitude")
-                    if place_lat is None or place_lon is None:
-                        continue
-                    dist = calculate_distance(user_lat, user_lon, place_lat, place_lon)
-                    primary_cat = (p.get("primary_category") or "").strip()
-                    vibe_tags = p.get("vibe_tags") or []
-                    vibe_text = " ".join(vibe_tags)
+        # 중복 제거
+        seen_ids: set[str] = set()
+        unique_docs: list[Dict] = []
+        for doc in kakao_docs:
+            doc_id = doc.get("id")
+            if not doc_id or doc_id in seen_ids:
+                continue
+            seen_ids.add(doc_id)
+            unique_docs.append(doc)
 
-                    role_match = primary_cat in role_preferred_categories
-                    role_score = 20.0 if role_match else 8.0
+        if not unique_docs:
+            raise RuntimeError("No Kakao places found")
 
-                    mood_cat_match = primary_cat in mood_preferred_categories
-                    mood_vibe_match = any(kw in vibe_text for kw in mood_vibe_keywords) if vibe_text else False
-                    mood_score = 0.0
-                    if mood_cat_match or mood_vibe_match:
-                        intensity = request.mood.intensity if request.mood else 0.5
-                        mood_score = 8.0 * (0.5 + intensity / 2.0)
+        # Kakao 응답을 우리 스키마에 맞춘 place 딕셔너리로 변환
+        def _haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+            R = 6371000
+            phi1 = math.radians(lat1)
+            phi2 = math.radians(lat2)
+            d_phi = math.radians(lat2 - lat1)
+            d_lambda = math.radians(lon2 - lon1)
+            a = math.sin(d_phi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(d_lambda / 2) ** 2
+            return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
-                    base = 65.0
-                    rating = p.get("average_rating") or 0.0
-                    rating_score = rating * 3.5
-                    distance_km = dist / 1000.0
-                    distance_score = max(0.0, 10.0 - distance_km * 1.5)
-                    hidden_bonus = 6.0 if (p.get("is_hidden_gem") and request.user_level >= 6) else 0.0
-                    explore_noise = random.uniform(0.0, 5.0)
+        places: list[Dict] = []
+        for doc in unique_docs:
+            mapped = kakao.map_to_our_schema(doc)
+            coords = mapped["location"]["coordinates"]
+            place_lon = float(coords[0])
+            place_lat = float(coords[1])
+            distance = mapped.get("distance_meters")
+            if distance is None:
+                distance = _haversine_distance(user_lat, user_lon, place_lat, place_lon)
 
-                    score = base + rating_score + distance_score + role_score + mood_score + hidden_bonus + explore_noise
-                    candidates.append(
-                        {
-                            "place": p,
-                            "score": score,
-                            "distance": dist,
-                            "role_score": role_score,
-                            "mood_score": mood_score,
-                            "rating_score": rating_score,
-                            "distance_score": distance_score,
-                        }
-                    )
+            place_id = f"kakao-{mapped['external_id']}"
+            if place_id in completed_place_ids:
+                continue
 
-            # 2) 1km 이내 우선: 3곳 중 최소 2곳은 1km 이내에서 선택
-            NEAR_METERS = 1000
-            within_1km = [c for c in candidates if c["distance"] <= NEAR_METERS]
-            beyond_1km = [c for c in candidates if c["distance"] > NEAR_METERS]
-            within_1km.sort(key=lambda c: c["score"], reverse=True)
-            beyond_1km.sort(key=lambda c: c["score"], reverse=True)
-
-            selected_ids: set = set()
-            selected_wrapped: list = []
-
-            def add_if_new(c):
-                pid = c["place"].get("id")
-                if pid and pid in selected_ids:
-                    return False
-                if pid:
-                    selected_ids.add(pid)
-                selected_wrapped.append(c)
-                return True
-
-            # 1km 이내에서 2곳 (점수 상위 풀에서 랜덤)
-            near_pool = within_1km[:12]
-            random.shuffle(near_pool)
-            for c in near_pool:
-                if len(selected_wrapped) >= 2:
-                    break
-                add_if_new(c)
-
-            # 나머지 1곳: 1km 초과 후보 중 1곳
-            if len(selected_wrapped) < 3 and beyond_1km:
-                far_pool = beyond_1km[:8]
-                random.shuffle(far_pool)
-                for c in far_pool:
-                    if add_if_new(c):
-                        break
-
-            # 2곳 미만이면 1km 이내에서 더 채우기
-            for c in within_1km:
-                if len(selected_wrapped) >= 3:
-                    break
-                add_if_new(c)
-            # 그래도 부족하면 1km 초과에서 채우기
-            for c in beyond_1km:
-                if len(selected_wrapped) >= 3:
-                    break
-                add_if_new(c)
-
-            # 3곳 미만이면 점수 순으로 남은 후보에서 채우기 (항상 3곳 노출)
-            if len(selected_wrapped) < 3:
-                remaining = [c for c in candidates if c["place"].get("id") not in selected_ids]
-                remaining.sort(key=lambda c: c["score"], reverse=True)
-                for c in remaining:
-                    if len(selected_wrapped) >= 3:
-                        break
-                    add_if_new(c)
-
-            random.shuffle(selected_wrapped)
-            selected = [c["place"] for c in selected_wrapped]
-
-            # 서사는 클릭한 장소에서만 요청 (단일 서사 API 사용)
-            recommendations: List[PlaceRecommendation] = []
-            for idx, wrapped in enumerate(selected_wrapped):
-                place = wrapped["place"]
-                distance = wrapped["distance"]
-                total_score = wrapped["score"]
-                primary_cat = place.get("primary_category", "기타")
-
-                recommendations.append(
-                    PlaceRecommendation(
-                        place_id=place.get("id", ""),
-                        name=place.get("name", "Unknown"),
-                        address=place.get("address", ""),
-                        category=primary_cat,
-                        distance_meters=round(distance, 1),
-                        score=round(total_score, 1),
-                        score_breakdown={
-                            "role": round(wrapped["role_score"], 1),
-                            "mood": round(wrapped["mood_score"], 1),
-                            "rating": round(wrapped["rating_score"], 1),
-                            "distance": round(wrapped["distance_score"], 1),
-                        },
-                        reason=f"{request.role_type} · 기분 '{request.mood.mood_text}'에 맞는 장소" if request.mood else f"{request.role_type} 역할에 맞는 장소",
-                        estimated_cost=place.get("average_price"),
-                        vibe_tags=place.get("vibe_tags", []),
-                        average_rating=place.get("average_rating", 0),
-                        is_hidden_gem=place.get("is_hidden_gem", False),
-                        typical_crowd_level=place.get("typical_crowd_level", "medium"),
-                        narrative="",
-                        description=place.get("description", ""),
-                        latitude=place.get("latitude"),
-                        longitude=place.get("longitude"),
-                    )
-                )
-
-            return RecommendationResponse(
-                recommendations=recommendations,
-                role_type=request.role_type,
-                radius_used=radius,
-                total_candidates=len(candidates) if candidates else len(places),
-                generated_at=datetime.now().isoformat(),
-                weather=weather_data,
-                time_of_day=time_now,
-                data_source="database_rest"
+            places.append(
+                {
+                    "id": place_id,
+                    "name": mapped["name"],
+                    "address": mapped.get("road_address") or mapped.get("address") or "",
+                    "primary_category": mapped.get("category") or "기타",
+                    "secondary_categories": [],
+                    "average_price": mapped.get("estimated_cost"),
+                    "vibe_tags": [],  # Kakao만으로는 vibe 태그 없음 (나중에 AI 태깅)
+                    "average_rating": 4.3,  # 기본값 (실제 평점 없으므로 보수적 기본)
+                    "is_hidden_gem": False,
+                    "typical_crowd_level": "medium",
+                    "description": "",
+                    "latitude": place_lat,
+                    "longitude": place_lon,
+                    "distance_meters": distance,
+                }
             )
+
+        if not places:
+            raise RuntimeError("No places after filtering")
+
+        # 2단계: 역할/기분/거리 기반 스코어링
+        role_preferred_categories = MOCK_ROLE_CATEGORY_MAP.get(request.role_type, [])
+
+        candidates: list[Dict] = []
+        for p in places:
+            dist = float(p.get("distance_meters") or 0.0)
+            primary_cat = (p.get("primary_category") or "").strip()
+
+            # 역할 매칭
+            role_match = primary_cat in role_preferred_categories
+            role_score = 22.0 if role_match else 10.0
+
+            # 기분 매칭
+            mood_cat_match = primary_cat in mood_preferred_categories
+            mood_vibe_match = False  # Kakao-only에서는 vibe_tags 없음
+            mood_score = 0.0
+            if mood_cat_match or mood_vibe_match:
+                intensity = request.mood.intensity if request.mood else 0.5
+                mood_score = 10.0 * (0.5 + intensity / 2.0)
+
+            base = 70.0
+            rating = float(p.get("average_rating") or 0.0)
+            rating_score = rating * 4.0
+            distance_km = dist / 1000.0
+            distance_score = max(0.0, 12.0 - distance_km * 2.0)
+            hidden_bonus = 0.0
+            explore_noise = random.uniform(0.0, 5.0)
+
+            score = base + rating_score + distance_score + role_score + mood_score + hidden_bonus + explore_noise
+
+            candidates.append(
+                {
+                    "place": p,
+                    "score": score,
+                    "distance": dist,
+                    "role_score": role_score,
+                    "mood_score": mood_score,
+                    "rating_score": rating_score,
+                    "distance_score": distance_score,
+                }
+            )
+
+        if not candidates:
+            raise RuntimeError("No scored candidates")
+
+        # 3단계: 1km 이내 우선 선택 로직
+        NEAR_METERS = 1000
+        within_1km = [c for c in candidates if c["distance"] <= NEAR_METERS]
+        beyond_1km = [c for c in candidates if c["distance"] > NEAR_METERS]
+        within_1km.sort(key=lambda c: c["score"], reverse=True)
+        beyond_1km.sort(key=lambda c: c["score"], reverse=True)
+
+        selected_ids: set[str] = set()
+        selected_wrapped: list[Dict] = []
+
+        def add_if_new(c: Dict) -> bool:
+            pid = c["place"].get("id")
+            if pid and pid in selected_ids:
+                return False
+            if pid:
+                selected_ids.add(pid)
+            selected_wrapped.append(c)
+            return True
+
+        # 1km 이내에서 2곳 우선
+        near_pool = within_1km[:12]
+        random.shuffle(near_pool)
+        for c in near_pool:
+            if len(selected_wrapped) >= 2:
+                break
+            add_if_new(c)
+
+        # 나머지 1곳은 1km 초과 후보 중에서
+        if len(selected_wrapped) < 3 and beyond_1km:
+            far_pool = beyond_1km[:8]
+            random.shuffle(far_pool)
+            for c in far_pool:
+                if add_if_new(c):
+                    break
+
+        # 부족하면 다시 채우기
+        for c in within_1km:
+            if len(selected_wrapped) >= 3:
+                break
+            add_if_new(c)
+        for c in beyond_1km:
+            if len(selected_wrapped) >= 3:
+                break
+            add_if_new(c)
+
+        # 그래도 3곳 미만이면 점수순으로 채우기
+        if len(selected_wrapped) < 3:
+            remaining = [c for c in candidates if c["place"].get("id") not in selected_ids]
+            remaining.sort(key=lambda c: c["score"], reverse=True)
+            for c in remaining:
+                if len(selected_wrapped) >= 3:
+                    break
+                add_if_new(c)
+
+        random.shuffle(selected_wrapped)
+
+        # 4단계: reason/narrative용 메타데이터 기반 설명 생성
+        role_label = ROLE_LABELS_KO.get(request.role_type, request.role_type)
+        mood_text_for_reason = request.mood.mood_text if request.mood else ""
+
+        def build_reason(primary_cat: str, distance_m: float) -> str:
+            pieces: list[str] = []
+            if mood_text_for_reason:
+                pieces.append(f"지금 기분 \"{mood_text_for_reason}\"인 {role_label}을 위한 {primary_cat}")
+            else:
+                pieces.append(f"{role_label}에게 어울리는 {primary_cat}")
+            if distance_m > 0:
+                if distance_m < 600:
+                    pieces.append(f"집 근처 {int(distance_m)}m 거리")
+                else:
+                    pieces.append(f"약 {int(distance_m/1000)}km 거리")
+            return " · ".join(pieces)
+
+        recommendations: List[PlaceRecommendation] = []
+        for wrapped in selected_wrapped:
+            place = wrapped["place"]
+            distance = wrapped["distance"]
+            total_score = wrapped["score"]
+            primary_cat = place.get("primary_category", "기타")
+
+            recommendations.append(
+                PlaceRecommendation(
+                    place_id=place.get("id", ""),
+                    name=place.get("name", "Unknown"),
+                    address=place.get("address", ""),
+                    category=primary_cat,
+                    distance_meters=round(distance, 1),
+                    score=round(total_score, 1),
+                    score_breakdown={
+                        "role": round(wrapped["role_score"], 1),
+                        "mood": round(wrapped["mood_score"], 1),
+                        "rating": round(wrapped["rating_score"], 1),
+                        "distance": round(wrapped["distance_score"], 1),
+                    },
+                    reason=build_reason(primary_cat, distance),
+                    estimated_cost=place.get("average_price"),
+                    vibe_tags=place.get("vibe_tags", []),
+                    average_rating=place.get("average_rating", 0),
+                    is_hidden_gem=place.get("is_hidden_gem", False),
+                    typical_crowd_level=place.get("typical_crowd_level", "medium"),
+                    narrative="",  # 실제 서사는 /narrative 엔드포인트에서 on-demand로 생성
+                    description=place.get("description", ""),
+                    latitude=place.get("latitude"),
+                    longitude=place.get("longitude"),
+                )
+            )
+
+        return RecommendationResponse(
+            recommendations=recommendations,
+            role_type=request.role_type,
+            radius_used=radius,
+            total_candidates=len(candidates),
+            generated_at=datetime.now().isoformat(),
+            weather=weather_data,
+            time_of_day=time_now,
+            data_source="kakao_hybrid",
+        )
     except Exception as e:
         import logging
         logger = logging.getLogger("uvicorn.error")
