@@ -18,6 +18,67 @@ router = APIRouter(prefix="/api/v1/visits", tags=["Visits"])
 CHECKIN_RADIUS_METERS = 100
 
 
+async def _fetch_and_save_kakao_place(place_id: str, db) -> Optional[dict]:
+    """카카오 place_id로 장소 정보 조회 후 places 테이블에 저장"""
+    try:
+        from services.kakao_places import KakaoPlacesService
+        from core.config import settings
+        import httpx
+        
+        kakao_id = place_id.replace("kakao-", "")
+        
+        # 카카오 API로 장소 상세 정보 조회
+        kakao = KakaoPlacesService()
+        url = "https://dapi.kakao.com/v2/local/search/keyword.json"
+        
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(
+                url,
+                headers={"Authorization": f"KakaoAK {settings.KAKAO_API_KEY}"},
+                params={"query": kakao_id, "size": 1}
+            )
+            
+            if response.status_code != 200:
+                return None
+            
+            data = response.json()
+            documents = data.get("documents", [])
+            
+            if not documents:
+                return None
+            
+            kakao_place = documents[0]
+            
+            # places 테이블에 저장
+            place_data = {
+                "id": place_id,
+                "name": kakao_place.get("place_name", "Unknown"),
+                "primary_category": kakao._extract_main_category(kakao_place.get("category_name", "")),
+                "latitude": float(kakao_place.get("y", 37.5665)),
+                "longitude": float(kakao_place.get("x", 126.978)),
+                "address": kakao_place.get("address_name", ""),
+                "is_active": True,
+                "rating": 4.0,
+            }
+            
+            # Supabase에 저장
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                url = f"{db.base_url}/rest/v1/places"
+                headers = {**db.headers, "Prefer": "resolution=merge-duplicates"}
+                resp = await client.post(url, headers=headers, json=place_data)
+                
+                if resp.status_code in [200, 201]:
+                    return place_data
+            
+            return None
+            
+    except Exception as e:
+        import logging
+        logger = logging.getLogger("uvicorn.error")
+        logger.error(f"카카오 장소 정보 저장 실패: {e}")
+        return None
+
+
 def _distance_meters(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     """Haversine 거리(미터)"""
     R = 6371000
@@ -128,9 +189,13 @@ async def create_visit(
                 "message": "Database not connected"
             }
         
+        # place_id가 kakao-로 시작하면 카카오 API로 장소 정보 조회 후 저장
+        place = await db.get_place_by_id(visit.place_id)
+        if not place and visit.place_id.startswith("kakao-"):
+            place = await _fetch_and_save_kakao_place(visit.place_id, db)
+        
         location_verified = False
         if visit.user_latitude is not None and visit.user_longitude is not None:
-            place = await db.get_place_by_id(visit.place_id)
             if place:
                 plat = place.get("latitude")
                 plon = place.get("longitude")
