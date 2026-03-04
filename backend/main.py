@@ -69,13 +69,10 @@ app = FastAPI(
 )
 
 
-# CORS - config.ALLOWED_ORIGINS 사용 시 제한, 없으면 "*" (docs/보안_전략.md)
-_cors_origins = ["*"]
-if getattr(settings, "ALLOWED_ORIGINS", None) and isinstance(settings.ALLOWED_ORIGINS, list) and len(settings.ALLOWED_ORIGINS) > 0:
-    _cors_origins = list(settings.ALLOWED_ORIGINS)
+# CORS - 모든 origin 허용 (개발 단계)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=_cors_origins,
+    allow_origins=["*"],
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
