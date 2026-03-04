@@ -64,7 +64,6 @@ export function CompleteApp() {
   const { user } = useUser()
   const { signOut } = useAuth()
   const userId = user?.id ?? 'user-demo-001'
-  const displayName = userProfile?.display_name ?? user?.user_metadata?.name ?? user?.user_metadata?.full_name ?? user?.user_metadata?.user_name ?? user?.user_metadata?.kakao_account?.profile?.nickname ?? user?.email ?? (user ? '로그인한 사용자' : null)
   const isLoggedIn = !!user
   const [screen, setScreen] = useState<Screen>('home')
   const [selectedRole, setSelectedRole] = useState<RoleType | null>(null)
@@ -105,6 +104,9 @@ export function CompleteApp() {
   const [selectedProfilePost, setSelectedProfilePost] = useState<{ id: string; title: string; body?: string; type?: string; image_url?: string; place_name?: string; rating?: number; created_at?: string; author_id?: string } | null>(null)
   const [profileCommentInput, setProfileCommentInput] = useState('')
   const [userProfile, setUserProfile] = useState<{ display_name?: string; profile_image_url?: string } | null>(null)
+
+  // displayName 계산: userProfile state 이후에 위치
+  const displayName = userProfile?.display_name ?? user?.user_metadata?.name ?? user?.user_metadata?.full_name ?? user?.user_metadata?.user_name ?? user?.user_metadata?.kakao_account?.profile?.nickname ?? user?.email ?? (user ? '로그인한 사용자' : null)
 
   // 로그인 유도: 비로그인 시 데모 수락 전에는 로그인 화면 강조
   const showLoginGate = !isLoggedIn && typeof window !== 'undefined' && typeof sessionStorage !== 'undefined' && sessionStorage.getItem('wherehere_demo_accepted') !== '1'
