@@ -70,6 +70,7 @@ export function LocalHub({
   const [kakaoFriendsOpen, setKakaoFriendsOpen] = useState(false)
   const [kakaoFriendsList, setKakaoFriendsList] = useState<Array<{ id?: string; uuid?: string; profile_nickname?: string; profile_thumbnail_image?: string }>>([])
   const [kakaoFriendsLoading, setKakaoFriendsLoading] = useState(false)
+  const [kakaoSendingUuid, setKakaoSendingUuid] = useState<string | null>(null)
 
   const inviteText = typeof window !== 'undefined'
     ? `${window.location.origin}/\n친구 코드: ${myFriendCode}\n위 코드로 WhereHere 앱에서 나를 찾아줘!`
@@ -132,6 +133,53 @@ export function LocalHub({
       }
     } else {
       copyInviteAndToast()
+    }
+  }, [apiBase, copyInviteAndToast, myFriendCode, onToast])
+
+  const sendKakaoInviteToFriend = useCallback(async (friendUuid?: string) => {
+    if (!friendUuid) {
+      onToast('친구 식별 정보가 없어 전송할 수 없어요.')
+      return
+    }
+    const kakao = typeof window !== 'undefined' ? (window as any).Kakao : undefined
+    const token = kakao?.Auth?.getAccessToken?.()
+    if (!token) {
+      onToast('카카오 로그인 토큰을 찾지 못했어요. 다시 로그인 후 시도해 주세요.')
+      copyInviteAndToast()
+      return
+    }
+
+    const appUrl = typeof window !== 'undefined' ? window.location.origin + '/' : ''
+    const text = [
+      'WhereHere 초대',
+      `친구 코드: ${myFriendCode}`,
+      '앱에서 코드 입력하고 바로 친구가 되어 보세요.',
+      appUrl,
+    ].join('\n')
+
+    setKakaoSendingUuid(friendUuid)
+    try {
+      const res = await fetch(`${apiBase}/api/v1/social/kakao-friends/send-message`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          access_token: token,
+          receiver_uuid: friendUuid,
+          text,
+          title: 'WhereHere 열기',
+          link_url: appUrl,
+        }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || !data.success) {
+        throw new Error(data.detail || 'send failed')
+      }
+      onToast('카카오톡으로 초대 메시지를 바로 보냈어요.')
+    } catch {
+      onToast('바로 전송에 실패했어요. 복사 링크로 대체합니다.')
+      copyInviteAndToast()
+    } finally {
+      setKakaoSendingUuid(null)
     }
   }, [apiBase, copyInviteAndToast, myFriendCode, onToast])
 
@@ -432,7 +480,14 @@ export function LocalHub({
                         </div>
                         <span style={{ fontSize: 14, fontWeight: 600 }}>{f.profile_nickname || '친구'}</span>
                       </div>
-                      <button type="button" onClick={() => { copyInviteAndToast(); onToast('초대 링크 복사됐어요. 카카오톡에서 이 친구에게 붙여넣기 하세요.'); }} style={{ padding: '8px 14px', borderRadius: 999, border: 'none', background: '#E8740C', color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap' }}>초대하기</button>
+                      <button
+                        type="button"
+                        onClick={() => sendKakaoInviteToFriend(f.uuid || f.id)}
+                        disabled={kakaoSendingUuid === (f.uuid || f.id)}
+                        style={{ padding: '8px 14px', borderRadius: 999, border: 'none', background: '#E8740C', color: '#fff', fontSize: 12, fontWeight: 600, cursor: kakaoSendingUuid === (f.uuid || f.id) ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap', opacity: kakaoSendingUuid === (f.uuid || f.id) ? 0.7 : 1 }}
+                      >
+                        {kakaoSendingUuid === (f.uuid || f.id) ? '전송 중...' : '바로 보내기'}
+                      </button>
                     </div>
                   ))}
                 </div>

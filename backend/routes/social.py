@@ -7,6 +7,7 @@
 """
 
 import httpx
+import json
 from fastapi import APIRouter, HTTPException, Depends
 from typing import Optional, List, Dict
 from datetime import datetime
@@ -354,6 +355,14 @@ class KakaoFriendsRequest(BaseModel):
     access_token: str
 
 
+class KakaoSendMessageRequest(BaseModel):
+    access_token: str
+    receiver_uuid: str
+    text: str
+    title: Optional[str] = None
+    link_url: Optional[str] = None
+
+
 @router.post("/kakao-friends")
 async def get_kakao_friends(req: KakaoFriendsRequest):
     """
@@ -375,6 +384,52 @@ async def get_kakao_friends(req: KakaoFriendsRequest):
         data = r.json()
         # elements만 반환 (저장/가공 없음)
         return {"elements": data.get("elements", []), "total_count": data.get("total_count", 0)}
+    except httpx.RequestError as e:
+        raise HTTPException(status_code=502, detail=f"Kakao API request failed: {str(e)}")
+
+
+@router.post("/kakao-friends/send-message")
+async def send_kakao_friend_message(req: KakaoSendMessageRequest):
+    if not req.receiver_uuid:
+        raise HTTPException(status_code=400, detail="receiver_uuid is required")
+    if not req.text or not req.text.strip():
+        raise HTTPException(status_code=400, detail="text is required")
+
+    target_url = req.link_url or "https://wherehere.app/"
+    template_object = {
+        "object_type": "text",
+        "text": req.text.strip(),
+        "link": {
+            "web_url": target_url,
+            "mobile_web_url": target_url,
+        },
+        "button_title": req.title or "WhereHere 열기",
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            r = await client.post(
+                "https://kapi.kakao.com/v1/api/talk/friends/message/default/send",
+                headers={"Authorization": f"Bearer {req.access_token}"},
+                data={
+                    "receiver_uuids": json.dumps([req.receiver_uuid], ensure_ascii=False),
+                    "template_object": json.dumps(template_object, ensure_ascii=False),
+                },
+            )
+        if r.status_code != 200:
+            detail = None
+            try:
+                detail = r.json().get("msg")
+            except Exception:
+                detail = r.text
+            raise HTTPException(status_code=r.status_code, detail=detail or "Kakao API error")
+
+        data = r.json()
+        return {
+            "success": True,
+            "successful_receiver_uuids": data.get("successful_receiver_uuids", []),
+            "failure_info": data.get("failure_info", []),
+        }
     except httpx.RequestError as e:
         raise HTTPException(status_code=502, detail=f"Kakao API request failed: {str(e)}")
 
