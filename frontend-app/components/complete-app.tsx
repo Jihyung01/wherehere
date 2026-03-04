@@ -693,21 +693,22 @@ export function CompleteApp() {
     }
   }
 
-  // 소셜 공유 함수 - 카카오톡 SDK + 인스타그램 스토리 카드
+  // 소셜 공유 함수 - 네이티브 앱 연동
   const handleShare = async (platform: string) => {
     const shareTitle = `${acceptedQuest?.name || '멋진 장소'}를 발견했어요!`
     const shareUrl = `${window.location.origin}?quest=${acceptedQuest?.place_id || ''}`
     const placeName = acceptedQuest?.name || '멋진 장소'
     const placeAddress = acceptedQuest?.address || ''
     const placeImage = uploadedPhotos[0] || acceptedQuest?.image_url || ''
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
 
     try {
       if (platform === 'kakao') {
-        // 카카오톡 SDK로 공유
+        // 카카오톡 SDK로 공유 (모바일/데스크톱 모두 동작)
         const kakao = typeof window !== 'undefined' ? (window as any).Kakao : undefined
         if (kakao?.Share?.sendDefault) {
           try {
-            await kakao.Share.sendDefault({
+            kakao.Share.sendDefault({
               objectType: 'location',
               address: placeAddress,
               addressTitle: placeName,
@@ -730,7 +731,7 @@ export function CompleteApp() {
                 },
               ],
             })
-            alert('카카오톡으로 공유했어요!')
+            // SDK 호출 성공 시 바로 리턴 (모바일에서는 카카오톡 앱이 열림)
             return
           } catch (err) {
             console.error('카카오톡 SDK 공유 실패:', err)
@@ -742,39 +743,59 @@ export function CompleteApp() {
         alert('📋 링크가 복사되었습니다!\n카카오톡에서 붙여넣기 해주세요.')
 
       } else if (platform === 'instagram') {
-        // 인스타그램 - 스토리 카드 생성 후 공유
-        try {
-          const storyBlob = await makeStoryCard({
-            title: placeName,
-            body: placeAddress,
-            imageUrl: placeImage,
-            placeLine: `📍 ${placeName}${placeAddress ? '\n' + placeAddress : ''}`,
-          })
-          const storyFile = blobToFile(storyBlob, 'wherehere-story.png')
-          const caption = makeCaption({
-            title: placeName,
-            body: placeAddress,
-            place_name: placeName,
-            place_address: placeAddress,
-          })
+        // 인스타그램 - 모바일에서는 앱 열기, 데스크톱에서는 스토리 카드 생성
+        if (isMobile) {
+          // 모바일: 인스타그램 앱으로 직접 이동
+          const text = `${placeName}\n${placeAddress}\n\n#WhereHere #맛집 #카페\n${shareUrl}`
 
-          await shareOrDownload({
-            file: storyFile,
-            caption,
-            filename: 'wherehere-story.png',
-            onToast: (msg) => {
-              const notification = document.createElement('div')
-              notification.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#000;color:#fff;padding:20px 30px;border-radius:12px;z-index:10000;font-size:14px;text-align:center;box-shadow:0 4px 20px rgba(0,0,0,0.3);'
-              notification.textContent = msg
-              document.body.appendChild(notification)
-              setTimeout(() => document.body.removeChild(notification), 3000)
-            },
-          })
-        } catch (err) {
-          console.error('인스타그램 카드 생성 실패:', err)
-          // 대체: 클립보드 복사
-          await navigator.clipboard.writeText(`${shareTitle}\n${placeName}\n${placeAddress}\n\n${shareUrl}\n\n#WhereHere #${placeName.replace(/\s/g, '')} #맛집 #카페`)
-          alert('📋 링크가 복사되었습니다!\n인스타그램 스토리/DM에서 붙여넣기 해주세요.')
+          // 인스타그램 앱 URL 스키마 시도
+          const instagramUrl = `instagram://camera`
+          window.location.href = instagramUrl
+
+          // 앱이 설치되어 있지 않으면 클립보드 복사
+          setTimeout(async () => {
+            try {
+              await navigator.clipboard.writeText(text)
+              alert('📋 인스타그램 앱이 열리지 않아 링크를 복사했어요.\n인스타그램에서 붙여넣기 해주세요.')
+            } catch {
+              alert('📋 인스타그램 앱을 열고 다음 내용을 붙여넣기 해주세요:\n\n' + text)
+            }
+          }, 1500)
+        } else {
+          // 데스크톱: 스토리 카드 생성 후 다운로드
+          try {
+            const storyBlob = await makeStoryCard({
+              title: placeName,
+              body: placeAddress,
+              imageUrl: placeImage,
+              placeLine: `📍 ${placeName}${placeAddress ? '\n' + placeAddress : ''}`,
+            })
+            const storyFile = blobToFile(storyBlob, 'wherehere-story.png')
+            const caption = makeCaption({
+              title: placeName,
+              body: placeAddress,
+              place_name: placeName,
+              place_address: placeAddress,
+            })
+
+            await shareOrDownload({
+              file: storyFile,
+              caption,
+              filename: 'wherehere-story.png',
+              onToast: (msg) => {
+                const notification = document.createElement('div')
+                notification.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#000;color:#fff;padding:20px 30px;border-radius:12px;z-index:10000;font-size:14px;text-align:center;box-shadow:0 4px 20px rgba(0,0,0,0.3);'
+                notification.textContent = msg
+                document.body.appendChild(notification)
+                setTimeout(() => document.body.removeChild(notification), 3000)
+              },
+            })
+          } catch (err) {
+            console.error('인스타그램 카드 생성 실패:', err)
+            // 대체: 클립보드 복사
+            await navigator.clipboard.writeText(`${shareTitle}\n${placeName}\n${placeAddress}\n\n${shareUrl}\n\n#WhereHere #${placeName.replace(/\s/g, '')} #맛집 #카페`)
+            alert('📋 링크가 복사되었습니다!\n인스타그램에서 붙여넣기 해주세요.')
+          }
         }
 
       } else if (platform === 'twitter') {
