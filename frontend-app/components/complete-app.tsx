@@ -594,14 +594,6 @@ export function CompleteApp() {
     const duration = Math.floor((new Date().getTime() - checkInTime.getTime()) / 1000 / 60)
     
     try {
-      console.log('방문 기록 생성 중...', {
-        user_id: userId,
-        place_id: acceptedQuest.place_id || acceptedQuest.id,
-        place_name: acceptedQuest.name,
-        rating: reviewData.rating,
-        duration_minutes: Math.max(duration, 30)
-      })
-      
       const response = await fetch(`${API_BASE}/api/v1/visits`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -619,7 +611,6 @@ export function CompleteApp() {
       })
       
       const data = await response.json().catch(() => ({}))
-      console.log('방문 기록 응답:', data)
       
       if (response.status === 400 && data.detail) {
         alert(data.detail)
@@ -627,7 +618,7 @@ export function CompleteApp() {
       }
       
       if (data.success) {
-        // 성공 알림 - 더 명확하게
+        // 성공 알림
         const xpEarned = data.xp_earned || 100
         const locBonus = data.location_verified ? '\n📍 위치 인증 보너스 적용!' : ''
         alert(`🎉 방문 완료!\n\n+${xpEarned} XP 획득${locBonus}\n총 XP는 프로필에서 확인하세요!`)

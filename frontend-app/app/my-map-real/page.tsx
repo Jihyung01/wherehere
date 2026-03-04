@@ -42,7 +42,7 @@ interface Stats {
   total_xp: number;
 }
 
-const API_BASE = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000') + '/api/v1';
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 /** Haversine 거리 (km) */
 function haversineKm(
@@ -185,27 +185,22 @@ function getValueRedistributionTips(visits: Visit[], analysis: { favorite_catego
 // API Functions
 async function fetchUserVisits(userId: string): Promise<Visit[]> {
   try {
-    const response = await fetch(`${API_BASE}/visits/${userId}`);
+    const response = await fetch(`${API_BASE}/api/v1/visits/${userId}`);
     if (!response.ok) {
-      console.warn('[나의 지도] 방문 기록 API 에러:', response.status, response.statusText);
+      console.error('[나의 지도] API 에러:', response.status);
       return [];
     }
     const data = await response.json();
-    const list = data.visits || [];
-    const total = data.total_count ?? list.length;
-    if (list.length === 0 && total === 0) {
-      console.info('[나의 지도] 방문 기록 0건 (DB에 데이터 없음. 퀘스트 완료 시 자동 저장됩니다)');
-    }
-    return list;
+    return data.visits || [];
   } catch (error) {
-    console.error("[나의 지도] 방문 기록 조회 실패:", error);
+    console.error("[나의 지도] 조회 실패:", error);
     return [];
   }
 }
 
 async function fetchPatternAnalysis(userId: string) {
   try {
-    const response = await fetch(`${API_BASE}/ai/pattern/analyze`, {
+    const response = await fetch(`${API_BASE}/api/v1/ai/pattern/analyze`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ user_id: userId, days: 90 })
@@ -441,7 +436,7 @@ export default function MyMapReal() {
             </div>
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginTop: 16 }}>
             {[
               { label: "총 방문", value: `${computedStats.total_visits}곳`, sub: "고유 장소 " + computedStats.unique_places + "곳" },
               { label: "이번 달 탐험 반경", value: `${computedStats.this_month_radius_km}km`, sub: "전체 " + computedStats.exploration_radius_km + "km" },
@@ -579,22 +574,35 @@ export default function MyMapReal() {
                       bottom: 12,
                       left: 12,
                       right: 12,
-                      background: isDarkMode ? "rgba(10,14,20,0.9)" : "rgba(255,255,255,0.95)",
+                      background: isDarkMode ? "rgba(10,14,20,0.95)" : "rgba(255,255,255,0.98)",
                       backdropFilter: "blur(12px)",
                       borderRadius: 12,
                       padding: "16px",
                       border: `1px solid ${borderColor}`,
                       textAlign: "center",
-                      pointerEvents: "none",
+                      pointerEvents: "auto",
                     }}
                   >
-                    <div style={{ fontSize: 14, fontWeight: 700, color: isDarkMode ? "rgba(255,255,255,0.9)" : "#1c1917", marginBottom: 4 }}>아직 방문 기록이 없어요</div>
-                    <div style={{ fontSize: 12, color: isDarkMode ? "rgba(255,255,255,0.5)" : "#78716c" }}>퀘스트를 완료하면 여기에 표시됩니다. DB(visits)가 비어 있어도 앱에서 완료 시 자동 저장돼요.</div>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: isDarkMode ? "rgba(255,255,255,0.9)" : "#1c1917", marginBottom: 8 }}>
+                      {user ? '방문 기록이 없어요' : '로그인이 필요해요'}
+                    </div>
+                    <div style={{ fontSize: 12, color: isDarkMode ? "rgba(255,255,255,0.5)" : "#78716c", lineHeight: 1.5, marginBottom: 12 }}>
+                      {user ? (
+                        <>
+                          퀘스트를 완료하면 자동으로 기록됩니다.
+                          <br />
+                          <span style={{ fontSize: 11, opacity: 0.8 }}>
+                            User ID: {userId.substring(0, 20)}...
+                          </span>
+                        </>
+                      ) : (
+                        '로그인하면 방문 기록을 저장할 수 있어요'
+                      )}
+                    </div>
                     <button
                       type="button"
                       onClick={() => router.push("/")}
                       style={{
-                        marginTop: 12,
                         padding: "10px 20px",
                         borderRadius: 10,
                         border: "none",
@@ -603,7 +611,6 @@ export default function MyMapReal() {
                         fontWeight: 700,
                         fontSize: 13,
                         cursor: "pointer",
-                        pointerEvents: "auto",
                       }}
                     >
                       첫 탐험 시작하기
