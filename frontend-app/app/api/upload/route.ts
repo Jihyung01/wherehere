@@ -5,7 +5,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { createServerSupabaseClient } from '@/lib/supabase/server'
+import { createServerSupabaseClient } from '../../../lib/supabase/server'
 
 const BUCKET = 'uploads'
 const MAX_SIZE = 5 * 1024 * 1024 // 5MB
