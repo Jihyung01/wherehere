@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { compressImageFile } from '@/lib/image-compress'
 
 type LocalComposerProps = {
   apiBase: string
@@ -41,8 +42,9 @@ export function LocalComposer({
   const uploadImage = async (file: File) => {
     setUploading(true)
     try {
+      const compressed = await compressImageFile(file)
       const form = new FormData()
-      form.append('file', file)
+      form.append('file', compressed)
       const base = typeof window !== 'undefined' ? window.location.origin : ''
       const res = await fetch(`${base}/api/upload`, { method: 'POST', body: form })
       const data = await res.json().catch(() => ({}))

@@ -13,6 +13,7 @@ import { PersonalityProfile } from './personality-profile'
 import { ShareButton } from './share-button'
 import { LocalHub } from './local/LocalHub'
 import { makeStoryCard, blobToFile, makeCaption, shareOrDownload } from '@/lib/instagram-cards'
+import { compressImageFile } from '@/lib/image-compress'
 
 declare global {
   interface Window {
@@ -40,7 +41,8 @@ const MOODS = [
   { id: 'adventurous' as MoodType, name: '모험 준비됨', icon: '🚀', color: '#EF4444' },
 ]
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+// 브라우저에서는 같은 출처 사용 → Next API 프록시가 백엔드로 전달 (405/CORS 방지)
+const API_BASE = typeof window !== 'undefined' ? window.location.origin : (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000')
 
 /** 도착 인정 거리(미터): 이 거리 이내면 "장소 도착하기" 조건 충족 */
 const ARRIVAL_THRESHOLD_METERS = 100
@@ -287,7 +289,7 @@ export function CompleteApp() {
       if (!res.ok) return null
       return res.json()
     },
-    enabled: screen === 'profile' && !!userId,
+    enabled: (screen === 'profile' || screen === 'challenges') && !!userId,
   })
 
   const { data: profilePostsData } = useQuery({
@@ -592,6 +594,34 @@ export function CompleteApp() {
         const xpEarned = data.xp_earned || 100
         const locBonus = data.location_verified ? '\n📍 위치 인증 보너스 적용!' : ''
         alert(`🎉 방문 완료!\n\n+${xpEarned} XP 획득${locBonus}\n총 XP는 프로필에서 확인하세요!`)
+        
+        // 옵트인: 동네 피드에 퀘스트 완료 스토리 올리기
+        const placeName = acceptedQuest?.name || '장소'
+        const rating = reviewData.rating
+        const postToFeed = window.confirm('이 퀘스트를 동네 피드에 올릴까요?')
+        if (postToFeed) {
+          try {
+            const postRes = await fetch(`${API_BASE}/api/v1/local/posts`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                author_id: userId,
+                type: 'story',
+                title: `퀘스트 완료: ${placeName}`,
+                body: `${placeName} 방문했어요. 별점 ${rating}점!`,
+                rating: rating,
+                place_name: placeName,
+                area_name: (acceptedQuest as any)?.region || (acceptedQuest as any)?.area || '내 주변',
+              }),
+            })
+            const postData = await postRes.json().catch(() => ({}))
+            if (postRes.ok && postData.success) {
+              alert('동네 피드에 올렸어요.')
+            }
+          } catch {
+            // 실패해도 방문 완료는 유지
+          }
+        }
         
         // 상태 초기화
         setReviewData({ rating: 0, review: '', photos: [] })
@@ -1509,11 +1539,17 @@ export function CompleteApp() {
           </div>
 
           <div style={{ display: 'grid', gap: 16 }}>
-            {[
-              { icon: '🔥', title: '7일 연속 방문', desc: '7일 동안 매일 새로운 장소 방문', progress: 3, total: 7, reward: '500 XP' },
-              { icon: '🗺️', title: '지역 탐험가', desc: '서울 5개 구역 방문', progress: 2, total: 5, reward: '300 XP' },
-              { icon: '⭐', title: '별점 마스터', desc: '10개 장소에 리뷰 작성', progress: 4, total: 10, reward: '200 XP' },
-            ].map((challenge, i) => (
+            {(() => {
+              const streak = userStats?.current_streak ?? 0
+              const places = userStats?.total_places_visited ?? userStats?.unique_places ?? 0
+              const quests = userStats?.completed_quests ?? userStats?.total_visits ?? 0
+              const challenges = [
+                { icon: '🔥', title: '7일 연속 방문', desc: '7일 동안 매일 새로운 장소 방문', progress: Math.min(streak, 7), total: 7, reward: '500 XP' },
+                { icon: '🗺️', title: '5곳 방문', desc: '서로 다른 장소 5곳 방문', progress: Math.min(places, 5), total: 5, reward: '300 XP' },
+                { icon: '⭐', title: '퀘스트 10개 완료', desc: '10개 퀘스트 완료하고 리뷰 작성', progress: Math.min(quests, 10), total: 10, reward: '200 XP' },
+              ]
+              return challenges
+            })().map((challenge, i) => (
               <div key={i} style={{
                 background: cardBg,
                 border: `1px solid ${borderColor}`,
@@ -2130,8 +2166,9 @@ export function CompleteApp() {
                                 const file = e.target.files?.[0]
                                 if (!file) return
                                 try {
+                                  const compressed = await compressImageFile(file)
                                   const form = new FormData()
-                                  form.append('file', file)
+                                  form.append('file', compressed)
                                   const base = typeof window !== 'undefined' ? window.location.origin : ''
                                   const res = await fetch(`${base}/api/upload`, { method: 'POST', body: form })
                                   const data = await res.json().catch(() => ({}))

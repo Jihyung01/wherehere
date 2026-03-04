@@ -34,7 +34,8 @@ async function getSupabase() {
   )
 }
 
-const MAX_SIZE = 5 * 1024 * 1024 // 5MB
+// Vercel serverless body limit 4.5MB — keep under 4MB
+const MAX_SIZE = 4 * 1024 * 1024 // 4MB
 const ALLOWED = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
 
 export async function POST(request: NextRequest) {
@@ -45,7 +46,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: '파일이 없습니다.' }, { status: 400 })
     }
     if (file.size > MAX_SIZE) {
-      return NextResponse.json({ error: '파일 크기는 5MB 이하여야 합니다.' }, { status: 400 })
+      return NextResponse.json({ error: '파일 크기는 4MB 이하여야 합니다. 더 작은 사진을 선택하거나 압축 후 올려주세요.' }, { status: 400 })
     }
     if (!ALLOWED.includes(file.type)) {
       return NextResponse.json({ error: 'JPEG, PNG, GIF, WebP만 업로드할 수 있습니다.' }, { status: 400 })
