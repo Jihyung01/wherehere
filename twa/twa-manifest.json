@@ -1,0 +1,40 @@
+{
+  "packageId": "com.wherehere.app",
+  "host": "wherehere-seven.vercel.app",
+  "name": "WhereHere - 동네 탐험",
+  "launcherName": "WhereHere",
+  "display": "standalone",
+  "themeColor": "#E8740C",
+  "navigationColor": "#FFFFFF",
+  "navigationColorDark": "#0A0E14",
+  "navigationDividerColor": "#E5E7EB",
+  "navigationDividerColorDark": "#1F2937",
+  "backgroundColor": "#FFFFFF",
+  "enableNotifications": true,
+  "startUrl": "/",
+  "iconUrl": "https://wherehere-seven.vercel.app/icons/icon-512.png",
+  "maskableIconUrl": "https://wherehere-seven.vercel.app/icons/icon-512.png",
+  "splashScreenFadeOutDuration": 300,
+  "signingKey": {
+    "path": "./keystore.jks",
+    "alias": "wherehere"
+  },
+  "appVersionCode": 1,
+  "appVersionName": "1.0.0",
+  "shortcuts": [
+    {
+      "name": "오늘의 한 곳",
+      "shortName": "오늘의 한 곳",
+      "url": "/",
+      "chosenIconUrl": "https://wherehere-seven.vercel.app/icons/icon-96.png"
+    },
+    {
+      "name": "동네 피드",
+      "shortName": "피드",
+      "url": "/?tab=social",
+      "chosenIconUrl": "https://wherehere-seven.vercel.app/icons/icon-96.png"
+    }
+  ],
+  "generatorApp": "bubblewrap-cli",
+  "webManifestUrl": "https://wherehere-seven.vercel.app/manifest.webmanifest"
+}
