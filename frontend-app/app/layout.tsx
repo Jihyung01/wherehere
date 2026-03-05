@@ -26,8 +26,8 @@ export const metadata: Metadata = {
     title: 'WhereHere',
   },
   icons: {
-    icon: '/app-icon.png',
-    apple: '/app-icon.png',
+    icon: [{ url: '/icon.png', sizes: '512x512', type: 'image/png' }],
+    apple: [{ url: '/apple-icon.png', sizes: '180x180', type: 'image/png' }],
   },
   openGraph: {
     title: 'WhereHere - AI 기반 장소 탐험',
