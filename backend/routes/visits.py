@@ -140,11 +140,19 @@ async def get_user_visits(
         # 장소 정보와 조인 (optional - place가 없어도 visit은 표시)
         enriched_visits = []
         for visit in visits:
-            place = await db.get_place_by_id(visit.get("place_id"))
-            
+            place_id = visit.get("place_id")
+            place = await db.get_place_by_id(place_id) if place_id else None
+
+            # place가 없고 kakao- ID면 Kakao API로 lazy fetch & save 시도
+            if not place and place_id and str(place_id).startswith("kakao-"):
+                try:
+                    place = await _fetch_and_save_kakao_place(place_id, db)
+                except Exception:
+                    pass
+
             enriched_visit = {
                 "id": visit.get("id"),
-                "place_id": visit.get("place_id"),
+                "place_id": place_id,
                 "visited_at": visit.get("visited_at"),
                 "duration_minutes": visit.get("duration_minutes", 60),
                 "xp_earned": visit.get("xp_earned", 100),
@@ -152,18 +160,20 @@ async def get_user_visits(
                 "rating": visit.get("rating"),
                 "spent_amount": visit.get("spent_amount"),
             }
-            
+
             # place 정보가 있으면 추가
             if place:
                 enriched_visit.update({
-                    "place_name": place.get("name"),
-                    "category": place.get("primary_category"),
+                    "place_name": place.get("name") or visit.get("place_name"),
+                    "category": place.get("primary_category") or "기타",
                     "latitude": place.get("latitude"),
                     "longitude": place.get("longitude"),
                 })
             else:
-                # place 정보 없으면 visits 테이블에 저장된 place_name 사용
-                fallback_name = visit.get("place_name") or "알 수 없는 장소"
+                # 최후 폴백: visits 테이블 place_name 컬럼 → place_id → 기타
+                fallback_name = visit.get("place_name") or (
+                    place_id.replace("kakao-", "") if place_id and str(place_id).startswith("kakao-") else None
+                ) or "장소 정보 없음"
                 enriched_visit.update({
                     "place_name": fallback_name,
                     "category": visit.get("category") or "기타",
@@ -245,8 +255,6 @@ async def create_visit(
         if location_verified:
             xp_earned += 20
         
-        # place_name 결정: places 테이블 → client 전달값 순
-        resolved_place_name = (place.get("name") if place else None) or visit.place_name
         visit_data = {
             "user_id": visit.user_id,
             "place_id": visit.place_id,
@@ -257,9 +265,8 @@ async def create_visit(
             "spent_amount": visit.spent_amount,
             "companions": visit.companions,
             "xp_earned": xp_earned,
-            **({"place_name": resolved_place_name} if resolved_place_name else {}),
         }
-        
+
         result = await db.insert_visit(visit_data)
         try:
             await db.create_notification(

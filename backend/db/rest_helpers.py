@@ -251,7 +251,8 @@ class RestDatabaseHelpers:
         }
     
     async def upsert_place_minimal(
-        self, place_id: str, name: str, primary_category: str = "기타"
+        self, place_id: str, name: str, primary_category: str = "기타",
+        latitude: float = 37.5665, longitude: float = 126.9780
     ) -> bool:
         """장소 id/이름/카테고리만으로 places 테이블 upsert (Kakao 등 외부 장소용)"""
         async with httpx.AsyncClient(timeout=10.0) as client:
@@ -261,6 +262,8 @@ class RestDatabaseHelpers:
                 "name": name,
                 "primary_category": primary_category,
                 "is_active": True,
+                "latitude": latitude,
+                "longitude": longitude,
             }
             headers = {**self.headers, "Prefer": "resolution=merge-duplicates"}
             resp = await client.post(url, headers=headers, json=payload)
