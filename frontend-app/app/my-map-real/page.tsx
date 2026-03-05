@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import Script from "next/script";
 import { useUser } from "@/hooks/useUser";
+import { latLngToCell, cellToBoundary, gridDisk } from "h3-js";
 
 // Kakao Maps Type Declaration
 declare global {
@@ -43,6 +44,11 @@ interface Stats {
 }
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+
+/** H3 해상도 (8 ≈ 동네 단위, 숫자 작을수록 넓은 영역) */
+const H3_RES = 8;
+/** 동네 반경 (gridDisk k) — 넓을수록 "동네 전체" 헥사 수 증가 */
+const NEIGHBORHOOD_RING_K = 18;
 
 /** Haversine 거리 (km) */
 function haversineKm(
@@ -246,6 +252,35 @@ export default function MyMapReal() {
   const periodInsight = useMemo(() => getInsightFromVisits(filteredVisits, timeRange), [filteredVisits, timeRange]);
   const valueTips = useMemo(() => getValueRedistributionTips(visits, pattern?.analysis || {}), [visits, pattern?.analysis]);
 
+  /** 동네 정복 지도: H3 헥사곤 기반 탐험 완성도 & 히트맵 데이터 */
+  const hexagonStats = useMemo(() => {
+    if (filteredVisits.length === 0) {
+      return { explorationPercent: 0, conqueredCount: 0, totalHexes: 0, visitedCells: new Set<string>(), visitCountPerCell: new Map<string, number>(), neighborhoodCells: [] as string[] };
+    }
+    const visitCountPerCell = new Map<string, number>();
+    const visitedCells = new Set<string>();
+    filteredVisits.forEach((v) => {
+      const lat = v.latitude ?? 37.5665;
+      const lng = v.longitude ?? 126.978;
+      try {
+        const cell = latLngToCell(lat, lng, H3_RES);
+        visitedCells.add(cell);
+        visitCountPerCell.set(cell, (visitCountPerCell.get(cell) ?? 0) + 1);
+      } catch (_) { /* ignore */ }
+    });
+    const centerLat = filteredVisits.reduce((s, v) => s + (v.latitude ?? 37.5665), 0) / filteredVisits.length;
+    const centerLon = filteredVisits.reduce((s, v) => s + (v.longitude ?? 126.978), 0) / filteredVisits.length;
+    let neighborhoodCells: string[] = [];
+    try {
+      const centerCell = latLngToCell(centerLat, centerLon, H3_RES);
+      neighborhoodCells = gridDisk(centerCell, NEIGHBORHOOD_RING_K);
+    } catch (_) { /* ignore */ }
+    const totalHexes = neighborhoodCells.length;
+    const conqueredCount = neighborhoodCells.filter((c) => visitedCells.has(c)).length;
+    const explorationPercent = totalHexes > 0 ? Math.round((conqueredCount / totalHexes) * 100) : 0;
+    return { explorationPercent, conqueredCount, totalHexes, visitedCells, visitCountPerCell, neighborhoodCells };
+  }, [filteredVisits]);
+
   // Load theme
   useEffect(() => {
     const savedTheme = localStorage.getItem('isDarkMode');
@@ -274,13 +309,13 @@ export default function MyMapReal() {
     return () => clearTimeout(timeout);
   }, [kakaoLoaded]);
 
-  // Init Kakao Map: 지도 탭일 때 표시. DOM 레이아웃 후 초기화 + relayout으로 그리기 보장
+  // Init Kakao Map: 지도 탭일 때 표시. DOM 레이아웃 후 초기화 + 헥사곤 오버레이 + relayout
   useEffect(() => {
     if (!kakaoLoaded || !mapContainerRef.current || tab !== 'map') return;
     setMapLoadError(null);
     const t = setTimeout(() => {
       try {
-        initKakaoMapWithVisits(filteredVisits);
+        initKakaoMapWithVisits(filteredVisits, hexagonStats);
         const m = mapRef.current;
         if (m && typeof m.relayout === 'function') {
           setTimeout(() => m.relayout(), 150);
@@ -291,7 +326,7 @@ export default function MyMapReal() {
       }
     }, 100);
     return () => clearTimeout(t);
-  }, [kakaoLoaded, filteredVisits, tab, isDarkMode]);
+  }, [kakaoLoaded, filteredVisits, tab, isDarkMode, hexagonStats]);
 
   const loadData = async () => {
     setLoading(true);
@@ -304,7 +339,8 @@ export default function MyMapReal() {
     setLoading(false);
   };
 
-  const initKakaoMapWithVisits = (visitsToShow: Visit[]) => {
+  type HexagonStats = { explorationPercent: number; conqueredCount: number; totalHexes: number; visitedCells: Set<string>; visitCountPerCell: Map<string, number>; neighborhoodCells: string[] };
+  const initKakaoMapWithVisits = (visitsToShow: Visit[], hexStats: HexagonStats) => {
     if (!window.kakao?.maps || !mapContainerRef.current) return;
     const el = mapContainerRef.current;
     if (!el || el.offsetWidth === 0 || el.offsetHeight === 0) return;
@@ -323,6 +359,28 @@ export default function MyMapReal() {
       level: hasVisits ? 6 : 8,
     });
     mapRef.current = map;
+
+    // 헥사곤 그리드 오버레이 (동네 정복 시각화 + 히트맵: 자주 간 곳 진하게)
+    if (hexStats.neighborhoodCells.length > 0) {
+      const maxCount = Math.max(1, ...Array.from(hexStats.visitCountPerCell.values()));
+      hexStats.neighborhoodCells.forEach((h3Index) => {
+        try {
+          const boundary = cellToBoundary(h3Index);
+          const path = boundary.map(([lat, lng]) => new window.kakao.maps.LatLng(lat, lng));
+          const count = hexStats.visitCountPerCell.get(h3Index) ?? 0;
+          const visited = count > 0;
+          const opacity = visited ? 0.35 + Math.min(0.45, (count / maxCount) * 0.45) : 0.12;
+          const polygon = new window.kakao.maps.Polygon({
+            path,
+            fillColor: visited ? '#E8740C' : (isDarkMode ? '#FFFFFF' : '#9CA3AF'),
+            fillOpacity: opacity,
+            strokeColor: visited ? '#E8740C' : (isDarkMode ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.08)'),
+            strokeWeight: 1,
+          });
+          polygon.setMap(map);
+        } catch (_) { /* ignore */ }
+      });
+    }
 
     if (hasVisits) {
       visitsToShow.forEach((visit) => {
@@ -517,11 +575,20 @@ export default function MyMapReal() {
                     <div style={{ fontSize: 11, opacity: 0.85 }}>배포 URL을 카카오 개발자 콘솔 → 앱 키 → Web → 사이트 도메인에 추가하면 해결됩니다.</div>
                   </div>
                 )}
-                {/* 안내: 주황 마커·선만 내 방문, 줌 아웃 시 보이는 다른 점은 카카오맵 기본 POI */}
                 <div style={{ fontSize: 11, color: isDarkMode ? "rgba(255,255,255,0.5)" : "#9CA3AF", marginTop: 8, marginBottom: 4 }}>
-                  주황색 마커와 선은 내 방문 기록입니다. 지도 위 다른 표시는 카카오맵 기본 정보입니다.
+                  주황색 헥사곤·마커·선은 내 방문 기록입니다. 진할수록 자주 방문한 구역이에요.
                 </div>
-                {/* Nike 스타일 누적거리/탐험반경 오버레이 */}
+                {/* 친구 지도와 비교 — 동네 정복 % 비교 */}
+                <div style={{ marginTop: 12, padding: 14, background: isDarkMode ? "rgba(255,255,255,0.05)" : "#F9FAFB", borderRadius: 14, border: `1px solid ${borderColor}` }}>
+                  <div style={{ fontSize: 11, color: "#8B5CF6", fontWeight: 700, letterSpacing: 1, marginBottom: 8 }}>친구와 비교</div>
+                  <div style={{ fontSize: 13, color: isDarkMode ? "rgba(255,255,255,0.85)" : "#374151", lineHeight: 1.6 }}>
+                    나는 이 동네 <strong style={{ color: "#E8740C" }}>{hexagonStats.explorationPercent}%</strong> 정복했어요.
+                  </div>
+                  <div style={{ fontSize: 12, color: isDarkMode ? "rgba(255,255,255,0.5)" : "#9CA3AF", marginTop: 6 }}>
+                    친구 랭킹은 소셜 탭에서 만나요. (준비 중)
+                  </div>
+                </div>
+                {/* 누적거리 / 탐험반경 / 탐험 완성도(동네 정복 %) */}
                 <div
                   style={{
                     position: "absolute",
@@ -529,37 +596,23 @@ export default function MyMapReal() {
                     left: 12,
                     right: 12,
                     display: "flex",
-                    gap: 10,
+                    gap: 8,
                     pointerEvents: "none",
+                    flexWrap: "wrap",
                   }}
                 >
-                  <div
-                    style={{
-                      flex: 1,
-                      background: isDarkMode ? "rgba(10,14,20,0.92)" : "rgba(255,255,255,0.95)",
-                      backdropFilter: "blur(12px)",
-                      borderRadius: 14,
-                      padding: "14px 12px",
-                      border: `1px solid ${borderColor}`,
-                      boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
-                    }}
-                  >
+                  <div style={{ flex: "1 1 80px", background: isDarkMode ? "rgba(10,14,20,0.92)" : "rgba(255,255,255,0.95)", backdropFilter: "blur(12px)", borderRadius: 14, padding: "14px 12px", border: `1px solid ${borderColor}`, boxShadow: "0 2px 8px rgba(0,0,0,0.06)" }}>
                     <div style={{ fontSize: 10, color: isDarkMode ? "rgba(255,255,255,0.5)" : "#78716c", fontWeight: 600, marginBottom: 4 }}>누적 거리</div>
                     <div style={{ fontSize: 22, fontWeight: 800, color: "#E8740C", letterSpacing: "-0.5px" }}>{computedStats.cumulative_distance_km}<span style={{ fontSize: 14, fontWeight: 600, marginLeft: 2 }}>km</span></div>
                   </div>
-                  <div
-                    style={{
-                      flex: 1,
-                      background: isDarkMode ? "rgba(10,14,20,0.92)" : "rgba(255,255,255,0.95)",
-                      backdropFilter: "blur(12px)",
-                      borderRadius: 14,
-                      padding: "14px 12px",
-                      border: `1px solid ${borderColor}`,
-                      boxShadow: "0 2px 8px rgba(0,0,0,0.06)",
-                    }}
-                  >
+                  <div style={{ flex: "1 1 80px", background: isDarkMode ? "rgba(10,14,20,0.92)" : "rgba(255,255,255,0.95)", backdropFilter: "blur(12px)", borderRadius: 14, padding: "14px 12px", border: `1px solid ${borderColor}`, boxShadow: "0 2px 8px rgba(0,0,0,0.06)" }}>
                     <div style={{ fontSize: 10, color: isDarkMode ? "rgba(255,255,255,0.5)" : "#78716c", fontWeight: 600, marginBottom: 4 }}>탐험 반경</div>
                     <div style={{ fontSize: 22, fontWeight: 800, color: "#0EA5E9", letterSpacing: "-0.5px" }}>{computedStats.exploration_radius_km}<span style={{ fontSize: 14, fontWeight: 600, marginLeft: 2 }}>km</span></div>
+                  </div>
+                  <div style={{ flex: "1 1 80px", background: isDarkMode ? "rgba(10,14,20,0.92)" : "rgba(255,255,255,0.95)", backdropFilter: "blur(12px)", borderRadius: 14, padding: "14px 12px", border: `1px solid ${borderColor}`, boxShadow: "0 2px 8px rgba(0,0,0,0.06)" }}>
+                    <div style={{ fontSize: 10, color: isDarkMode ? "rgba(255,255,255,0.5)" : "#78716c", fontWeight: 600, marginBottom: 4 }}>탐험 완성도</div>
+                    <div style={{ fontSize: 22, fontWeight: 800, color: "#8B5CF6", letterSpacing: "-0.5px" }}>{hexagonStats.explorationPercent}<span style={{ fontSize: 14, fontWeight: 600, marginLeft: 2 }}>%</span></div>
+                    <div style={{ fontSize: 9, color: isDarkMode ? "rgba(255,255,255,0.4)" : "#78716c", marginTop: 2 }}>동네 정복</div>
                   </div>
                 </div>
                 {filteredVisits.length === 0 && visits.length > 0 && (

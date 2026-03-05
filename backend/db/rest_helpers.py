@@ -735,6 +735,59 @@ class RestDatabaseHelpers:
                 return out[0] if isinstance(out, list) else out
             return None
 
+    # ---------- 피드 좋아요 ----------
+
+    async def toggle_post_like(self, post_id: str, user_id: str) -> Dict[str, Any]:
+        """좋아요 토글. 이미 눌렀으면 취소, 없으면 추가. 최종 liked 상태와 카운트 반환."""
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            # 현재 좋아요 여부 확인
+            check_url = f"{self.base_url}/rest/v1/post_likes"
+            params = {"post_id": f"eq.{post_id}", "user_id": f"eq.{user_id}", "select": "id", "limit": 1}
+            resp = await client.get(check_url, headers=self.headers, params=params)
+            existing = resp.json() if resp.status_code == 200 else []
+
+            if existing:
+                # 좋아요 취소
+                del_url = f"{self.base_url}/rest/v1/post_likes?post_id=eq.{post_id}&user_id=eq.{user_id}"
+                await client.delete(del_url, headers=self.headers)
+                liked = False
+            else:
+                # 좋아요 추가
+                payload = {"post_id": post_id, "user_id": user_id}
+                await client.post(f"{self.base_url}/rest/v1/post_likes", headers=self.headers, json=payload)
+                liked = True
+
+            count = await self.get_post_like_count(post_id)
+            return {"liked": liked, "like_count": count}
+
+    async def get_post_like_count(self, post_id: str) -> int:
+        """게시글 좋아요 수"""
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            url = f"{self.base_url}/rest/v1/post_likes"
+            params = {"post_id": f"eq.{post_id}", "select": "id"}
+            headers = {**self.headers, "Prefer": "count=exact"}
+            resp = await client.get(url, headers=headers, params=params)
+            if resp.status_code == 200:
+                # Content-Range: 0-N/Total
+                cr = resp.headers.get("content-range", "")
+                if "/" in cr:
+                    try:
+                        return int(cr.split("/")[1])
+                    except Exception:
+                        pass
+                return len(resp.json())
+            return 0
+
+    async def is_post_liked(self, post_id: str, user_id: str) -> bool:
+        """특정 유저가 해당 게시글에 좋아요 눌렀는지"""
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            url = f"{self.base_url}/rest/v1/post_likes"
+            params = {"post_id": f"eq.{post_id}", "user_id": f"eq.{user_id}", "select": "id", "limit": 1}
+            resp = await client.get(url, headers=self.headers, params=params)
+            if resp.status_code == 200:
+                return len(resp.json()) > 0
+            return False
+
     async def get_place_suggestions_by_user(self, user_id: str) -> List[Dict[str, Any]]:
         """내 장소 제안 목록"""
         async with httpx.AsyncClient(timeout=10.0) as client:

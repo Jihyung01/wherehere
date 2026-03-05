@@ -30,6 +30,10 @@ class CreateCommentRequest(BaseModel):
     body: str
 
 
+class LikeRequest(BaseModel):
+    user_id: str
+
+
 @router.get("/posts")
 async def list_posts(
     scope: str = "neighborhood",
@@ -60,11 +64,22 @@ async def list_posts(
     # 소셜 프로필: 작성자 display_name, profile_image_url 붙이기
     author_ids = list({p.get("author_id") for p in posts if p.get("author_id")})
     users_map = await db.get_users_basic(author_ids) if author_ids else {}
+    # 좋아요 수 붙이기
     for p in posts:
         aid = p.get("author_id")
         u = users_map.get(aid) or users_map.get(str(aid)) if aid else {}
         p["author_display_name"] = u.get("display_name")
         p["author_avatar_url"] = u.get("profile_image_url")
+        pid = p.get("id")
+        if pid:
+            p["like_count"] = await db.get_post_like_count(pid)
+            if user_id:
+                p["liked_by_me"] = await db.is_post_liked(pid, user_id)
+            else:
+                p["liked_by_me"] = False
+        else:
+            p["like_count"] = 0
+            p["liked_by_me"] = False
     return {"posts": posts}
 
 
@@ -110,3 +125,12 @@ async def create_comment(post_id: str, req: CreateCommentRequest, db=Depends(get
         post_id=post_id, author_id=req.author_id, body=req.body
     )
     return {"success": comment is not None, "comment": comment}
+
+
+@router.post("/posts/{post_id}/like")
+async def toggle_like(post_id: str, req: LikeRequest, db=Depends(get_db)):
+    """좋아요 토글 (이미 좋아요면 취소)"""
+    if db is None:
+        return {"liked": False, "like_count": 0}
+    result = await db.toggle_post_like(post_id=post_id, user_id=req.user_id)
+    return result

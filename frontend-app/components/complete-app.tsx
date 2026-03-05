@@ -17,6 +17,10 @@ import { makeStoryCard, makeFeedCard, blobToFile, makeCaption, shareOrDownload }
 import type { Mission } from './missions'
 import { selectMissions } from './missions'
 import { compressImageFile } from '@/lib/image-compress'
+import { toast } from 'sonner'
+import { ConfirmModal } from './ui/ConfirmModal'
+import { Onboarding, shouldShowOnboarding } from './Onboarding'
+import { QuestCompleteScreen } from './QuestCompleteScreen'
 
 declare global {
   interface Window {
@@ -160,6 +164,15 @@ export function CompleteApp() {
   }>({ title: '', body: '', place_name: '', place_address: '', image_url: '', mood: '', rating: '' })
   const [instagramShareSubmitting, setInstagramShareSubmitting] = useState(false)
   const [challengeCategory, setChallengeCategory] = useState<ChallengeCategory>('daily')
+  // 피드 큐레이션 탭
+  const [feedType, setFeedType] = useState<'all' | 'hot' | 'gathering' | 'review'>('all')
+  // 퀘스트 완료 화면
+  const [questCompleteData, setQuestCompleteData] = useState<{ xpEarned: number; locationVerified: boolean; placeName: string } | null>(null)
+  const [pendingFeedPost, setPendingFeedPost] = useState<(() => Promise<void>) | null>(null)
+  // ConfirmModal
+  const [confirmModal, setConfirmModal] = useState<{ message: string; subMessage?: string; confirmText?: string; onConfirm: () => void } | null>(null)
+  // 프리미엄 모달
+  const [showPremiumModal, setShowPremiumModal] = useState(false)
 
   // displayName 계산: userProfile state 이후에 위치
   const displayName = userProfile?.display_name ?? user?.user_metadata?.name ?? user?.user_metadata?.full_name ?? user?.user_metadata?.user_name ?? user?.user_metadata?.kakao_account?.profile?.nickname ?? user?.email ?? (user ? '로그인한 사용자' : null)
@@ -471,7 +484,7 @@ export function CompleteApp() {
       if (!res.ok) return null
       return res.json()
     },
-    enabled: (screen === 'profile' || screen === 'challenges') && !!userId,
+    enabled: (screen === 'profile' || screen === 'challenges' || screen === 'home') && !!userId,
   })
 
   const { data: profilePostsData } = useQuery({
@@ -760,22 +773,18 @@ export function CompleteApp() {
       const data = await response.json().catch(() => ({}))
       
       if (response.status === 400 && data.detail) {
-        alert(data.detail)
+        toast.error(data.detail)
         return
       }
-      
+
       if (data.success) {
-        // 성공 알림
         const xpEarned = data.xp_earned || 100
-        const locBonus = data.location_verified ? '\n📍 위치 인증 보너스 적용!' : ''
-        alert(`🎉 방문 완료!\n\n+${xpEarned} XP 획득${locBonus}\n총 XP는 프로필에서 확인하세요!`)
-        
-        // 옵트인: 동네 피드에 퀘스트 완료 스토리 올리기
         const placeName = acceptedQuest?.name || '장소'
         const placeAddress = acceptedQuest?.address || ''
         const rating = reviewData.rating
-        const postToFeed = window.confirm('이 퀘스트를 동네 피드에 올릴까요?')
-        if (postToFeed) {
+
+        // 피드 포스팅 함수 (QuestCompleteScreen에서 호출)
+        const doPostFeed = async () => {
           try {
             const missionLines = currentMissions
               .filter((m) => missionStates[m.id]?.completed && (missionStates[m.id]?.value != null || missionStates[m.id]?.photo != null || m.type === 'arrival'))
@@ -790,8 +799,6 @@ export function CompleteApp() {
                 return `✓ ${m.title}: 완료`
               })
             const bodyParts = [`${placeName} 방문했어요. 별점 ${rating}점!`, reviewData.review?.trim(), missionLines.length ? ['[미션 기록]', ...missionLines].join('\n') : ''].filter(Boolean)
-
-            // base64 사진은 콤마를 포함해 join/split이 깨지므로 CDN 업로드 후 URL 사용
             const uploadToCdn = async (dataUrl: string): Promise<string> => {
               try {
                 const res = await fetch(dataUrl)
@@ -826,28 +833,30 @@ export function CompleteApp() {
             })
             const postData = await postRes.json().catch(() => ({}))
             if (postRes.ok && postData.success) {
-              alert('동네 피드에 올렸어요.')
+              toast.success('동네 피드에 올렸어요!')
             }
           } catch {
-            // 실패해도 방문 완료는 유지
+            toast.error('피드 업로드에 실패했어요.')
           }
         }
-        
+
         // 상태 초기화
         setReviewData({ rating: 0, review: '', photos: [] })
         setUploadedPhotos([])
         setCheckInTime(null)
         setMissionStates({})
         setCurrentMissions([])
-        
-        // 나의 지도로 이동
-        router.push('/my-map-real')
+
+        // 퀘스트 완료 화면 표시 (router.push 대신)
+        setPendingFeedPost(() => doPostFeed)
+        setQuestCompleteData({ xpEarned, locationVerified: data.location_verified || false, placeName })
+        setScreen('home')
       } else {
-        alert('❌ 방문 기록 저장 실패\n다시 시도해주세요.')
+        toast.error('방문 기록 저장에 실패했어요. 다시 시도해주세요.')
       }
     } catch (error) {
       console.error('방문 기록 생성 실패:', error)
-      alert('❌ 네트워크 오류\n인터넷 연결을 확인해주세요.')
+      toast.error('네트워크 오류가 났어요. 인터넷 연결을 확인해주세요.')
     }
   }
 
@@ -892,12 +901,12 @@ export function CompleteApp() {
           if (isMobile) {
             try {
               window.location.href = 'kakaotalk://send?url=' + encodeURIComponent(shareUrl)
-              setTimeout(() => { alert('📋 카카오톡이 열리지 않으면 링크가 복사되었어요. 채팅창에 붙여넣기 하세요.') }, 500)
+              setTimeout(() => { toast.success('카카오톡이 열리지 않으면 링크가 복사됐어요. 채팅창에 붙여넣기 하세요.') }, 500)
             } catch {
-              alert('📋 링크가 복사되었어요. 카카오톡 채팅창에 붙여넣기 하세요.')
+              toast.success('링크가 복사됐어요. 카카오톡 채팅창에 붙여넣기 하세요.')
             }
           } else {
-            alert('📋 링크가 복사되었습니다!\n카카오톡에서 붙여넣기 해주세요.')
+            toast.success('링크가 복사됐어요. 카카오톡에서 붙여넣기 해주세요.')
           }
         }
 
@@ -929,9 +938,9 @@ export function CompleteApp() {
       // 최종 대체: 텍스트 복사
       try {
         await navigator.clipboard.writeText(`${shareTitle}\n${placeName}\n${placeAddress}\n\n${shareUrl}`)
-        alert(`📋 링크가 복사되었습니다!`)
+        toast.success('링크가 복사됐어요!')
       } catch {
-        alert(`📋 이 링크를 복사해주세요:\n\n${shareUrl}`)
+        toast.info(`이 링크를 복사해주세요: ${shareUrl}`)
       }
     }
   }
@@ -1082,99 +1091,9 @@ export function CompleteApp() {
     )
   }
 
-  // 온보딩 (첫 방문 시 2~3장, 건너뛰기 가능)
+  // 온보딩 (첫 방문 시 — 새 Onboarding 컴포넌트 사용)
   if (showOnboarding) {
-    const steps = [
-      {
-        title: '오늘의 역할을 골라보세요',
-        desc: '탐험가, 힐러, 예술가, 미식가, 도전자 중에서\n나에게 맞는 역할을 선택하면 AI가 장소를 추천해요.',
-        icon: '🧭',
-      },
-      {
-        title: '퀘스트를 받고 떠나보세요',
-        desc: '기분과 역할에 맞는 특별한 장소 3곳을 추천받아\n마음에 드는 한 곳을 골라 도전해보세요.',
-        icon: '🎯',
-      },
-      {
-        title: '도착하면 인정받고, 지도에 쌓아요',
-        desc: '장소 100m 이내에서 "도착했어요"를 누르면\n미션이 완료되고 XP가 쌓여 나만의 지도가 완성돼요.',
-        icon: '🗺️',
-      },
-    ]
-    const step = steps[onboardingStep]
-    const isLast = onboardingStep === steps.length - 1
-    return (
-      <div style={{ maxWidth: 430, margin: '0 auto', minHeight: '100vh', background: bgColor, color: textColor, fontFamily: 'Pretendard, sans-serif', display: 'flex', flexDirection: 'column', padding: '48px 24px 32px' }}>
-        <div style={{ textAlign: 'center', flex: 1 }}>
-          <div style={{ fontSize: 56, marginBottom: 24 }}>{step.icon}</div>
-          <h2 style={{ fontSize: 22, fontWeight: 800, marginBottom: 16, lineHeight: 1.3 }}>{step.title}</h2>
-          <p style={{ fontSize: 15, color: isDarkMode ? 'rgba(255,255,255,0.7)' : '#6B7280', lineHeight: 1.7, whiteSpace: 'pre-line' }}>{step.desc}</p>
-        </div>
-        <div style={{ display: 'flex', gap: 12, marginTop: 32 }}>
-          <button
-            onClick={() => { if (isLast) finishOnboarding(); else setOnboardingStep((s) => s + 1); }}
-            style={{
-              flex: 1,
-              padding: 16,
-              background: isLast ? 'linear-gradient(135deg, #E8740C, #C65D00)' : cardBg,
-              border: `1px solid ${isLast ? 'transparent' : borderColor}`,
-              borderRadius: 14,
-              color: isLast ? '#fff' : textColor,
-              fontWeight: 700,
-              fontSize: 15,
-              cursor: 'pointer',
-            }}
-          >
-            {isLast ? '시작하기' : '다음'}
-          </button>
-          {!isLast && (
-            <button
-              onClick={finishOnboarding}
-              style={{
-                padding: '16px 20px',
-                background: 'transparent',
-                border: `1px solid ${borderColor}`,
-                borderRadius: 14,
-                color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#9CA3AF',
-                fontSize: 14,
-                cursor: 'pointer',
-              }}
-            >
-              건너뛰기
-            </button>
-          )}
-        </div>
-        {isLast && (
-          <button
-            onClick={finishOnboarding}
-            style={{
-              marginTop: 12,
-              padding: 12,
-              background: 'transparent',
-              border: 'none',
-              color: isDarkMode ? 'rgba(255,255,255,0.5)' : '#9CA3AF',
-              fontSize: 13,
-              cursor: 'pointer',
-            }}
-          >
-            건너뛰기
-          </button>
-        )}
-        <div style={{ display: 'flex', justifyContent: 'center', gap: 6, marginTop: 24 }}>
-          {steps.map((_, i) => (
-            <div
-              key={i}
-              style={{
-                width: 8,
-                height: 8,
-                borderRadius: 4,
-                background: i === onboardingStep ? '#E8740C' : (isDarkMode ? 'rgba(255,255,255,0.2)' : '#E5E7EB'),
-              }}
-            />
-          ))}
-        </div>
-      </div>
-    )
+    return <Onboarding onDone={finishOnboarding} />
   }
 
   // 홈 화면: 오늘의 한 곳 + 지도
@@ -1240,6 +1159,25 @@ export function CompleteApp() {
           </div>
         )}
         <div style={{ padding: '60px 20px 120px' }}>
+          {/* 레벨 바: 메인 상단 항상 노출 (게임화 강화) */}
+          {isLoggedIn && (() => {
+            const level = userStats?.level ?? 1
+            const totalXP = userStats?.total_xp ?? 0
+            const nextXP = userStats?.xp_to_next_level ?? 1000
+            const progress = nextXP > 0 ? Math.min(100, (totalXP / nextXP) * 100) : 0
+            return (
+              <div style={{ marginBottom: 20, padding: '12px 16px', background: isDarkMode ? 'rgba(255,255,255,0.06)' : 'rgba(232,116,12,0.08)', borderRadius: 14, border: `1px solid ${isDarkMode ? 'rgba(232,116,12,0.2)' : 'rgba(232,116,12,0.25)'}` }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: '#E8740C' }}>Lv.{level} 탐험가</span>
+                  <span style={{ fontSize: 11, color: isDarkMode ? 'rgba(255,255,255,0.5)' : '#78350F' }}>다음 레벨까지 {(nextXP - totalXP).toLocaleString()} XP</span>
+                </div>
+                <div style={{ height: 8, borderRadius: 4, background: isDarkMode ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.6)', overflow: 'hidden' }}>
+                  <div style={{ width: `${progress}%`, height: '100%', background: 'linear-gradient(90deg, #E8740C, #F59E0B)', borderRadius: 4, transition: 'width 0.3s ease' }} />
+                </div>
+              </div>
+            )
+          })()}
+
           <div style={{ marginBottom: 24 }}>
             <h1 style={{ fontSize: 24, fontWeight: 900, marginBottom: 6, background: 'linear-gradient(90deg, #E8740C, #F59E0B)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
               WhereHere
@@ -1249,6 +1187,32 @@ export function CompleteApp() {
               홈 · 기분 맞춤 탐험 · 동네 피드
             </div>
           </div>
+
+          {/* 동네 정복 지도 빠른 진입 (메인에서 접근 용이) */}
+          <button
+            type="button"
+            onClick={() => router.push('/my-map-real')}
+            style={{
+              width: '100%',
+              marginBottom: 20,
+              padding: 16,
+              borderRadius: 16,
+              border: `1px solid ${borderColor}`,
+              background: isDarkMode ? 'linear-gradient(135deg, rgba(232,116,12,0.12), rgba(232,116,12,0.04))' : 'linear-gradient(135deg, #FFF7ED, #FFEDD5)',
+              color: textColor,
+              textAlign: 'left',
+              cursor: 'pointer',
+              boxShadow: isDarkMode ? 'none' : '0 2px 12px rgba(232,116,12,0.08)',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+              <span style={{ fontSize: 24 }}>🗺️</span>
+              <span style={{ fontSize: 16, fontWeight: 800, color: '#E8740C' }}>동네 정복 지도</span>
+            </div>
+            <div style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280' }}>
+              방문한 구역을 헥사곤으로 채워가며 탐험 완성도를 확인하세요
+            </div>
+          </button>
 
           {/* 1) 오늘의 한 곳 + 지도 */}
           <div style={{ fontSize: 13, fontWeight: 700, color: isDarkMode ? 'rgba(255,255,255,0.8)' : '#374151', marginBottom: 10 }}>오늘의 한 곳</div>
@@ -2147,17 +2111,17 @@ export function CompleteApp() {
           return
         } catch (err) {
           console.error('카카오톡 공유 실패:', err)
-          alert('카카오톡 공유에 실패했어요. 기본 공유를 시도합니다.')
+          toast.error('카카오톡 공유에 실패했어요. 기본 공유를 시도합니다.')
         }
       }
       
       // 카카오 SDK 없으면 기본 공유
       const text = [post.title, post.body || '', post.place_name ? `📍 ${post.place_name}` : '', post.place_address ? `   ${post.place_address}` : '', '#동네생활 #wherehere', appUrl].filter(Boolean).join('\n')
       if (typeof navigator !== 'undefined' && navigator.share) {
-        navigator.share({ title: post.title, text }).catch(() => { navigator.clipboard?.writeText(text); alert('공유 문구를 복사했어요.') })
+        navigator.share({ title: post.title, text }).catch(() => { navigator.clipboard?.writeText(text); toast.success('공유 문구를 복사했어요.') })
       } else {
         navigator.clipboard?.writeText(text)
-        alert('공유 문구를 복사했어요.')
+        toast.success('공유 문구를 복사했어요.')
       }
     }
     const sharePostInstagramCard = (post: { title: string; body?: string; place_name?: string; place_address?: string; image_url?: string; rating?: number } | null) => {
@@ -2194,7 +2158,7 @@ export function CompleteApp() {
         feedActivities={feedActivities}
         onShareKakao={sharePostText}
         onShareInstagramCard={sharePostInstagramCard}
-        onToast={(msg) => alert(msg)}
+        onToast={(msg) => toast(msg)}
         BottomNav={<BottomNav />}
         userAvatarUrl={userProfile?.profile_image_url}
       />
@@ -2227,7 +2191,7 @@ export function CompleteApp() {
         setProfileCommentInput('')
         refetchProfilePostComments()
       } catch (_) {
-        alert('댓글 저장에 실패했어요. 네트워크를 확인하고 다시 시도해주세요.')
+        toast.error('댓글 저장에 실패했어요. 네트워크를 확인해주세요.')
       }
     }
 
@@ -2633,9 +2597,9 @@ export function CompleteApp() {
                       navigator.geolocation.getCurrentPosition(
                         (position) => {
                           setUserLocation({ lat: position.coords.latitude, lng: position.coords.longitude })
-                          alert('위치가 업데이트되었습니다!')
+                          toast.success('위치가 업데이트됐어요!')
                         },
-                        (error) => alert('위치 가져오기 실패: ' + error.message)
+                        (error) => toast.error('위치 가져오기 실패: ' + error.message)
                       )
                     }
                   }} style={{
@@ -2963,6 +2927,25 @@ export function CompleteApp() {
                   </div>
                 </div>
               )}
+            </div>
+
+            {/* 회사 / 서비스 정보 (카카오 비즈니스 심사용: 사이트 내 사업자 정보 및 앱 정보 노출) */}
+            <div style={{ marginTop: 24, paddingTop: 24, borderTop: `2px solid ${borderColor}` }}>
+              <div style={{ fontSize: 11, color: isDarkMode ? 'rgba(255,255,255,0.4)' : '#9CA3AF', fontWeight: 700, letterSpacing: 1, marginBottom: 12 }}>COMPANY / SERVICE</div>
+              <div style={{ background: cardBg, border: `1px solid ${borderColor}`, borderRadius: 16, padding: 20 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 16 }}>
+                  <img src="/app-icon.png" alt="WhereHere 앱 아이콘" style={{ width: 64, height: 64, borderRadius: 14, objectFit: 'cover', border: `1px solid ${borderColor}` }} />
+                  <div>
+                    <div style={{ fontSize: 10, color: isDarkMode ? 'rgba(255,255,255,0.4)' : '#9CA3AF', marginBottom: 4 }}>앱 이름</div>
+                    <div style={{ fontSize: 20, fontWeight: 800, background: 'linear-gradient(90deg, #E8740C, #F59E0B)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>WhereHere</div>
+                  </div>
+                </div>
+                <div style={{ paddingTop: 12, borderTop: `1px solid ${borderColor}` }}>
+                  <div style={{ fontSize: 10, color: isDarkMode ? 'rgba(255,255,255,0.4)' : '#9CA3AF', marginBottom: 4 }}>사업자 정보</div>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: textColor }}>사업자등록번호 463-24-01865</div>
+                  <div style={{ fontSize: 11, color: isDarkMode ? 'rgba(255,255,255,0.5)' : '#6B7280', marginTop: 4 }}>비즈 앱 및 사업자등록증과 동일한 정보입니다.</div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
