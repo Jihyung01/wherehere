@@ -771,6 +771,8 @@ export function CompleteApp() {
           user_longitude: userLocation.lng,
           place_name: acceptedQuest?.name || undefined,
           place_category: (acceptedQuest as any)?.primary_category || (acceptedQuest as any)?.category || undefined,
+          place_latitude: (acceptedQuest as any)?.latitude || undefined,
+          place_longitude: (acceptedQuest as any)?.longitude || undefined,
         })
       })
       
