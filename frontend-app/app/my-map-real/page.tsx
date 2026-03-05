@@ -236,6 +236,9 @@ export default function MyMapReal() {
   const [tab, setTab] = useState("map");
   const [timeRange, setTimeRange] = useState<TimeRange>("all");
   const [selectedVisit, setSelectedVisit] = useState<string | null>(null);
+  const [visitDetailOpen, setVisitDetailOpen] = useState(false);
+  const [visitNarrative, setVisitNarrative] = useState<string | null>(null);
+  const [narrativeLoading, setNarrativeLoading] = useState(false);
   const [visits, setVisits] = useState<Visit[]>([]);
   const [pattern, setPattern] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -463,6 +466,82 @@ export default function MyMapReal() {
     { id: "stats", label: "통계", icon: "📊" },
     { id: "style", label: "스타일", icon: "🎨" },
   ];
+
+  // 방문 상세 모달
+  const visitDetailModal = visitDetailOpen && selectedVisit && (() => {
+    const v = filteredVisits.find((x) => x.id === selectedVisit)
+    if (!v) return null
+    const bgColor = isDarkMode ? '#1a1a2e' : '#fff'
+    const borderColor = isDarkMode ? 'rgba(255,255,255,0.1)' : '#E5E7EB'
+    const textColor = isDarkMode ? '#fff' : '#1F2937'
+
+    const handleGenerateNarrative = async () => {
+      if (!v.place_name) return
+      setNarrativeLoading(true)
+      try {
+        const res = await fetch(`${API_BASE}/api/v1/recommendations/narrative`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ place_name: v.place_name, category: v.category || '기타', role_type: 'explorer' }),
+        })
+        const data = await res.json()
+        if (data.narrative) setVisitNarrative(data.narrative)
+      } catch {}
+      setNarrativeLoading(false)
+    }
+
+    return (
+      <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 9999, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }} onClick={() => setVisitDetailOpen(false)}>
+        <div style={{ background: bgColor, borderRadius: '20px 20px 0 0', padding: '0 0 env(safe-area-inset-bottom,16px)', maxWidth: 480, width: '100%', maxHeight: '85vh', overflow: 'auto', boxShadow: '0 -8px 40px rgba(0,0,0,0.4)' }} onClick={(e) => e.stopPropagation()}>
+          {/* 헤더 */}
+          <div style={{ padding: '16px 20px 12px', borderBottom: `1px solid ${borderColor}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'sticky', top: 0, background: bgColor, zIndex: 1 }}>
+            <div>
+              <div style={{ fontSize: 10, color: '#E8740C', fontWeight: 700, marginBottom: 2 }}>{v.category} · 퀘스트 완료</div>
+              <div style={{ fontSize: 18, fontWeight: 800, color: textColor }}>{v.place_name || '알 수 없는 장소'}</div>
+            </div>
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ fontSize: 22, fontWeight: 800, color: '#E8740C' }}>+{v.xp_earned}</div>
+              <div style={{ fontSize: 10, color: isDarkMode ? 'rgba(255,255,255,0.4)' : '#9CA3AF' }}>XP 획득</div>
+            </div>
+          </div>
+          <div style={{ padding: '16px 20px' }}>
+            {/* 방문 메타 */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 16 }}>
+              {[
+                { icon: '📅', label: '방문일', value: new Date(v.visited_at).toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' }) },
+                { icon: '⏱️', label: '체류 시간', value: `${v.duration_minutes}분` },
+                { icon: '⭐', label: '평점', value: v.rating ? `${v.rating}점` : '-' },
+                { icon: '😊', label: '기분', value: v.mood || '-' },
+                { icon: '💰', label: '지출', value: v.spent_amount ? `${(v.spent_amount / 1000).toFixed(0)}천원` : '무료' },
+              ].map((item, i) => (
+                <div key={i} style={{ background: isDarkMode ? 'rgba(255,255,255,0.05)' : '#F9FAFB', borderRadius: 10, padding: '10px 12px' }}>
+                  <div style={{ fontSize: 11, color: isDarkMode ? 'rgba(255,255,255,0.5)' : '#9CA3AF', marginBottom: 2 }}>{item.icon} {item.label}</div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: textColor }}>{item.value}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* AI 서사 */}
+            {visitNarrative ? (
+              <div style={{ background: isDarkMode ? 'rgba(232,116,12,0.08)' : '#FFF8F2', border: '1px solid rgba(232,116,12,0.3)', borderRadius: 12, padding: 14, marginBottom: 14 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: '#E8740C', marginBottom: 6 }}>✨ AI 서사</div>
+                <div style={{ fontSize: 13, color: textColor, lineHeight: 1.7 }}>{visitNarrative}</div>
+              </div>
+            ) : (
+              <button onClick={handleGenerateNarrative} disabled={narrativeLoading || !v.place_name} style={{ width: '100%', padding: '12px 0', borderRadius: 12, border: '1.5px dashed rgba(232,116,12,0.5)', background: 'transparent', color: '#E8740C', fontWeight: 600, fontSize: 14, cursor: narrativeLoading ? 'not-allowed' : 'pointer', marginBottom: 14 }}>
+                {narrativeLoading ? '✨ 서사 생성 중…' : '✨ 이 장소의 AI 서사 보기'}
+              </button>
+            )}
+
+            {/* 방문 시간 */}
+            <div style={{ fontSize: 11, color: isDarkMode ? 'rgba(255,255,255,0.4)' : '#9CA3AF', textAlign: 'center', paddingTop: 8 }}>
+              {new Date(v.visited_at).toLocaleString('ko-KR', { hour: '2-digit', minute: '2-digit' })} 방문
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  })()
 
   return (
     <>
@@ -705,16 +784,19 @@ export default function MyMapReal() {
                   {filteredVisits.length === 0 ? (
                     <div style={{ padding: "16px 0", color: isDarkMode ? "rgba(255,255,255,0.5)" : "#9CA3AF", fontSize: 12 }}>이 기간에 방문한 장소가 없어요.</div>
                   ) : (
-                  filteredVisits.slice(0, 5).map((v, i) => (
-                    <div key={v.id} onClick={() => setSelectedVisit(v.id)} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 0", borderBottom: `1px solid ${borderColor}`, cursor: "pointer", opacity: selectedVisit === v.id ? 1 : 0.7, transition: "opacity 0.2s" }}>
+                  filteredVisits.slice(0, 10).map((v, i) => (
+                    <div key={v.id} onClick={() => { setSelectedVisit(v.id); setVisitDetailOpen(true); setVisitNarrative(null); }} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 0", borderBottom: `1px solid ${borderColor}`, cursor: "pointer", transition: "opacity 0.2s" }}>
                       <div style={{ width: 36, height: 36, borderRadius: 10, background: isDarkMode ? `linear-gradient(135deg, #E8740C30, #E8740C10)` : "linear-gradient(135deg, #FEF3C7, #FDE68A)", border: `1px solid #E8740C40`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 800, color: "#E8740C" }}>{i + 1}</div>
                       <div style={{ flex: 1 }}>
-                        <div style={{ fontSize: 13, fontWeight: 600 }}>{v.place_name}</div>
+                        <div style={{ fontSize: 13, fontWeight: 600 }}>{v.place_name || '알 수 없는 장소'}</div>
                         <div style={{ fontSize: 10, color: isDarkMode ? "rgba(255,255,255,0.4)" : "#9CA3AF", marginTop: 2 }}>
                           {new Date(v.visited_at).toLocaleDateString('ko-KR')} · {v.duration_minutes}분 · {v.category}
                         </div>
                       </div>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: "#E8740C" }}>+{v.xp_earned}</div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: "#E8740C" }}>+{v.xp_earned}</div>
+                        <span style={{ fontSize: 14, color: isDarkMode ? "rgba(255,255,255,0.3)" : "#D1D5DB" }}>›</span>
+                      </div>
                     </div>
                   )))}
                 </>
@@ -838,6 +920,7 @@ export default function MyMapReal() {
           ))}
         </div>
       </div>
+      {visitDetailModal}
     </>
   );
 }

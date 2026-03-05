@@ -162,12 +162,13 @@ async def get_user_visits(
                     "longitude": place.get("longitude"),
                 })
             else:
-                # place 정보 없어도 기본값으로 표시 (place_id 대신 "알 수 없는 장소" 표시)
+                # place 정보 없으면 visits 테이블에 저장된 place_name 사용
+                fallback_name = visit.get("place_name") or "알 수 없는 장소"
                 enriched_visit.update({
-                    "place_name": "알 수 없는 장소",
-                    "category": "기타",
-                    "latitude": 37.5665,  # 서울 기본 위치
-                    "longitude": 126.9780,
+                    "place_name": fallback_name,
+                    "category": visit.get("category") or "기타",
+                    "latitude": None,
+                    "longitude": None,
                 })
             
             enriched_visits.append(enriched_visit)
@@ -244,6 +245,8 @@ async def create_visit(
         if location_verified:
             xp_earned += 20
         
+        # place_name 결정: places 테이블 → client 전달값 순
+        resolved_place_name = (place.get("name") if place else None) or visit.place_name
         visit_data = {
             "user_id": visit.user_id,
             "place_id": visit.place_id,
@@ -253,7 +256,8 @@ async def create_visit(
             "mood": visit.mood,
             "spent_amount": visit.spent_amount,
             "companions": visit.companions,
-            "xp_earned": xp_earned
+            "xp_earned": xp_earned,
+            **({"place_name": resolved_place_name} if resolved_place_name else {}),
         }
         
         result = await db.insert_visit(visit_data)

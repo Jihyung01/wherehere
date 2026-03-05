@@ -31,6 +31,36 @@ const SLIDES = [
     ),
   },
   {
+    emoji: '🧭',
+    title: '나만의 탐험가\n타입을 골라봐',
+    desc: '역할에 맞는 맞춤 퀘스트를\n추천받아 더 특별한 탐험을 하세요',
+    bg: 'linear-gradient(160deg, #001a0a 0%, #003820 50%, #0D1117 100%)',
+    accent: '#10B981',
+    visual: (
+      <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap', padding: '0 10px' }}>
+        {[
+          { icon: '🗺️', name: '탐험가', color: '#E8740C' },
+          { icon: '🍽️', name: '푸디', color: '#EF4444' },
+          { icon: '🎨', name: '아티스트', color: '#8B5CF6' },
+          { icon: '💪', name: '도전자', color: '#3B82F6' },
+          { icon: '🌿', name: '힐러', color: '#10B981' },
+        ].map((r, i) => (
+          <div key={i} style={{
+            padding: '10px 16px', borderRadius: 20,
+            background: `${r.color}22`,
+            border: `1.5px solid ${r.color}66`,
+            display: 'flex', alignItems: 'center', gap: 6,
+            animation: `popIn 0.4s ease ${i * 0.1}s both`,
+          }}>
+            <span style={{ fontSize: 18 }}>{r.icon}</span>
+            <span style={{ fontSize: 12, fontWeight: 600, color: '#fff' }}>{r.name}</span>
+          </div>
+        ))}
+        <style>{`@keyframes popIn { from{opacity:0;transform:scale(0.7)} to{opacity:1;transform:scale(1)} }`}</style>
+      </div>
+    ),
+  },
+  {
     emoji: '⚡',
     title: '퀘스트 완료 →\nXP 획득 → 레벨업',
     desc: '미션을 수행하고 XP를 쌓아\n탐험왕 레벨에 도달하세요',
@@ -58,36 +88,6 @@ const SLIDES = [
           </div>
         ))}
         <style>{`@keyframes growBar { from{width:0} }`}</style>
-      </div>
-    ),
-  },
-  {
-    emoji: '🧭',
-    title: '나만의 탐험가\n타입을 골라봐',
-    desc: '역할에 맞는 맞춤 퀘스트를\n추천받아 더 특별한 탐험을 하세요',
-    bg: 'linear-gradient(160deg, #001a0a 0%, #003820 50%, #0D1117 100%)',
-    accent: '#10B981',
-    visual: (
-      <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap', padding: '0 10px' }}>
-        {[
-          { icon: '🗺️', name: '탐험가', color: '#E8740C' },
-          { icon: '🍽️', name: '푸디', color: '#EF4444' },
-          { icon: '🎨', name: '아티스트', color: '#8B5CF6' },
-          { icon: '💪', name: '도전자', color: '#3B82F6' },
-          { icon: '🌿', name: '힐러', color: '#10B981' },
-        ].map((r, i) => (
-          <div key={i} style={{
-            padding: '10px 16px', borderRadius: 20,
-            background: `${r.color}22`,
-            border: `1.5px solid ${r.color}66`,
-            display: 'flex', alignItems: 'center', gap: 6,
-            animation: `popIn 0.4s ease ${i * 0.1}s both`,
-          }}>
-            <span style={{ fontSize: 18 }}>{r.icon}</span>
-            <span style={{ fontSize: 12, fontWeight: 600, color: '#fff' }}>{r.name}</span>
-          </div>
-        ))}
-        <style>{`@keyframes popIn { from{opacity:0;transform:scale(0.7)} to{opacity:1;transform:scale(1)} }`}</style>
       </div>
     ),
   },
