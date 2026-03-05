@@ -89,13 +89,24 @@ export function useAuth() {
   /**
    * Sign in with OAuth (Kakao, Google, etc.)
    */
-  const signInWithOAuth = async (provider: 'kakao' | 'google') => {
+  const signInWithOAuth = async (provider: 'kakao' | 'google', options?: { extraScopes?: boolean }) => {
     setLoading(true)
     try {
       // redirectTo를 넣으면 Supabase가 Kakao 요청에 redirect_uri를 두 번 넣어 KOE205가 날 수 있음.
       // 생략 시 Supabase 대시보드 "Site URL"로 리다이렉트되므로, Site URL을 https://도메인/auth/callback 로 설정할 것.
+      const oauthOptions: Record<string, any> = {}
+      if (provider === 'kakao') {
+        // 친구 목록 / 메시지 API 심사 통과용: 추가 동의 항목 요청
+        // Kakao Developer Console에서 동의항목 활성화 필요: friends, talk_message
+        oauthOptions.scopes = 'profile_nickname profile_image account_email'
+        if (options?.extraScopes) {
+          oauthOptions.scopes += ' friends talk_message'
+          oauthOptions.queryParams = { prompt: 'consent' } // 이미 동의했어도 동의 화면 재표시
+        }
+      }
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider,
+        options: Object.keys(oauthOptions).length > 0 ? oauthOptions : undefined,
       })
 
       if (error) {

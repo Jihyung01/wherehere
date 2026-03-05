@@ -2754,6 +2754,45 @@ export function CompleteApp() {
               )}
             </div>
 
+            {/* 카카오 연동 & 추가 동의 */}
+            {isLoggedIn && (
+              <div style={{ background: cardBg, border: `1px solid ${borderColor}`, borderRadius: 16, padding: 20 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 16 }}>
+                  <div style={{ width: 40, height: 40, borderRadius: 10, background: '#FEE500', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20 }}>💬</div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 2 }}>카카오톡 연동</div>
+                    <div style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280' }}>친구에게 직접 공유하려면 추가 동의 필요</div>
+                  </div>
+                </div>
+                <div style={{ background: isDarkMode ? 'rgba(254,229,0,0.08)' : '#FFFDE7', borderRadius: 10, padding: 12, marginBottom: 14, fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.8)' : '#374151', lineHeight: 1.6 }}>
+                  <div style={{ fontWeight: 700, marginBottom: 4 }}>필요한 추가 동의 항목</div>
+                  <div>• <b>카카오톡 친구 목록</b> — 앱 친구에게 장소 공유</div>
+                  <div>• <b>카카오톡 메시지 발송</b> — 친구에게 퀘스트 초대</div>
+                  <div style={{ marginTop: 6, color: isDarkMode ? 'rgba(255,255,255,0.5)' : '#9CA3AF' }}>동의 후 친구 초대 기능이 활성화됩니다</div>
+                </div>
+                <button
+                  onClick={() => {
+                    const { signInWithOAuth } = useAuth ? {} as any : {}
+                    // Supabase OAuth re-consent with friends + talk_message scopes
+                    const supabaseClient = createClient()
+                    supabaseClient.auth.signInWithOAuth({
+                      provider: 'kakao',
+                      options: {
+                        scopes: 'profile_nickname profile_image account_email friends talk_message',
+                        queryParams: { prompt: 'consent' },
+                      },
+                    }).then(({ data, error }) => {
+                      if (error) { toast.error('카카오 연동에 실패했어요.'); return }
+                      if (data?.url) window.location.href = data.url
+                    })
+                  }}
+                  style={{ width: '100%', padding: '12px 0', borderRadius: 12, border: 'none', background: '#FEE500', color: '#3C1E1E', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}
+                >
+                  💬 카카오톡 친구 목록 동의하기
+                </button>
+              </div>
+            )}
+
             {/* 개인정보 */}
             <div onClick={() => setShowPrivacySettings(!showPrivacySettings)} style={{
               background: cardBg,
