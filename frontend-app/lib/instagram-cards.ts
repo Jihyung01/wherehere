@@ -10,6 +10,8 @@ export type StoryCardOptions = {
   body: string
   imageUrl?: string
   placeLine?: string
+  moodLine?: string
+  ratingLine?: string
   commentLines?: string[]
 }
 
@@ -18,6 +20,8 @@ export type FeedCardOptions = {
   body: string
   imageUrl?: string
   placeLine?: string
+  moodLine?: string
+  ratingLine?: string
 }
 
 function loadImage(src: string): Promise<HTMLImageElement | null> {
@@ -85,6 +89,29 @@ function roundRect(
   ctx.closePath()
 }
 
+/** 이미지 비율 유지하며 영역을 가득 채움(cover). 잘리는 부분은 중앙 기준 크롭 */
+function drawImageCover(
+  ctx: CanvasRenderingContext2D,
+  img: HTMLImageElement,
+  dx: number,
+  dy: number,
+  dw: number,
+  dh: number
+) {
+  const iw = img.naturalWidth || img.width
+  const ih = img.naturalHeight || img.height
+  if (!iw || !ih) {
+    ctx.drawImage(img, dx, dy, dw, dh)
+    return
+  }
+  const scale = Math.max(dw / iw, dh / ih)
+  const sw = dw / scale
+  const sh = dh / scale
+  const sx = (iw - sw) / 2
+  const sy = (ih - sh) / 2
+  ctx.drawImage(img, sx, sy, sw, sh, dx, dy, dw, dh)
+}
+
 /** 스토리 크기 1080 x 1920 PNG Blob */
 export async function makeStoryCard(options: StoryCardOptions): Promise<Blob> {
   const canvas = document.createElement('canvas')
@@ -108,7 +135,7 @@ export async function makeStoryCard(options: StoryCardOptions): Promise<Blob> {
     ctx.save()
     roundRect(ctx, 80, y, 920, 540, 28)
     ctx.clip()
-    ctx.drawImage(image, 80, y, 920, 540)
+    drawImageCover(ctx, image, 80, y, 920, 540)
     ctx.restore()
     y += 620
   }
@@ -125,7 +152,19 @@ export async function makeStoryCard(options: StoryCardOptions): Promise<Blob> {
     ctx.fillStyle = '#ffbe5c'
     ctx.font = '600 34px sans-serif'
     const placeLines = wrapText(ctx, options.placeLine, 80, y, 900, 48, 2)
-    y += placeLines * 48 + 32
+    y += placeLines * 48 + 16
+  }
+  if (options.moodLine) {
+    ctx.fillStyle = '#b8c6d5'
+    ctx.font = '500 30px sans-serif'
+    wrapText(ctx, options.moodLine, 80, y, 900, 40, 1)
+    y += 44
+  }
+  if (options.ratingLine) {
+    ctx.fillStyle = '#ffbe5c'
+    ctx.font = '600 28px sans-serif'
+    ctx.fillText(options.ratingLine, 80, y)
+    y += 40
   }
   if (options.commentLines?.length) {
     ctx.fillStyle = '#f3f7fb'
@@ -179,7 +218,7 @@ export async function makeFeedCard(options: FeedCardOptions): Promise<Blob> {
     ctx.save()
     roundRect(ctx, 80, y, 920, 460, 24)
     ctx.clip()
-    ctx.drawImage(image, 80, y, 920, 460)
+    drawImageCover(ctx, image, 80, y, 920, 460)
     ctx.restore()
     y += 520
   }
@@ -189,10 +228,23 @@ export async function makeFeedCard(options: FeedCardOptions): Promise<Blob> {
   ctx.font = '400 32px sans-serif'
   ctx.fillStyle = '#b8c6d5'
   wrapText(ctx, options.body, 80, y, 900, 44, 4)
+  let bottomY = 1180
   if (options.placeLine) {
     ctx.fillStyle = '#ffbe5c'
     ctx.font = '600 28px sans-serif'
-    ctx.fillText(options.placeLine, 80, 1180)
+    ctx.fillText(options.placeLine, 80, bottomY)
+    bottomY += 36
+  }
+  if (options.moodLine) {
+    ctx.fillStyle = '#b8c6d5'
+    ctx.font = '500 24px sans-serif'
+    ctx.fillText(options.moodLine, 80, bottomY)
+    bottomY += 32
+  }
+  if (options.ratingLine) {
+    ctx.fillStyle = '#ffbe5c'
+    ctx.font = '600 24px sans-serif'
+    ctx.fillText(options.ratingLine, 80, bottomY)
   }
   ctx.fillStyle = '#f3f7fb'
   ctx.font = '500 24px sans-serif'

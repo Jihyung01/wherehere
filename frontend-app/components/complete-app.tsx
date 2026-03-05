@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import Script from 'next/script'
 import { useQuery } from '@tanstack/react-query'
@@ -13,7 +13,7 @@ import { PersonalityProfile } from './personality-profile'
 import { ShareButton } from './share-button'
 import { LocalHub } from './local/LocalHub'
 import { RoleScreen, MoodScreen, ROLES, MOODS, type RoleType, type MoodType } from './screens'
-import { makeStoryCard, blobToFile, makeCaption, shareOrDownload } from '@/lib/instagram-cards'
+import { makeStoryCard, makeFeedCard, blobToFile, makeCaption, shareOrDownload } from '@/lib/instagram-cards'
 import { compressImageFile } from '@/lib/image-compress'
 
 declare global {
@@ -105,6 +105,13 @@ export function CompleteApp() {
   const [selectedProfilePost, setSelectedProfilePost] = useState<{ id: string; title: string; body?: string; type?: string; image_url?: string; place_name?: string; rating?: number; created_at?: string; author_id?: string } | null>(null)
   const [profileCommentInput, setProfileCommentInput] = useState('')
   const [userProfile, setUserProfile] = useState<{ display_name?: string; profile_image_url?: string } | null>(null)
+  // 인스타 공유 폼 모달: 장소/기분/리뷰 등 반영해 스토리·피드 스타일 카드 생성
+  const [showInstagramShareModal, setShowInstagramShareModal] = useState(false)
+  const [instagramShareForm, setInstagramShareForm] = useState<{
+    title: string; body: string; place_name: string; place_address: string; image_url: string;
+    mood: string; rating: string;
+  }>({ title: '', body: '', place_name: '', place_address: '', image_url: '', mood: '', rating: '' })
+  const [instagramShareSubmitting, setInstagramShareSubmitting] = useState(false)
 
   // displayName 계산: userProfile state 이후에 위치
   const displayName = userProfile?.display_name ?? user?.user_metadata?.name ?? user?.user_metadata?.full_name ?? user?.user_metadata?.user_name ?? user?.user_metadata?.kakao_account?.profile?.nickname ?? user?.email ?? (user ? '로그인한 사용자' : null)
@@ -219,24 +226,32 @@ export function CompleteApp() {
     if (themeMode !== 'system') localStorage.setItem('isDarkMode', isDarkMode.toString())
   }, [themeMode, isDarkMode])
 
-  // 프로필 정보 불러오기
+  // 프로필 정보 불러오기 (지속 반영: 포커스·화면 전환 시 재조회로 기본값 복귀 방지)
+  const refetchUserProfile = useCallback(async () => {
+    if (!userId || userId === 'user-demo-001') return
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/social/profile/${userId}`)
+      const data = await res.json()
+      if (data.profile) setUserProfile(data.profile)
+    } catch (err) {
+      console.error('프로필 조회 실패:', err)
+    }
+  }, [userId])
+
+  useEffect(() => {
+    refetchUserProfile()
+  }, [refetchUserProfile])
+
   useEffect(() => {
     if (!userId || userId === 'user-demo-001') return
-    
-    const fetchProfile = async () => {
-      try {
-        const res = await fetch(`${API_BASE}/api/v1/social/profile/${userId}`)
-        const data = await res.json()
-        if (data.profile) {
-          setUserProfile(data.profile)
-        }
-      } catch (err) {
-        console.error('프로필 조회 실패:', err)
-      }
-    }
-    
-    fetchProfile()
-  }, [userId])
+    const onFocus = () => refetchUserProfile()
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
+  }, [userId, refetchUserProfile])
+
+  useEffect(() => {
+    if ((screen === 'profile' || screen === 'social') && userId && userId !== 'user-demo-001') refetchUserProfile()
+  }, [screen, userId, refetchUserProfile])
 
   useEffect(() => {
     if (navigator.geolocation) {
@@ -774,73 +789,18 @@ export function CompleteApp() {
         alert('📋 링크가 복사되었습니다!\n카카오톡에서 붙여넣기 해주세요.')
 
       } else if (platform === 'instagram') {
-        // 인스타그램 - 스토리 카드 생성 후 공유
-        try {
-          // 스토리 카드 생성
-          const storyBlob = await makeStoryCard({
-            title: placeName,
-            body: `${placeAddress}\n\n🗺️ WhereHere에서 발견한 특별한 장소`,
-            imageUrl: placeImage,
-            placeLine: `📍 ${placeName}${placeAddress ? '\n' + placeAddress : ''}`,
-          })
-          const storyFile = blobToFile(storyBlob, 'wherehere-story.png')
-          const caption = `${placeName}\n${placeAddress}\n\n#WhereHere #맛집 #카페 #여행\n${shareUrl}`
-
-          if (isMobile) {
-            // 모바일: Web Share API로 인스타그램 직접 공유
-            if (navigator.share && navigator.canShare({ files: [storyFile] })) {
-              try {
-                await navigator.share({
-                  files: [storyFile],
-                  title: placeName,
-                  text: caption,
-                })
-                return
-              } catch (shareErr: any) {
-                if (shareErr.name === 'AbortError') return
-                console.error('Web Share 실패:', shareErr)
-              }
-            }
-
-            // 대체: 다운로드 + 인스타그램 앱 열기
-            const url = URL.createObjectURL(storyFile)
-            const a = document.createElement('a')
-            a.href = url
-            a.download = 'wherehere-story.png'
-            a.click()
-            URL.revokeObjectURL(url)
-
-            // 캡션 복사
-            await navigator.clipboard.writeText(caption)
-
-            // 인스타그램 앱 열기
-            setTimeout(() => {
-              window.location.href = 'instagram://story-camera'
-            }, 500)
-
-            alert('📸 이미지를 저장했어요!\n인스타그램 스토리에서 업로드하고 캡션을 붙여넣기 해주세요.')
-          } else {
-            // 데스크톱: 다운로드 + 캡션 복사
-            await shareOrDownload({
-              file: storyFile,
-              caption,
-              filename: 'wherehere-story.png',
-              onToast: (msg) => {
-                const notification = document.createElement('div')
-                notification.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#000;color:#fff;padding:20px 30px;border-radius:12px;z-index:10000;font-size:14px;text-align:center;box-shadow:0 4px 20px rgba(0,0,0,0.3);'
-                notification.textContent = msg
-                document.body.appendChild(notification)
-                setTimeout(() => document.body.removeChild(notification), 3000)
-              },
-            })
-          }
-        } catch (err) {
-          console.error('인스타그램 카드 생성 실패:', err)
-          // 대체: 클립보드 복사
-          await navigator.clipboard.writeText(`${shareTitle}\n${placeName}\n${placeAddress}\n\n${shareUrl}\n\n#WhereHere #${placeName.replace(/\s/g, '')} #맛집 #카페`)
-          alert('📋 링크가 복사되었습니다!\n인스타그램에서 붙여넣기 해주세요.')
-        }
-
+        // 인스타 공유 폼 모달 열기 (장소·기분·리뷰 반영 후 스토리/피드 카드 생성)
+        setInstagramShareForm({
+          title: placeName,
+          body: `${placeAddress || ''}\n\n🗺️ WhereHere에서 발견한 특별한 장소`.trim(),
+          place_name: placeName,
+          place_address: placeAddress,
+          image_url: placeImage,
+          mood: selectedMood ? (MOODS.find((m) => m.id === selectedMood)?.name ?? '') : '',
+          rating: reviewData?.rating ? String(reviewData.rating) : '',
+        })
+        setShowInstagramShareModal(true)
+        return
       } else if (platform === 'twitter') {
         // 트위터 - 실제 공유창
         const twitterUrl = `https://twitter.com/intent/tweet?text=${encodeURIComponent(shareTitle + '\n' + placeName)}&url=${encodeURIComponent(shareUrl)}&hashtags=WhereHere,여행,맛집`
@@ -1473,9 +1433,60 @@ export function CompleteApp() {
     )
   }
 
+  // 인스타 공유 모달 (스토리/피드 템플릿 폼) — accepted·social 양쪽에서 사용
+  const instagramShareModalEl = showInstagramShareModal && (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }} onClick={() => !instagramShareSubmitting && setShowInstagramShareModal(false)}>
+      <div style={{ background: bgColor, borderRadius: 16, padding: 20, maxWidth: 400, width: '100%', maxHeight: '90vh', overflow: 'auto', border: `1px solid ${borderColor}`, boxShadow: '0 8px 32px rgba(0,0,0,0.3)' }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 16, color: textColor }}>📷 인스타그램 공유 카드</div>
+        <input placeholder="제목" value={instagramShareForm.title} onChange={(e) => setInstagramShareForm((f) => ({ ...f, title: e.target.value }))} style={{ width: '100%', padding: 10, marginBottom: 8, borderRadius: 8, border: `1px solid ${borderColor}`, background: isDarkMode ? 'rgba(0,0,0,0.2)' : '#fff', color: textColor }} />
+        <textarea placeholder="내용" value={instagramShareForm.body} onChange={(e) => setInstagramShareForm((f) => ({ ...f, body: e.target.value }))} rows={3} style={{ width: '100%', padding: 10, marginBottom: 8, borderRadius: 8, border: `1px solid ${borderColor}`, background: isDarkMode ? 'rgba(0,0,0,0.2)' : '#fff', color: textColor, resize: 'vertical' }} />
+        <input placeholder="장소 이름" value={instagramShareForm.place_name} onChange={(e) => setInstagramShareForm((f) => ({ ...f, place_name: e.target.value }))} style={{ width: '100%', padding: 10, marginBottom: 8, borderRadius: 8, border: `1px solid ${borderColor}`, background: isDarkMode ? 'rgba(0,0,0,0.2)' : '#fff', color: textColor }} />
+        <input placeholder="주소" value={instagramShareForm.place_address} onChange={(e) => setInstagramShareForm((f) => ({ ...f, place_address: e.target.value }))} style={{ width: '100%', padding: 10, marginBottom: 8, borderRadius: 8, border: `1px solid ${borderColor}`, background: isDarkMode ? 'rgba(0,0,0,0.2)' : '#fff', color: textColor }} />
+        <input placeholder="기분 (예: 지쳐있어요)" value={instagramShareForm.mood} onChange={(e) => setInstagramShareForm((f) => ({ ...f, mood: e.target.value }))} style={{ width: '100%', padding: 10, marginBottom: 8, borderRadius: 8, border: `1px solid ${borderColor}`, background: isDarkMode ? 'rgba(0,0,0,0.2)' : '#fff', color: textColor }} />
+        <input placeholder="평점 (1~5)" value={instagramShareForm.rating} onChange={(e) => setInstagramShareForm((f) => ({ ...f, rating: e.target.value }))} style={{ width: '100%', padding: 10, marginBottom: 16, borderRadius: 8, border: `1px solid ${borderColor}`, background: isDarkMode ? 'rgba(0,0,0,0.2)' : '#fff', color: textColor }} />
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button type="button" disabled={instagramShareSubmitting} onClick={async () => {
+            setInstagramShareSubmitting(true)
+            try {
+              const placeLine = [instagramShareForm.place_name, instagramShareForm.place_address].filter(Boolean).join(' · ')
+              const blob = await makeStoryCard({ title: instagramShareForm.title || 'WhereHere', body: instagramShareForm.body || '', imageUrl: instagramShareForm.image_url || undefined, placeLine: placeLine || undefined, moodLine: instagramShareForm.mood || undefined, ratingLine: instagramShareForm.rating ? `⭐ ${instagramShareForm.rating}점` : undefined })
+              const file = blobToFile(blob, 'wherehere-story.png')
+              const caption = [instagramShareForm.title, instagramShareForm.body, placeLine ? `📍 ${placeLine}` : '', '#wherehere #동네생활', typeof window !== 'undefined' ? window.location.origin + '/' : ''].filter(Boolean).join('\n')
+              await shareOrDownload({ file, caption, filename: 'wherehere-story.png', onToast: (m) => alert(m) })
+              setShowInstagramShareModal(false)
+            } catch (e) {
+              console.error(e)
+              alert('카드 생성에 실패했어요.')
+            } finally {
+              setInstagramShareSubmitting(false)
+            }
+          }} style={{ flex: 1, minWidth: 100, padding: 12, borderRadius: 10, border: 'none', background: 'linear-gradient(135deg, #E8740C, #C65D00)', color: '#fff', fontWeight: 600, cursor: instagramShareSubmitting ? 'not-allowed' : 'pointer', opacity: instagramShareSubmitting ? 0.7 : 1 }}>{instagramShareSubmitting ? '만드는 중…' : '스토리로 공유'}</button>
+          <button type="button" disabled={instagramShareSubmitting} onClick={async () => {
+            setInstagramShareSubmitting(true)
+            try {
+              const placeLine = [instagramShareForm.place_name, instagramShareForm.place_address].filter(Boolean).join(' · ')
+              const blob = await makeFeedCard({ title: instagramShareForm.title || 'WhereHere', body: instagramShareForm.body || '', imageUrl: instagramShareForm.image_url || undefined, placeLine: placeLine || undefined, moodLine: instagramShareForm.mood || undefined, ratingLine: instagramShareForm.rating ? `⭐ ${instagramShareForm.rating}점` : undefined })
+              const file = blobToFile(blob, 'wherehere-feed.png')
+              const caption = [instagramShareForm.title, instagramShareForm.body, placeLine ? `📍 ${placeLine}` : '', '#wherehere #동네생활', typeof window !== 'undefined' ? window.location.origin + '/' : ''].filter(Boolean).join('\n')
+              await shareOrDownload({ file, caption, filename: 'wherehere-feed.png', onToast: (m) => alert(m) })
+              setShowInstagramShareModal(false)
+            } catch (e) {
+              console.error(e)
+              alert('카드 생성에 실패했어요.')
+            } finally {
+              setInstagramShareSubmitting(false)
+            }
+          }} style={{ flex: 1, minWidth: 100, padding: 12, borderRadius: 10, border: `1px solid ${borderColor}`, background: isDarkMode ? 'rgba(255,255,255,0.08)' : '#fff', color: textColor, fontWeight: 600, cursor: instagramShareSubmitting ? 'not-allowed' : 'pointer', opacity: instagramShareSubmitting ? 0.7 : 1 }}>피드로 공유</button>
+          <button type="button" disabled={instagramShareSubmitting} onClick={() => setShowInstagramShareModal(false)} style={{ padding: '12px 16px', borderRadius: 10, border: `1px solid ${borderColor}`, background: 'transparent', color: textColor, cursor: 'pointer' }}>취소</button>
+        </div>
+      </div>
+    </div>
+  )
+
   // 수락한 퀘스트 화면
   if (screen === 'accepted' && acceptedQuest) {
     return (
+      <>
       <div style={{ maxWidth: 430, margin: '0 auto', minHeight: '100vh', background: bgColor, color: textColor, fontFamily: 'Pretendard, sans-serif' }}>
         <div style={{ padding: '60px 20px 120px' }}>
           <button onClick={() => setScreen('quests')} style={{ background: cardBg, border: `1px solid ${borderColor}`, borderRadius: 12, padding: '8px 16px', color: textColor, cursor: 'pointer', marginBottom: 24 }}>
@@ -1825,6 +1836,8 @@ export function CompleteApp() {
         </div>
         <BottomNav />
       </div>
+      {instagramShareModalEl}
+      </>
     )
   }
 
@@ -1938,32 +1951,18 @@ export function CompleteApp() {
         alert('공유 문구를 복사했어요.')
       }
     }
-    const sharePostInstagramCard = async (post: { title: string; body?: string; place_name?: string; place_address?: string; image_url?: string } | null) => {
+    const sharePostInstagramCard = (post: { title: string; body?: string; place_name?: string; place_address?: string; image_url?: string; rating?: number } | null) => {
       if (!post) return
-      const caption = makeCaption(post)
-      try {
-        const placeLine = [
-          post.place_name ? `📍 ${post.place_name}` : '',
-          post.place_address ? post.place_address : ''
-        ].filter(Boolean).join(' · ')
-        
-        const blob = await makeStoryCard({
-          title: post.title,
-          body: (post.body || '').slice(0, 200),
-          imageUrl: post.image_url,
-          placeLine: placeLine || undefined,
-        })
-        const file = blobToFile(blob, 'wherehere-story.png')
-        await shareOrDownload({ file, caption, filename: 'wherehere-story.png', onToast: (msg) => alert(msg) })
-      } catch (e) {
-        console.error(e)
-        try {
-          await navigator.clipboard.writeText(caption)
-          alert('캡션을 복사했어요. 카드 생성에 실패했을 수 있어요.')
-        } catch {
-          alert('공유 준비에 실패했어요.')
-        }
-      }
+      setInstagramShareForm({
+        title: post.title || '',
+        body: (post.body || '').slice(0, 300),
+        place_name: post.place_name || '',
+        place_address: post.place_address || '',
+        image_url: post.image_url || '',
+        mood: '',
+        rating: post.rating != null ? String(post.rating) : '',
+      })
+      setShowInstagramShareModal(true)
     }
     return (
       <>
@@ -1990,6 +1989,7 @@ export function CompleteApp() {
         BottomNav={<BottomNav />}
         userAvatarUrl={userProfile?.profile_image_url}
       />
+      {instagramShareModalEl}
       </>
     )
   }
