@@ -1,7 +1,7 @@
 /** 역할/기분 타입 및 상수 - 화면 컴포넌트와 complete-app에서 공유 */
 
 export type RoleType = 'explorer' | 'healer' | 'artist' | 'foodie' | 'challenger'
-export type MoodType = 'curious' | 'tired' | 'creative' | 'hungry' | 'adventurous'
+export type MoodType = 'curious' | 'tired' | 'creative' | 'hungry' | 'adventurous' | 'calm' | 'inspired' | 'stressed' | 'sad' | 'happy'
 
 export const ROLES = [
   { id: 'explorer' as RoleType, name: '탐험가', icon: '🧭', description: '숨겨진 보석을 찾아 떠나는 모험가', color: '#E8740C' },
@@ -17,4 +17,9 @@ export const MOODS = [
   { id: 'creative' as MoodType, name: '영감 필요', icon: '✨', color: '#8B5CF6' },
   { id: 'hungry' as MoodType, name: '배고파요', icon: '🍽️', color: '#F59E0B' },
   { id: 'adventurous' as MoodType, name: '모험 준비됨', icon: '🚀', color: '#EF4444' },
+  { id: 'calm' as MoodType, name: '차분해요', icon: '🍃', color: '#10B981' },
+  { id: 'inspired' as MoodType, name: '영감 받았어요', icon: '💡', color: '#8B5CF6' },
+  { id: 'stressed' as MoodType, name: '스트레스', icon: '😤', color: '#F59E0B' },
+  { id: 'sad' as MoodType, name: '우울해요', icon: '😢', color: '#6B7280' },
+  { id: 'happy' as MoodType, name: '기분 좋아요', icon: '😊', color: '#E8740C' },
 ]

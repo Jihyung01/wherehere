@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback } from 'react'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import Script from 'next/script'
 import { useQuery } from '@tanstack/react-query'
@@ -14,6 +14,8 @@ import { ShareButton } from './share-button'
 import { LocalHub } from './local/LocalHub'
 import { RoleScreen, MoodScreen, ROLES, MOODS, type RoleType, type MoodType } from './screens'
 import { makeStoryCard, makeFeedCard, blobToFile, makeCaption, shareOrDownload } from '@/lib/instagram-cards'
+import type { Mission } from './missions'
+import { selectMissions } from './missions'
 import { compressImageFile } from '@/lib/image-compress'
 
 declare global {
@@ -29,6 +31,49 @@ const API_BASE = typeof window !== 'undefined' ? window.location.origin : (proce
 
 /** 도착 인정 거리(미터): 이 거리 이내면 "장소 도착하기" 조건 충족 */
 const ARRIVAL_THRESHOLD_METERS = 100
+
+type ChallengeCategory = 'daily' | 'weekly' | 'achievement' | 'social' | 'explorer'
+const CHALLENGE_CATEGORIES: { id: ChallengeCategory; label: string }[] = [
+  { id: 'daily', label: '일일' },
+  { id: 'weekly', label: '주간' },
+  { id: 'achievement', label: '업적' },
+  { id: 'social', label: '소셜' },
+  { id: 'explorer', label: '탐험' },
+]
+const CHALLENGES_BY_CATEGORY: Record<ChallengeCategory, { id: string; icon: string; title: string; desc: string; total: number; rewardXP: number; tier?: 'bronze' | 'silver' | 'gold' }[]> = {
+  daily: [
+    { id: 'd1', icon: '☀️', title: '오늘의 탐험가', desc: '오늘 1곳 이상 방문', total: 1, rewardXP: 50 },
+    { id: 'd2', icon: '📸', title: '오늘의 포토그래퍼', desc: '오늘 사진 미션 1개 완료', total: 1, rewardXP: 30 },
+    { id: 'd3', icon: '✍️', title: '오늘의 리뷰어', desc: '오늘 리뷰 1개 작성', total: 1, rewardXP: 30 },
+  ],
+  weekly: [
+    { id: 'w1', icon: '🔥', title: '주간 스트릭', desc: '이번 주 5일 연속 방문', total: 5, rewardXP: 200 },
+    { id: 'w2', icon: '🗺️', title: '동네 탐험대', desc: '이번 주 서로 다른 장소 3곳', total: 3, rewardXP: 150 },
+    { id: 'w3', icon: '🍽️', title: '미식 주간', desc: '이번 주 음식점 3곳 리뷰', total: 3, rewardXP: 150 },
+    { id: 'w4', icon: '💬', title: '소셜 나비', desc: '이번 주 피드 게시글 3개 작성', total: 3, rewardXP: 100 },
+  ],
+  achievement: [
+    { id: 'a1', icon: '🥉', title: '첫 발걸음', desc: '첫 번째 장소 방문', total: 1, rewardXP: 100, tier: 'bronze' },
+    { id: 'a2', icon: '🥈', title: '동네 주민', desc: '10곳 방문 달성', total: 10, rewardXP: 300, tier: 'silver' },
+    { id: 'a3', icon: '🥇', title: '동네 마스터', desc: '50곳 방문 달성', total: 50, rewardXP: 1000, tier: 'gold' },
+    { id: 'a4', icon: '📷', title: '인증샷 장인', desc: '사진 미션 20개 완료', total: 20, rewardXP: 500, tier: 'silver' },
+    { id: 'a5', icon: '🔥', title: '불꽃 스트릭', desc: '30일 연속 방문', total: 30, rewardXP: 2000, tier: 'gold' },
+    { id: 'a6', icon: '⭐', title: '리뷰 달인', desc: '리뷰 30개 작성', total: 30, rewardXP: 800, tier: 'gold' },
+    { id: 'a7', icon: '🏆', title: '올 역할 클리어', desc: '5개 역할 모두 퀘스트 완료', total: 5, rewardXP: 1500, tier: 'gold' },
+  ],
+  social: [
+    { id: 's1', icon: '👥', title: '첫 친구', desc: '친구 1명 팔로우', total: 1, rewardXP: 50 },
+    { id: 's2', icon: '💌', title: '공유왕', desc: '퀘스트 5번 공유', total: 5, rewardXP: 200 },
+    { id: 's3', icon: '💬', title: '댓글 마스터', desc: '댓글 10개 작성', total: 10, rewardXP: 200 },
+  ],
+  explorer: [
+    { id: 'e1', icon: '☕', title: '카페 헌터', desc: '카페 5곳 방문', total: 5, rewardXP: 200 },
+    { id: 'e2', icon: '🌙', title: '야행성', desc: '저녁 8시 이후 3곳 방문', total: 3, rewardXP: 150 },
+    { id: 'e3', icon: '🌅', title: '얼리버드', desc: '오전 9시 이전 3곳 방문', total: 3, rewardXP: 150 },
+    { id: 'e4', icon: '🎨', title: '문화인', desc: '문화시설 3곳 방문', total: 3, rewardXP: 200 },
+    { id: 'e5', icon: '🍺', title: '소셜 드링커', desc: '술집/바 3곳 방문', total: 3, rewardXP: 150 },
+  ],
+}
 
 function getDistanceMeters(
   lat1: number,
@@ -76,7 +121,9 @@ export function CompleteApp() {
   const [isDarkMode, setIsDarkMode] = useState(false)
   type ThemeMode = 'light' | 'dark' | 'system'
   const [themeMode, setThemeMode] = useState<ThemeMode>('system')
-  const [checklist, setChecklist] = useState([false, false, false, false])
+  const [missionStates, setMissionStates] = useState<Record<string, { completed: boolean; value?: string | number; photo?: string }>>({})
+  const [currentMissions, setCurrentMissions] = useState<Mission[]>([])
+  const [expandedMissionId, setExpandedMissionId] = useState<string | null>(null)
   const [uploadedPhotos, setUploadedPhotos] = useState<string[]>([])
   const [showNotificationSettings, setShowNotificationSettings] = useState(false)
   const [showLocationSettings, setShowLocationSettings] = useState(false)
@@ -112,12 +159,29 @@ export function CompleteApp() {
     mood: string; rating: string;
   }>({ title: '', body: '', place_name: '', place_address: '', image_url: '', mood: '', rating: '' })
   const [instagramShareSubmitting, setInstagramShareSubmitting] = useState(false)
+  const [challengeCategory, setChallengeCategory] = useState<ChallengeCategory>('daily')
 
   // displayName 계산: userProfile state 이후에 위치
   const displayName = userProfile?.display_name ?? user?.user_metadata?.name ?? user?.user_metadata?.full_name ?? user?.user_metadata?.user_name ?? user?.user_metadata?.kakao_account?.profile?.nickname ?? user?.email ?? (user ? '로그인한 사용자' : null)
 
   // 로그인 유도: 비로그인 시 데모 수락 전에는 로그인 화면 강조
   const showLoginGate = !isLoggedIn && typeof window !== 'undefined' && typeof sessionStorage !== 'undefined' && sessionStorage.getItem('wherehere_demo_accepted') !== '1'
+
+  // 퀘스트 수락 시 Role+Mood에 따라 동적 미션 선택
+  useEffect(() => {
+    if (!acceptedQuest) {
+      setCurrentMissions([])
+      setMissionStates({})
+      setExpandedMissionId(null)
+      return
+    }
+    const role: RoleType = selectedRole ?? 'explorer'
+    const mood: MoodType = selectedMood ?? 'curious'
+    const missions = selectMissions(role, mood)
+    setCurrentMissions(missions)
+    setMissionStates({})
+    setExpandedMissionId(missions[0]?.id ?? null)
+  }, [acceptedQuest, selectedRole, selectedMood])
 
   // 온보딩: 이미 본 적 있으면 건너뛰기
   useEffect(() => {
@@ -698,6 +762,19 @@ export function CompleteApp() {
         const postToFeed = window.confirm('이 퀘스트를 동네 피드에 올릴까요?')
         if (postToFeed) {
           try {
+            const missionLines = currentMissions
+              .filter((m) => missionStates[m.id]?.completed && (missionStates[m.id]?.value != null || missionStates[m.id]?.photo != null || m.type === 'arrival'))
+              .map((m) => {
+                const label = m.feedLabel || m.title
+                const val = missionStates[m.id]?.value
+                const photo = missionStates[m.id]?.photo
+                if (m.id === 'star_rating') return `${label}: ${reviewData.rating}점`
+                if (m.type === 'arrival') return `${label} 완료`
+                if (photo) return `${label}: (사진)`
+                if (val !== undefined && val !== '') return `${label}: ${val}`
+                return `${label} 완료`
+              })
+            const bodyParts = [`${placeName} 방문했어요. 별점 ${rating}점!`, reviewData.review?.trim(), missionLines.length ? missionLines.join(' · ') : ''].filter(Boolean)
             const postRes = await fetch(`${API_BASE}/api/v1/local/posts`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -705,11 +782,11 @@ export function CompleteApp() {
                 author_id: userId,
                 type: 'story',
                 title: `퀘스트 완료: ${placeName}`,
-                body: `${placeName} 방문했어요. 별점 ${rating}점!`,
+                body: bodyParts.join('\n\n'),
                 rating: rating,
                 place_name: placeName,
                 place_address: placeAddress,
-                image_url: reviewData.photos?.[0] || '',
+                image_url: reviewData.photos?.[0] || missionStates['best_angle']?.photo || missionStates['selfie']?.photo || '',
                 area_name: (acceptedQuest as any)?.region || (acceptedQuest as any)?.area || '내 주변',
               }),
             })
@@ -726,7 +803,8 @@ export function CompleteApp() {
         setReviewData({ rating: 0, review: '', photos: [] })
         setUploadedPhotos([])
         setCheckInTime(null)
-        setChecklist([false, false, false, false])
+        setMissionStates({})
+        setCurrentMissions([])
         
         // 나의 지도로 이동
         router.push('/my-map-real')
@@ -842,13 +920,6 @@ export function CompleteApp() {
     }
   }
 
-  // 체크리스트 토글
-  const toggleChecklistItem = (index: number) => {
-    const newChecklist = [...checklist]
-    newChecklist[index] = !newChecklist[index]
-    setChecklist(newChecklist)
-  }
-
   // 도착 인정: 현재 위치가 목적지 100m 이내면 "장소 도착하기" 체크
   const handleArrivalCheck = () => {
     const quest = acceptedQuest
@@ -870,11 +941,7 @@ export function CompleteApp() {
         const dist = getDistanceMeters(lat, lng, quest.latitude, quest.longitude)
         setArrivalCheckLoading(false)
         if (dist <= ARRIVAL_THRESHOLD_METERS) {
-          setChecklist((prev) => {
-            const next = [...prev]
-            next[0] = true
-            return next
-          })
+          setMissionStates((prev) => ({ ...prev, arrival: { completed: true } }))
           setArrivalMessage(`도착 인정됐어요! (${Math.round(dist)}m 이내)`)
         } else {
           setArrivalMessage(`아직 멀어요. 약 ${Math.round(dist)}m 남았어요. (${ARRIVAL_THRESHOLD_METERS}m 이내에서 눌러주세요)`)
@@ -888,9 +955,11 @@ export function CompleteApp() {
     )
   }
 
-  // 필수 체크리스트만: 도착(0) + 리뷰(3). 사진·특별한 순간은 선택
-  const essentialChecklistCompleted = checklist[0] && checklist[3]
-  const allChecklistCompleted = checklist.every(item => item)
+  // 필수 미션 모두 완료 시 체크인 버튼 활성화 (arrival + star_rating 등)
+  const requiredMissions = currentMissions.filter((m) => m.required)
+  const essentialChecklistCompleted = requiredMissions.length > 0 && requiredMissions.every((m) => missionStates[m.id]?.completed)
+  const allRequiredCompleted = requiredMissions.every((m) => missionStates[m.id]?.completed)
+  const completedMissionCount = currentMissions.filter((m) => missionStates[m.id]?.completed).length
 
   const bgColor = isDarkMode ? '#0A0E14' : '#FFFFFF'
   const textColor = isDarkMode ? '#FFFFFF' : '#1F2937'
@@ -1486,7 +1555,7 @@ export function CompleteApp() {
   // 수락한 퀘스트 화면
   if (screen === 'accepted' && acceptedQuest) {
     return (
-      <>
+      <React.Fragment>
       <div style={{ maxWidth: 430, margin: '0 auto', minHeight: '100vh', background: bgColor, color: textColor, fontFamily: 'Pretendard, sans-serif' }}>
         <div style={{ padding: '60px 20px 120px' }}>
           <button onClick={() => setScreen('quests')} style={{ background: cardBg, border: `1px solid ${borderColor}`, borderRadius: 12, padding: '8px 16px', color: textColor, cursor: 'pointer', marginBottom: 24 }}>
@@ -1602,23 +1671,23 @@ export function CompleteApp() {
                 <button
                   type="button"
                   onClick={handleArrivalCheck}
-                  disabled={arrivalCheckLoading || checklist[0]}
+                  disabled={arrivalCheckLoading || missionStates['arrival']?.completed}
                   style={{
                     width: '100%',
                     padding: 14,
-                    background: checklist[0]
+                    background: missionStates['arrival']?.completed
                       ? (isDarkMode ? 'rgba(16,185,129,0.2)' : '#D1FAE5')
                       : 'linear-gradient(135deg, #E8740C, #C65D00)',
                     border: 'none',
                     borderRadius: 12,
-                    color: checklist[0] ? (isDarkMode ? '#6EE7B7' : '#059669') : '#fff',
+                    color: missionStates['arrival']?.completed ? (isDarkMode ? '#6EE7B7' : '#059669') : '#fff',
                     fontWeight: 600,
                     fontSize: 14,
-                    cursor: arrivalCheckLoading || checklist[0] ? 'default' : 'pointer',
+                    cursor: arrivalCheckLoading || missionStates['arrival']?.completed ? 'default' : 'pointer',
                     opacity: arrivalCheckLoading ? 0.8 : 1,
                   }}
                 >
-                  {checklist[0] ? '✅ 장소 도착 완료' : arrivalCheckLoading ? '위치 확인 중...' : `도착했어요 (${ARRIVAL_THRESHOLD_METERS}m 이내)`}
+                  {missionStates['arrival']?.completed ? '✅ 장소 도착 완료' : arrivalCheckLoading ? '위치 확인 중...' : `도착했어요 (${ARRIVAL_THRESHOLD_METERS}m 이내)`}
                 </button>
                 {arrivalMessage && (
                   <div style={{ marginTop: 10, fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.7)' : '#6B7280' }}>
@@ -1633,28 +1702,98 @@ export function CompleteApp() {
             )}
           </div>
 
-          <div style={{ background: isDarkMode ? 'rgba(232,116,12,0.1)' : '#FEF3C7', border: '1px solid rgba(232,116,12,0.3)', borderRadius: 16, padding: 20, marginBottom: 16 }}>
-            <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 12, color: '#E8740C' }}>
-              📋 미션 체크리스트 (필수: 도착 + 리뷰)
+          {/* 동적 미션 카드 */}
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+              <span style={{ fontSize: 13, fontWeight: 700, color: '#E8740C' }}>📋 미션</span>
+              <span style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280' }}>
+                {completedMissionCount}/{currentMissions.length}
+              </span>
             </div>
-            {['장소 도착하기', '사진 찍기', '특별한 순간 기록하기', '리뷰 남기기'].map((mission, i) => (
-              <div key={i} onClick={() => toggleChecklistItem(i)} style={{ 
-                padding: '12px', 
-                borderBottom: i < 3 ? `1px solid ${borderColor}` : 'none', 
-                fontSize: 13, 
-                color: checklist[i] ? '#E8740C' : (isDarkMode ? 'rgba(255,255,255,0.7)' : '#6B7280'),
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-                transition: 'all 0.2s',
-                fontWeight: checklist[i] ? 600 : 400,
-              }} onMouseEnter={(e) => e.currentTarget.style.background = isDarkMode ? 'rgba(255,255,255,0.03)' : 'rgba(232,116,12,0.05)'}
-                 onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}>
-                <span style={{ fontSize: 16 }}>{checklist[i] ? '✅' : '☐'}</span>
-                <span style={{ textDecoration: checklist[i] ? 'line-through' : 'none' }}>{mission}</span>
-              </div>
-            ))}
+            <div style={{ height: 6, background: isDarkMode ? 'rgba(255,255,255,0.1)' : '#E5E7EB', borderRadius: 3, overflow: 'hidden', marginBottom: 12 }}>
+              <div style={{ width: `${currentMissions.length ? (completedMissionCount / currentMissions.length) * 100 : 0}%`, height: '100%', background: 'linear-gradient(90deg, #E8740C, #F59E0B)', transition: 'width 0.3s' }} />
+            </div>
+            {currentMissions.map((m) => {
+              const state = missionStates[m.id]
+              const completed = state?.completed
+              const isExpanded = expandedMissionId === m.id
+              return (
+                <div
+                  key={m.id}
+                  onClick={() => setExpandedMissionId(isExpanded ? null : m.id)}
+                  style={{
+                    background: cardBg,
+                    border: `1px solid ${completed ? 'rgba(232,116,12,0.5)' : borderColor}`,
+                    borderRadius: 12,
+                    marginBottom: 8,
+                    overflow: 'hidden',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s',
+                  }}
+                >
+                  <div style={{ padding: 14, display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <span style={{ fontSize: 24 }}>{m.icon}</span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 14, fontWeight: 600, color: textColor, textDecoration: completed ? 'line-through' : 'none' }}>{m.title}</div>
+                      {completed && state?.value != null && m.type !== 'arrival' && m.type !== 'photo' && (
+                        <div style={{ fontSize: 11, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280', marginTop: 2 }}>{String(state.value)}</div>
+                      )}
+                      {completed && state?.photo && (m.type === 'photo' || m.type === 'photo_with_prompt') && (
+                        <div style={{ marginTop: 6, borderRadius: 8, overflow: 'hidden', width: 48, height: 48 }}>
+                          <img src={state.photo} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        </div>
+                      )}
+                    </div>
+                    <span style={{ fontSize: 18 }}>{completed ? '✅' : isExpanded ? '▲' : '▼'}</span>
+                  </div>
+                  {isExpanded && !completed && (
+                    <div style={{ padding: '0 14px 14px', borderTop: `1px solid ${borderColor}` }} onClick={(e) => e.stopPropagation()}>
+                      <div style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280', marginTop: 8, marginBottom: 8 }}>{m.description}</div>
+                      {m.type === 'arrival' && (
+                        <div style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.5)' : '#9CA3AF' }}>위의 「도착했어요」 버튼으로 인증하세요.</div>
+                      )}
+                      {(m.type === 'photo' || m.type === 'photo_with_prompt') && (
+                        <>
+                          {m.prompt && <div style={{ fontSize: 12, marginBottom: 6 }}>{m.prompt}</div>}
+                          <label style={{ display: 'block', padding: 12, background: isDarkMode ? 'rgba(255,255,255,0.05)' : '#fff', border: `1px dashed ${borderColor}`, borderRadius: 8, textAlign: 'center', cursor: 'pointer', fontSize: 12 }}>
+                            <input type="file" accept="image/*" style={{ display: 'none' }} onChange={(e) => {
+                              const file = e.target.files?.[0]
+                              if (!file) return
+                              const reader = new FileReader()
+                              reader.onloadend = () => {
+                                const dataUrl = reader.result as string
+                                setMissionStates((prev) => ({ ...prev, [m.id]: { completed: true, photo: dataUrl, value: prev[m.id]?.value } }))
+                                const nextIdx = currentMissions.findIndex((x) => x.id === m.id) + 1
+                                const next = currentMissions[nextIdx]
+                                if (next) setExpandedMissionId(next.id)
+                              }
+                              reader.readAsDataURL(file)
+                            }} />
+                            📷 사진 올리기
+                          </label>
+                          {m.type === 'photo_with_prompt' && (
+                            <input type="text" placeholder={m.prompt} value={state?.value as string ?? ''} onChange={(e) => setMissionStates((prev) => ({ ...prev, [m.id]: { ...prev[m.id], value: e.target.value } }))} style={{ width: '100%', marginTop: 8, padding: 10, border: `1px solid ${borderColor}`, borderRadius: 8, background: isDarkMode ? 'rgba(255,255,255,0.05)' : '#fff', color: textColor, fontSize: 13 }} />
+                          )}
+                        </>
+                      )}
+                      {m.type === 'text_input' && (
+                        <input type="text" placeholder={m.prompt} value={state?.value as string ?? ''} onChange={(e) => setMissionStates((prev) => ({ ...prev, [m.id]: { ...prev[m.id], value: e.target.value } }))} onBlur={(e) => e.target.value.trim() && setMissionStates((prev) => ({ ...prev, [m.id]: { ...prev[m.id], completed: true, value: e.target.value.trim() } }))} style={{ width: '100%', padding: 10, border: `1px solid ${borderColor}`, borderRadius: 8, background: isDarkMode ? 'rgba(255,255,255,0.05)' : '#fff', color: textColor, fontSize: 13 }} />
+                      )}
+                      {m.type === 'choice' && m.choices && (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                          {m.choices.map((c) => (
+                            <button key={c} type="button" onClick={() => { setMissionStates((prev) => ({ ...prev, [m.id]: { completed: true, value: c } })); const nextIdx = currentMissions.findIndex((x) => x.id === m.id) + 1; if (currentMissions[nextIdx]) setExpandedMissionId(currentMissions[nextIdx].id) }} style={{ padding: '8px 12px', borderRadius: 8, border: `1px solid ${borderColor}`, background: (state?.value === c) ? '#E8740C' : cardBg, color: (state?.value === c) ? '#fff' : textColor, fontSize: 12, cursor: 'pointer' }}>{c}</button>
+                          ))}
+                        </div>
+                      )}
+                      {m.type === 'number_input' && (
+                        <input type="number" placeholder={m.prompt} value={state?.value as number ?? ''} onChange={(e) => { const v = e.target.value; const n = v === '' ? undefined : Number(v); setMissionStates((prev) => ({ ...prev, [m.id]: { ...prev[m.id], value: n, completed: n != null && !Number.isNaN(n) } })) }} style={{ width: '100%', padding: 10, border: `1px solid ${borderColor}`, borderRadius: 8, background: isDarkMode ? 'rgba(255,255,255,0.05)' : '#fff', color: textColor, fontSize: 13 }} />
+                      )}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
           </div>
 
           {essentialChecklistCompleted && (
@@ -1711,6 +1850,7 @@ export function CompleteApp() {
   // 리뷰 작성 화면
   if (screen === 'review') {
     return (
+      <React.Fragment>
       <div style={{ maxWidth: 430, margin: '0 auto', minHeight: '100vh', background: bgColor, color: textColor, fontFamily: 'Pretendard, sans-serif' }}>
         <div style={{ padding: '60px 20px 120px' }}>
           <div style={{ textAlign: 'center', marginBottom: 32 }}>
@@ -1837,7 +1977,7 @@ export function CompleteApp() {
         <BottomNav />
       </div>
       {instagramShareModalEl}
-      </>
+      </React.Fragment>
     )
   }
 
@@ -1852,42 +1992,57 @@ export function CompleteApp() {
             <p style={{ fontSize: 14, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280' }}>도전 과제를 완료하고 보상을 받으세요</p>
           </div>
 
-          <div style={{ display: 'grid', gap: 16 }}>
-            {(() => {
-              const streak = userStats?.current_streak ?? 0
-              const places = userStats?.total_places_visited ?? userStats?.unique_places ?? 0
-              const quests = userStats?.completed_quests ?? userStats?.total_visits ?? 0
-              const challenges = [
-                { icon: '🔥', title: '7일 연속 방문', desc: '7일 동안 매일 새로운 장소 방문', progress: Math.min(streak, 7), total: 7, reward: '500 XP' },
-                { icon: '🗺️', title: '5곳 방문', desc: '서로 다른 장소 5곳 방문', progress: Math.min(places, 5), total: 5, reward: '300 XP' },
-                { icon: '⭐', title: '퀘스트 10개 완료', desc: '10개 퀘스트 완료하고 리뷰 작성', progress: Math.min(quests, 10), total: 10, reward: '200 XP' },
-              ]
-              return challenges
-            })().map((challenge, i) => (
-              <div key={i} style={{
-                background: cardBg,
-                border: `1px solid ${borderColor}`,
-                borderRadius: 16, padding: 20,
-                boxShadow: isDarkMode ? 'none' : '0 2px 8px rgba(0,0,0,0.05)',
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 12 }}>
-                  <div style={{ fontSize: 32 }}>{challenge.icon}</div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>{challenge.title}</div>
-                    <div style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280' }}>{challenge.desc}</div>
-                  </div>
-                </div>
-                <div style={{ marginBottom: 8 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, marginBottom: 4 }}>
-                    <span>{challenge.progress}/{challenge.total}</span>
-                    <span style={{ color: '#E8740C', fontWeight: 600 }}>{challenge.reward}</span>
-                  </div>
-                  <div style={{ height: 6, background: isDarkMode ? 'rgba(255,255,255,0.1)' : '#E5E7EB', borderRadius: 3, overflow: 'hidden' }}>
-                    <div style={{ width: `${(challenge.progress / challenge.total) * 100}%`, height: '100%', background: 'linear-gradient(90deg, #E8740C, #F59E0B)', transition: 'width 0.3s' }} />
-                  </div>
-                </div>
-              </div>
+          <div style={{ display: 'flex', gap: 6, marginBottom: 16, flexWrap: 'wrap' }}>
+            {CHALLENGE_CATEGORIES.map((cat) => (
+              <button key={cat.id} type="button" onClick={() => setChallengeCategory(cat.id)} style={{ padding: '8px 14px', borderRadius: 10, border: `1px solid ${challengeCategory === cat.id ? '#E8740C' : borderColor}`, background: challengeCategory === cat.id ? 'rgba(232,116,12,0.15)' : cardBg, color: textColor, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>{cat.label}</button>
             ))}
+          </div>
+          <div style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280', marginBottom: 16 }}>
+            오늘 완료: {(CHALLENGES_BY_CATEGORY.daily.filter((c) => { const p = (userStats?.total_visits ?? 0) > 0 && c.id === 'd1' ? 1 : 0; return p >= c.total }).length)}/3 | 이번 주: {CHALLENGES_BY_CATEGORY.weekly.filter((c) => Math.min(userStats?.current_streak ?? 0, userStats?.total_places_visited ?? 0) >= c.total).length}/4 | 총 업적: {CHALLENGES_BY_CATEGORY.achievement.filter((c) => (c.id === 'a1' && (userStats?.total_visits ?? 0) >= 1) || (c.id === 'a2' && (userStats?.total_places_visited ?? 0) >= 10) || (c.id === 'a3' && (userStats?.total_places_visited ?? 0) >= 50) || (c.id === 'a5' && (userStats?.current_streak ?? 0) >= 30) || (c.id === 'a6' && (userStats?.total_reviews ?? userStats?.total_visits ?? 0) >= 30)).length}/7
+          </div>
+          <div style={{ display: 'grid', gap: 16 }}>
+            {CHALLENGES_BY_CATEGORY[challengeCategory].map((c) => {
+              const progress = (() => {
+                const streak = userStats?.current_streak ?? 0
+                const places = userStats?.total_places_visited ?? userStats?.unique_places ?? 0
+                const visits = userStats?.total_visits ?? 0
+                const reviews = userStats?.total_reviews ?? userStats?.total_visits ?? 0
+                const following = (userStats?.following_count as number) ?? 0
+                if (c.id === 'd1') return visits > 0 ? 1 : 0
+                if (c.id === 'w1') return Math.min(streak, c.total)
+                if (c.id === 'w2') return Math.min(places, c.total)
+                if (c.id === 'a1') return visits >= 1 ? 1 : 0
+                if (c.id === 'a2' || c.id === 'a3') return Math.min(places, c.total)
+                if (c.id === 'a5') return Math.min(streak, c.total)
+                if (c.id === 'a6') return Math.min(reviews, c.total)
+                if (c.id === 's1') return Math.min(following, c.total)
+                return 0
+              })()
+              const done = progress >= c.total
+              const tierColor = c.tier === 'gold' ? '#F59E0B' : c.tier === 'silver' ? '#9CA3AF' : c.tier === 'bronze' ? '#D97706' : undefined
+              return (
+                <div key={c.id} style={{ background: done ? (isDarkMode ? 'rgba(232,116,12,0.15)' : 'rgba(232,116,12,0.08)') : cardBg, border: `1px solid ${done ? '#E8740C' : borderColor}`, borderRadius: 16, padding: 20, boxShadow: isDarkMode ? 'none' : '0 2px 8px rgba(0,0,0,0.05)', opacity: !done && c.tier ? 0.85 : 1 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 12 }}>
+                    <div style={{ fontSize: 32 }}>{c.icon}</div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>{c.title}</div>
+                      <div style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280' }}>{c.desc}</div>
+                    </div>
+                    {done && <span style={{ fontSize: 11, color: '#E8740C', fontWeight: 700 }}>✅ 완료! +{c.rewardXP} XP</span>}
+                    {!done && c.tier && <span style={{ fontSize: 18 }} title="업적">🔒</span>}
+                  </div>
+                  <div style={{ marginBottom: 0 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, marginBottom: 4 }}>
+                      <span>{progress}/{c.total}</span>
+                      <span style={{ color: '#E8740C', fontWeight: 600 }}>+{c.rewardXP} XP</span>
+                    </div>
+                    <div style={{ height: 6, background: isDarkMode ? 'rgba(255,255,255,0.1)' : '#E5E7EB', borderRadius: 3, overflow: 'hidden' }}>
+                      <div style={{ width: `${c.total ? (progress / c.total) * 100 : 0}%`, height: '100%', background: tierColor ? `linear-gradient(90deg, ${tierColor}, #F59E0B)` : 'linear-gradient(90deg, #E8740C, #F59E0B)', transition: 'width 0.3s' }} />
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
           </div>
         </div>
         <BottomNav />
@@ -1965,7 +2120,7 @@ export function CompleteApp() {
       setShowInstagramShareModal(true)
     }
     return (
-      <>
+      <React.Fragment>
       <LocalHub
         apiBase={API_BASE}
         userId={userId}
@@ -1990,7 +2145,7 @@ export function CompleteApp() {
         userAvatarUrl={userProfile?.profile_image_url}
       />
       {instagramShareModalEl}
-      </>
+      </React.Fragment>
     )
   }
 
