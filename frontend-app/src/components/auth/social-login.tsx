@@ -26,7 +26,7 @@ export function SocialLogin() {
         type="button"
         variant="outline"
         fullWidth
-        onClick={() => signInWithOAuth('kakao')}
+        onClick={() => signInWithOAuth('kakao', { extraScopes: true })}
         disabled={loading}
         className="gap-3 border-2"
       >

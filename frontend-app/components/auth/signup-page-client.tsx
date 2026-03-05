@@ -17,7 +17,7 @@ export function SignupPageClient() {
         <Button
           type="button"
           fullWidth
-          onClick={() => signInWithOAuth('kakao')}
+          onClick={() => signInWithOAuth('kakao', { extraScopes: true })}
           disabled={loading}
           className="h-12 gap-3 bg-[#FEE500] text-[#191919] hover:bg-[#FDD835] border-0 text-base font-medium"
         >
