@@ -1,0 +1,37 @@
+{
+  "name": "WhereHere - AI 기반 장소 탐험",
+  "short_name": "WhereHere",
+  "description": "당신만의 서울을 발견하세요. AI가 추천하는 숨겨진 장소를 탐험하세요.",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#ffffff",
+  "theme_color": "#f97316",
+  "lang": "ko",
+  "categories": ["lifestyle", "travel"],
+  "icons": [
+    {
+      "src": "/app-icon.png",
+      "sizes": "any",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "screenshots": [],
+  "shortcuts": [
+    {
+      "name": "오늘의 한 곳",
+      "short_name": "추천",
+      "description": "AI가 추천하는 오늘의 장소",
+      "url": "/",
+      "icons": [{ "src": "/app-icon.png", "sizes": "any" }]
+    },
+    {
+      "name": "나의 지도",
+      "short_name": "지도",
+      "description": "내가 방문한 장소들의 지도",
+      "url": "/my-map-real",
+      "icons": [{ "src": "/app-icon.png", "sizes": "any" }]
+    }
+  ]
+}
