@@ -43,7 +43,8 @@ interface Stats {
   total_xp: number;
 }
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+// 브라우저에서는 같은 출처 사용 → Next API 프록시가 백엔드로 전달
+const API_BASE = typeof window !== 'undefined' ? window.location.origin : (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000');
 
 /** H3 해상도 (8 ≈ 동네 단위, 숫자 작을수록 넓은 영역) */
 const H3_RES = 8;

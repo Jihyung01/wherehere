@@ -3,15 +3,16 @@
 @tailwind utilities;
 
 :root {
-  --bg-primary: #0A0E14;
-  --bg-secondary: #0D1117;
-  --bg-tertiary: #161B22;
-  --text-primary: #FFFFFF;
-  --text-secondary: rgba(255, 255, 255, 0.7);
-  --text-tertiary: rgba(255, 255, 255, 0.4);
+  --bg-primary: #ffffff;
+  --bg-secondary: #f9fafb;
+  --bg-tertiary: #f3f4f6;
+  --text-primary: #111827;
+  --text-secondary: rgba(17, 24, 39, 0.7);
+  --text-tertiary: rgba(17, 24, 39, 0.4);
   --accent-primary: #E8740C;
   --accent-secondary: #8B5CF6;
-  --border-color: rgba(255, 255, 255, 0.06);
+  --border-color: rgba(0, 0, 0, 0.08);
+  color-scheme: light;
 }
 
 * {
@@ -24,19 +25,9 @@ html,
 body {
   max-width: 100vw;
   overflow-x: hidden;
-  background: var(--bg-primary);
-  color: var(--text-primary);
+  background: #ffffff;
+  color: #111827;
   font-family: 'Pretendard', 'Noto Sans KR', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-}
-
-body {
-  color: rgb(var(--foreground-rgb));
-  background: linear-gradient(
-      to bottom,
-      transparent,
-      rgb(var(--background-end-rgb))
-    )
-    rgb(var(--background-start-rgb));
 }
 
 a {
@@ -44,11 +35,7 @@ a {
   text-decoration: none;
 }
 
-@media (prefers-color-scheme: dark) {
-  html {
-    color-scheme: dark;
-  }
-}
+/* 앱 자체 다크모드 토글 사용 — 시스템 다크모드 자동 적용 비활성화 */
 
 /* 모바일 최적화 */
 @media (max-width: 768px) {
