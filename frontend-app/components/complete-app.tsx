@@ -159,6 +159,8 @@ export function CompleteApp() {
   const [selectedProfilePost, setSelectedProfilePost] = useState<{ id: string; title: string; body?: string; type?: string; image_url?: string; place_name?: string; rating?: number; created_at?: string; author_id?: string } | null>(null)
   const [profileCommentInput, setProfileCommentInput] = useState('')
   const [userProfile, setUserProfile] = useState<{ display_name?: string; profile_image_url?: string } | null>(null)
+  const [nicknameInput, setNicknameInput] = useState('')
+  const [savingNickname, setSavingNickname] = useState(false)
   // 인스타 공유 폼 모달: 장소/기분/리뷰 등 반영해 스토리·피드 스타일 카드 생성
   const [showInstagramShareModal, setShowInstagramShareModal] = useState(false)
   const [instagramShareForm, setInstagramShareForm] = useState<{
@@ -180,6 +182,10 @@ export function CompleteApp() {
 
   // displayName 계산: userProfile state 이후에 위치
   const displayName = userProfile?.display_name ?? user?.user_metadata?.name ?? user?.user_metadata?.full_name ?? user?.user_metadata?.user_name ?? user?.user_metadata?.kakao_account?.profile?.nickname ?? user?.email ?? (user ? '로그인한 사용자' : null)
+
+  useEffect(() => {
+    setNicknameInput(displayName || '')
+  }, [displayName])
 
   // 로그인 유도: 비로그인 시 데모 수락 전에는 로그인 화면 강조
   const showLoginGate = !isLoggedIn && typeof window !== 'undefined' && typeof sessionStorage !== 'undefined' && sessionStorage.getItem('wherehere_demo_accepted') !== '1'
@@ -1019,6 +1025,35 @@ export function CompleteApp() {
         }
         reader.readAsDataURL(file)
       })
+    }
+  }
+
+  const saveNickname = async () => {
+    const name = nicknameInput.trim()
+    if (!name || savingNickname || !isLoggedIn) return
+    setSavingNickname(true)
+    setUserProfile(prev => ({ ...prev, display_name: name, profile_image_url: prev?.profile_image_url }))
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/social/profile`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: userId, display_name: name }),
+      })
+      if (!res.ok) throw new Error('API error')
+      const profileRes = await fetch(`${API_BASE}/api/v1/social/profile/${userId}`)
+      const profileData = await profileRes.json()
+      if (profileData.profile) setUserProfile(profileData.profile)
+    } catch (_) {
+      alert('닉네임 저장에 실패했어요. 다시 시도해주세요.')
+      try {
+        const profileRes = await fetch(`${API_BASE}/api/v1/social/profile/${userId}`)
+        const profileData = await profileRes.json()
+        if (profileData.profile) setUserProfile(profileData.profile)
+      } catch {
+        // noop
+      }
+    } finally {
+      setSavingNickname(false)
     }
   }
 
@@ -2916,57 +2951,45 @@ export function CompleteApp() {
                         <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 6, color: isDarkMode ? 'rgba(255,255,255,0.7)' : '#6B7280' }}>
                           소셜 프로필 (표시 이름 · 프로필 이미지 URL)
                         </div>
-                        <input
-                          placeholder="표시 이름"
-                          defaultValue={displayName || ''}
-                          onBlur={async (e) => {
-                            const name = e.target.value.trim()
-                            if (!name) return
-
-                            // 즉시 로컬 state 업데이트 (빠른 UX)
-                            setUserProfile(prev => ({
-                              ...prev,
-                              display_name: name,
-                              profile_image_url: prev?.profile_image_url
-                            }))
-
-                            try {
-                              const res = await fetch(`${API_BASE}/api/v1/social/profile`, {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({ user_id: userId, display_name: name }),
-                              })
-                              if (res.ok) {
-                                // 성공 시 백엔드에서 최신 데이터 가져오기
-                                const profileRes = await fetch(`${API_BASE}/api/v1/social/profile/${userId}`)
-                                const profileData = await profileRes.json()
-                                if (profileData.profile) {
-                                  setUserProfile(profileData.profile)
-                                }
-                              } else {
-                                throw new Error('API error')
+                        <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                          <input
+                            placeholder="표시 이름"
+                            value={nicknameInput}
+                            onChange={(e) => setNicknameInput(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault()
+                                saveNickname()
                               }
-                            } catch (_) {
-                              alert('저장에 실패했어요. 네트워크를 확인하고 다시 시도해주세요.')
-                              // 실패 시 원래 프로필로 되돌림
-                              const profileRes = await fetch(`${API_BASE}/api/v1/social/profile/${userId}`)
-                              const profileData = await profileRes.json()
-                              if (profileData.profile) {
-                                setUserProfile(profileData.profile)
-                              }
-                            }
-                          }}
-                          style={{
-                            width: '100%',
-                            padding: 10,
-                            marginBottom: 8,
-                            borderRadius: 8,
-                            border: `1px solid ${borderColor}`,
-                            background: isDarkMode ? 'rgba(0,0,0,0.2)' : '#fff',
-                            color: textColor,
-                            fontSize: 13,
-                          }}
-                        />
+                            }}
+                            style={{
+                              flex: 1,
+                              padding: 10,
+                              borderRadius: 8,
+                              border: `1px solid ${borderColor}`,
+                              background: isDarkMode ? 'rgba(0,0,0,0.2)' : '#fff',
+                              color: textColor,
+                              fontSize: 13,
+                            }}
+                          />
+                          <button
+                            type="button"
+                            onClick={saveNickname}
+                            disabled={savingNickname || !nicknameInput.trim()}
+                            style={{
+                              padding: '0 14px',
+                              borderRadius: 8,
+                              border: 'none',
+                              background: savingNickname || !nicknameInput.trim() ? (isDarkMode ? 'rgba(255,255,255,0.12)' : '#E5E7EB') : '#E8740C',
+                              color: savingNickname || !nicknameInput.trim() ? (isDarkMode ? 'rgba(255,255,255,0.5)' : '#9CA3AF') : '#fff',
+                              fontSize: 13,
+                              fontWeight: 700,
+                              cursor: savingNickname || !nicknameInput.trim() ? 'not-allowed' : 'pointer',
+                            }}
+                          >
+                            {savingNickname ? '저장중' : '확인'}
+                          </button>
+                        </div>
                         <div style={{ marginBottom: 8 }}>
                           <label style={{ display: 'inline-block', padding: '8px 14px', borderRadius: 8, border: `1px solid ${borderColor}`, background: isDarkMode ? 'rgba(0,0,0,0.2)' : '#fff', color: textColor, fontSize: 13, cursor: 'pointer' }}>
                             📷 사진 선택 (앨범/파일)
