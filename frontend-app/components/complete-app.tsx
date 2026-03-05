@@ -828,14 +828,12 @@ export function CompleteApp() {
 
     try {
       if (platform === 'kakao') {
-        // 카카오톡 SDK - 친구 선택창 열기
         const kakao = typeof window !== 'undefined' ? (window as any).Kakao : undefined
+        let sent = false
         if (kakao?.Share?.sendDefault) {
           try {
             kakao.Share.sendDefault({
-              objectType: 'location',
-              address: placeAddress,
-              addressTitle: placeName,
+              objectType: 'feed',
               content: {
                 title: placeName,
                 description: `🗺️ WhereHere에서 발견한 특별한 장소\n${placeAddress}`,
@@ -846,25 +844,28 @@ export function CompleteApp() {
                 },
               },
               buttons: [
-                {
-                  title: 'WhereHere 열기',
-                  link: {
-                    mobileWebUrl: shareUrl,
-                    webUrl: shareUrl,
-                  },
-                },
+                { title: 'WhereHere 열기', link: { mobileWebUrl: shareUrl, webUrl: shareUrl } },
               ],
             })
-            // 성공 - 카카오톡 친구 선택창이 열림
-            return
+            sent = true
           } catch (err) {
             console.error('카카오톡 SDK 공유 실패:', err)
           }
         }
-
-        // 대체: 클립보드 복사
-        await navigator.clipboard.writeText(`${shareTitle}\n${placeName}\n${placeAddress}\n\n${shareUrl}`)
-        alert('📋 링크가 복사되었습니다!\n카카오톡에서 붙여넣기 해주세요.')
+        if (!sent) {
+          await navigator.clipboard.writeText(`${shareTitle}\n${placeName}\n${placeAddress}\n\n${shareUrl}`)
+          const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
+          if (isMobile) {
+            try {
+              window.location.href = 'kakaotalk://send?url=' + encodeURIComponent(shareUrl)
+              setTimeout(() => { alert('📋 카카오톡이 열리지 않으면 링크가 복사되었어요. 채팅창에 붙여넣기 하세요.') }, 500)
+            } catch {
+              alert('📋 링크가 복사되었어요. 카카오톡 채팅창에 붙여넣기 하세요.')
+            }
+          } else {
+            alert('📋 링크가 복사되었습니다!\n카카오톡에서 붙여넣기 해주세요.')
+          }
+        }
 
       } else if (platform === 'instagram') {
         // 인스타 공유 폼 모달 열기 (장소·기분·리뷰 반영 후 스토리/피드 카드 생성)
@@ -1512,7 +1513,24 @@ export function CompleteApp() {
         <input placeholder="장소 이름" value={instagramShareForm.place_name} onChange={(e) => setInstagramShareForm((f) => ({ ...f, place_name: e.target.value }))} style={{ width: '100%', padding: 10, marginBottom: 8, borderRadius: 8, border: `1px solid ${borderColor}`, background: isDarkMode ? 'rgba(0,0,0,0.2)' : '#fff', color: textColor }} />
         <input placeholder="주소" value={instagramShareForm.place_address} onChange={(e) => setInstagramShareForm((f) => ({ ...f, place_address: e.target.value }))} style={{ width: '100%', padding: 10, marginBottom: 8, borderRadius: 8, border: `1px solid ${borderColor}`, background: isDarkMode ? 'rgba(0,0,0,0.2)' : '#fff', color: textColor }} />
         <input placeholder="기분 (예: 지쳐있어요)" value={instagramShareForm.mood} onChange={(e) => setInstagramShareForm((f) => ({ ...f, mood: e.target.value }))} style={{ width: '100%', padding: 10, marginBottom: 8, borderRadius: 8, border: `1px solid ${borderColor}`, background: isDarkMode ? 'rgba(0,0,0,0.2)' : '#fff', color: textColor }} />
-        <input placeholder="평점 (1~5)" value={instagramShareForm.rating} onChange={(e) => setInstagramShareForm((f) => ({ ...f, rating: e.target.value }))} style={{ width: '100%', padding: 10, marginBottom: 16, borderRadius: 8, border: `1px solid ${borderColor}`, background: isDarkMode ? 'rgba(0,0,0,0.2)' : '#fff', color: textColor }} />
+        <input placeholder="평점 (1~5)" value={instagramShareForm.rating} onChange={(e) => setInstagramShareForm((f) => ({ ...f, rating: e.target.value }))} style={{ width: '100%', padding: 10, marginBottom: 8, borderRadius: 8, border: `1px solid ${borderColor}`, background: isDarkMode ? 'rgba(0,0,0,0.2)' : '#fff', color: textColor }} />
+        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6, color: textColor }}>사진 (카드에 사용)</div>
+        <label style={{ display: 'block', width: '100%', padding: 12, background: isDarkMode ? 'rgba(255,255,255,0.05)' : '#F9FAFB', border: `2px dashed ${borderColor}`, borderRadius: 8, textAlign: 'center', cursor: 'pointer', marginBottom: 8 }}>
+          <input type="file" accept="image/*" style={{ display: 'none' }} onChange={(e) => {
+            const file = e.target.files?.[0]
+            if (file) {
+              const reader = new FileReader()
+              reader.onloadend = () => setInstagramShareForm((f) => ({ ...f, image_url: reader.result as string }))
+              reader.readAsDataURL(file)
+            }
+          }} />
+          {instagramShareForm.image_url ? '✓ 사진 선택됨 (다시 클릭해 변경)' : '📷 클릭해서 사진 추가'}
+        </label>
+        {instagramShareForm.image_url && (
+          <div style={{ marginBottom: 12, borderRadius: 8, overflow: 'hidden', maxHeight: 120 }}>
+            <img src={instagramShareForm.image_url} alt="" style={{ width: '100%', height: 100, objectFit: 'cover' }} />
+          </div>
+        )}
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <button type="button" disabled={instagramShareSubmitting} onClick={async () => {
             setInstagramShareSubmitting(true)
@@ -1830,6 +1848,7 @@ export function CompleteApp() {
         </div>
         <BottomNav />
       </div>
+      {instagramShareModalEl}
       </div>
     )
   }
@@ -2729,12 +2748,13 @@ export function CompleteApp() {
                                     })
 
                                     if (updateRes.ok) {
-                                      // 실제 업로드된 URL로 state 업데이트
+                                      const absoluteUrl = data.url.startsWith('http') ? data.url : `${typeof window !== 'undefined' ? window.location.origin : ''}${data.url.startsWith('/') ? '' : '/'}${data.url}`
                                       setUserProfile(prev => ({
                                         ...prev,
                                         display_name: prev?.display_name || displayName || undefined,
-                                        profile_image_url: data.url
+                                        profile_image_url: absoluteUrl
                                       }))
+                                      refetchUserProfile()
                                       alert('프로필 사진이 저장되었어요!')
                                     } else {
                                       alert('프로필 업데이트에 실패했어요.')

@@ -295,7 +295,7 @@ export async function shareOrDownload(options: {
         title: 'WhereHere',
         text: caption,
       })
-      onToast('공유 시트에서 인스타그램을 선택해 공유하세요.')
+      onToast('공유 시트에서 인스타그램(스토리/피드/DM)을 선택하세요.')
       return
     } catch (e) {
       if ((e as Error).name === 'AbortError') return
