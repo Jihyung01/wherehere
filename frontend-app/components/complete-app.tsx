@@ -356,6 +356,21 @@ export function CompleteApp() {
           }
           return next
         })
+      } else {
+        const supabase = createClient()
+        const { data: row } = await (supabase as any)
+          .from('users')
+          .select('id,display_name,profile_image_url,username')
+          .eq('id', userId)
+          .maybeSingle()
+        if (row) {
+          setUserProfile((prev) => ({
+            ...(prev || {}),
+            ...row,
+            display_name: row.display_name ?? prev?.display_name,
+            profile_image_url: row.profile_image_url ?? prev?.profile_image_url,
+          }))
+        }
       }
     } catch (err) {
       console.error('프로필 조회 실패:', err)
@@ -1040,7 +1055,13 @@ export function CompleteApp() {
         body: JSON.stringify({ user_id: userId, display_name: name }),
       })
       const data = await res.json().catch(() => ({}))
-      if (!res.ok || data?.success === false) throw new Error('API error')
+      if (!res.ok || data?.success === false) {
+        const supabase = createClient()
+        const { error } = await (supabase as any)
+          .from('users')
+          .upsert({ id: userId, display_name: name }, { onConflict: 'id' })
+        if (error) throw new Error(data?.message || 'API error')
+      }
       await refetchUserProfile()
     } catch (_) {
       alert('닉네임 저장에 실패했어요. 다시 시도해주세요.')
