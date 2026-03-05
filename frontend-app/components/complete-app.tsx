@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useRef, useCallback } from 'react'
+import React, { useState, useEffect, useRef, useCallback, Fragment } from 'react'
 import { useRouter } from 'next/navigation'
 import Script from 'next/script'
 import { useQuery } from '@tanstack/react-query'
@@ -1555,7 +1555,7 @@ export function CompleteApp() {
   // 수락한 퀘스트 화면
   if (screen === 'accepted' && acceptedQuest) {
     return (
-      <React.Fragment>
+      <Fragment>
       <div style={{ maxWidth: 430, margin: '0 auto', minHeight: '100vh', background: bgColor, color: textColor, fontFamily: 'Pretendard, sans-serif' }}>
         <div style={{ padding: '60px 20px 120px' }}>
           <button onClick={() => setScreen('quests')} style={{ background: cardBg, border: `1px solid ${borderColor}`, borderRadius: 12, padding: '8px 16px', color: textColor, cursor: 'pointer', marginBottom: 24 }}>
@@ -1850,7 +1850,7 @@ export function CompleteApp() {
   // 리뷰 작성 화면
   if (screen === 'review') {
     return (
-      <React.Fragment>
+      <Fragment>
       <div style={{ maxWidth: 430, margin: '0 auto', minHeight: '100vh', background: bgColor, color: textColor, fontFamily: 'Pretendard, sans-serif' }}>
         <div style={{ padding: '60px 20px 120px' }}>
           <div style={{ textAlign: 'center', marginBottom: 32 }}>
@@ -1977,7 +1977,7 @@ export function CompleteApp() {
         <BottomNav />
       </div>
       {instagramShareModalEl}
-      </React.Fragment>
+      </Fragment>
     )
   }
 
@@ -2120,7 +2120,7 @@ export function CompleteApp() {
       setShowInstagramShareModal(true)
     }
     return (
-      <React.Fragment>
+      <Fragment>
       <LocalHub
         apiBase={API_BASE}
         userId={userId}
@@ -2145,7 +2145,7 @@ export function CompleteApp() {
         userAvatarUrl={userProfile?.profile_image_url}
       />
       {instagramShareModalEl}
-      </React.Fragment>
+      </Fragment>
     )
   }
 
