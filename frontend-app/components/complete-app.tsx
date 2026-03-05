@@ -132,6 +132,9 @@ export function CompleteApp() {
   const [showNotificationSettings, setShowNotificationSettings] = useState(false)
   const [showLocationSettings, setShowLocationSettings] = useState(false)
   const [showPrivacySettings, setShowPrivacySettings] = useState(false)
+  const [installPrompt, setInstallPrompt] = useState<any>(null)
+  const [isAppInstalled, setIsAppInstalled] = useState(false)
+  const [isIOSDevice, setIsIOSDevice] = useState(false)
   const [showHelpSettings, setShowHelpSettings] = useState(false)
   const [showCreatorSettings, setShowCreatorSettings] = useState(false)
   const [placeSuggestionForm, setPlaceSuggestionForm] = useState({ name: '', address: '', category: '기타', description: '' })
@@ -196,6 +199,29 @@ export function CompleteApp() {
     setMissionStates({})
     setExpandedMissionId(missions[0]?.id ?? null)
   }, [acceptedQuest, selectedRole, selectedMood])
+
+  // PWA 설치 가능 여부 감지
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    // 이미 설치된 앱으로 실행 중인지 확인
+    if (window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone) {
+      setIsAppInstalled(true)
+      return
+    }
+    // iOS Safari 감지
+    const ua = navigator.userAgent
+    if (/iPad|iPhone|iPod/.test(ua) && !(window as any).MSStream) {
+      setIsIOSDevice(true)
+      return
+    }
+    // Android/Chrome: beforeinstallprompt 이벤트 캡처
+    const handler = (e: Event) => {
+      e.preventDefault()
+      setInstallPrompt(e)
+    }
+    window.addEventListener('beforeinstallprompt', handler)
+    return () => window.removeEventListener('beforeinstallprompt', handler)
+  }, [])
 
   // 온보딩: 이미 본 적 있으면 건너뛰기
   useEffect(() => {
@@ -2652,6 +2678,61 @@ export function CompleteApp() {
           </div>
 
           <div style={{ display: 'grid', gap: 16 }}>
+            {/* 앱 설치 */}
+            {!isAppInstalled && (
+              <div style={{
+                background: 'linear-gradient(135deg, #E8740C 0%, #F59E0B 100%)',
+                borderRadius: 16, padding: 20, color: '#fff',
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 14 }}>
+                  <div style={{ width: 44, height: 44, borderRadius: 12, background: 'rgba(255,255,255,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22 }}>📲</div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 2 }}>WhereHere 앱 설치</div>
+                    <div style={{ fontSize: 12, opacity: 0.85 }}>
+                      {isIOSDevice ? 'Safari 공유 버튼으로 홈 화면에 추가하세요' : '홈 화면에 추가해 더 빠르게 실행하세요'}
+                    </div>
+                  </div>
+                </div>
+                {isIOSDevice ? (
+                  <div style={{ background: 'rgba(255,255,255,0.2)', borderRadius: 10, padding: '10px 14px', fontSize: 13, lineHeight: 1.7 }}>
+                    <div style={{ fontWeight: 700, marginBottom: 4 }}>iOS 설치 방법</div>
+                    <div>① Safari 하단 <b>공유(□↑)</b> 버튼 탭</div>
+                    <div>② <b>홈 화면에 추가</b> 선택</div>
+                    <div>③ 오른쪽 상단 <b>추가</b> 탭</div>
+                  </div>
+                ) : installPrompt ? (
+                  <button
+                    onClick={async () => {
+                      if (!installPrompt) return
+                      installPrompt.prompt()
+                      const { outcome } = await installPrompt.userChoice
+                      if (outcome === 'accepted') {
+                        setIsAppInstalled(true)
+                        setInstallPrompt(null)
+                        toast.success('앱이 홈 화면에 추가됐어요!')
+                      }
+                    }}
+                    style={{ width: '100%', padding: '13px 0', borderRadius: 12, border: 'none', background: '#fff', color: '#E8740C', fontWeight: 800, fontSize: 15, cursor: 'pointer', letterSpacing: -0.3 }}
+                  >
+                    📲 지금 설치하기
+                  </button>
+                ) : (
+                  <div style={{ background: 'rgba(255,255,255,0.2)', borderRadius: 10, padding: '10px 14px', fontSize: 12, opacity: 0.9 }}>
+                    브라우저 주소창 오른쪽 설치(⊕) 아이콘을 탭하거나,<br />메뉴 → <b>홈 화면에 추가</b>를 선택하세요.
+                  </div>
+                )}
+              </div>
+            )}
+            {isAppInstalled && (
+              <div style={{ background: cardBg, border: `1px solid ${borderColor}`, borderRadius: 16, padding: 20, display: 'flex', alignItems: 'center', gap: 14 }}>
+                <div style={{ fontSize: 28 }}>✅</div>
+                <div>
+                  <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 2 }}>앱 설치 완료</div>
+                  <div style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.5)' : '#6B7280' }}>WhereHere가 홈 화면에 설치돼 있어요</div>
+                </div>
+              </div>
+            )}
+
             {/* 테마: 라이트 / 다크 / 시스템 따라가기 */}
             <div style={{ background: cardBg, border: `1px solid ${borderColor}`, borderRadius: 16, padding: 20 }}>
               <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>테마</div>
