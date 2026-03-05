@@ -1039,16 +1039,13 @@ export function CompleteApp() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user_id: userId, display_name: name }),
       })
-      if (!res.ok) throw new Error('API error')
-      const profileRes = await fetch(`${API_BASE}/api/v1/social/profile/${userId}`)
-      const profileData = await profileRes.json()
-      if (profileData.profile) setUserProfile(profileData.profile)
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || data?.success === false) throw new Error('API error')
+      await refetchUserProfile()
     } catch (_) {
       alert('닉네임 저장에 실패했어요. 다시 시도해주세요.')
       try {
-        const profileRes = await fetch(`${API_BASE}/api/v1/social/profile/${userId}`)
-        const profileData = await profileRes.json()
-        if (profileData.profile) setUserProfile(profileData.profile)
+        await refetchUserProfile()
       } catch {
         // noop
       }

@@ -690,7 +690,7 @@ class RestDatabaseHelpers:
                 payload = {"id": user_id, "display_name": user_id[:8]}
                 headers = {**self.headers, "Prefer": "resolution=merge-duplicates"}
                 response = await client.post(url, headers=headers, json=payload)
-                return response.status_code in (200, 201)
+                return response.status_code in (200, 201, 204)
         except Exception:
             return False
 
@@ -715,7 +715,7 @@ class RestDatabaseHelpers:
                 payload["profile_image_url"] = avatar_url
             headers = {**self.headers, "Prefer": "resolution=merge-duplicates"}
             response = await client.post(url, headers=headers, json=payload)
-            return response.status_code in (200, 201)
+            return response.status_code in (200, 201, 204)
 
     # ---------- 크리에이터: 장소 제안 ----------
     async def create_place_suggestion(self, user_id: str, name: str, address: str = "", latitude: Optional[float] = None, longitude: Optional[float] = None, category: str = "", description: str = "") -> Optional[Dict]:
