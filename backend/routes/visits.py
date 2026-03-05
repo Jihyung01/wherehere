@@ -18,6 +18,19 @@ router = APIRouter(prefix="/api/v1/visits", tags=["Visits"])
 CHECKIN_RADIUS_METERS = 100
 
 
+async def _ensure_place_from_client(place_id: str, place_name: Optional[str], place_category: Optional[str], db) -> Optional[dict]:
+    """클라이언트에서 전달한 place_name/place_category로 places 테이블에 upsert (나의 지도 표시용)"""
+    if hasattr(db, "upsert_place_minimal"):
+        ok = await db.upsert_place_minimal(
+            place_id=place_id,
+            name=place_name or place_id,
+            primary_category=place_category or "기타",
+        )
+        if ok:
+            return await db.get_place_by_id(place_id)
+    return None
+
+
 async def _fetch_and_save_kakao_place(place_id: str, db) -> Optional[dict]:
     """카카오 place_id로 장소 정보 조회 후 places 테이블에 저장"""
     try:
@@ -102,6 +115,8 @@ class VisitCreate(BaseModel):
     companions: int = 1
     user_latitude: Optional[float] = None
     user_longitude: Optional[float] = None
+    place_name: Optional[str] = None
+    place_category: Optional[str] = None
 
 
 @router.get("/{user_id}")
@@ -147,9 +162,9 @@ async def get_user_visits(
                     "longitude": place.get("longitude"),
                 })
             else:
-                # place 정보 없어도 기본값으로 표시
+                # place 정보 없어도 기본값으로 표시 (place_id 대신 "알 수 없는 장소" 표시)
                 enriched_visit.update({
-                    "place_name": visit.get("place_id", "Unknown Place"),
+                    "place_name": "알 수 없는 장소",
                     "category": "기타",
                     "latitude": 37.5665,  # 서울 기본 위치
                     "longitude": 126.9780,
@@ -193,6 +208,13 @@ async def create_visit(
         place = await db.get_place_by_id(visit.place_id)
         if not place and visit.place_id.startswith("kakao-"):
             place = await _fetch_and_save_kakao_place(visit.place_id, db)
+        # 클라이언트가 place_name을 보내면 항상 upsert (기존에 kakao-ID 등 잘못된 이름이 캐시돼 있어도 덮어씀)
+        if visit.place_name:
+            updated = await _ensure_place_from_client(visit.place_id, visit.place_name, visit.place_category, db)
+            if updated:
+                place = updated
+        elif not place and visit.place_category:
+            place = await _ensure_place_from_client(visit.place_id, visit.place_id, visit.place_category, db) or place
         
         location_verified = False
         if visit.user_latitude is not None and visit.user_longitude is not None:

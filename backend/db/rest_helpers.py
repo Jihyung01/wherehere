@@ -250,6 +250,22 @@ class RestDatabaseHelpers:
             "badges": badges,
         }
     
+    async def upsert_place_minimal(
+        self, place_id: str, name: str, primary_category: str = "기타"
+    ) -> bool:
+        """장소 id/이름/카테고리만으로 places 테이블 upsert (Kakao 등 외부 장소용)"""
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            url = f"{self.base_url}/rest/v1/places"
+            payload = {
+                "id": place_id,
+                "name": name,
+                "primary_category": primary_category,
+                "is_active": True,
+            }
+            headers = {**self.headers, "Prefer": "resolution=merge-duplicates"}
+            resp = await client.post(url, headers=headers, json=payload)
+            return resp.status_code in (200, 201)
+
     async def get_place_by_id(self, place_id: str) -> Optional[Dict[str, Any]]:
         """장소 상세 조회"""
         async with httpx.AsyncClient(timeout=30.0) as client:

@@ -296,7 +296,20 @@ export function CompleteApp() {
     try {
       const res = await fetch(`${API_BASE}/api/v1/social/profile/${userId}`)
       const data = await res.json()
-      if (data.profile) setUserProfile(data.profile)
+      if (data.profile) {
+        setUserProfile((prev) => {
+          const next = { ...data.profile, display_name: data.profile.display_name ?? prev?.display_name }
+          const img = (data.profile as any).profile_image_url ?? (data.profile as any).avatar_url
+          // DB에서 이미지 URL이 오면 우선 사용, null이면 로컬에서 설정한 값 보존
+          if (img) {
+            (next as any).profile_image_url = img
+          } else {
+            // DB에 아직 반영 안 됐거나 null인 경우 기존 값 유지
+            (next as any).profile_image_url = prev?.profile_image_url ?? null
+          }
+          return next
+        })
+      }
     } catch (err) {
       console.error('프로필 조회 실패:', err)
     }
@@ -732,13 +745,15 @@ export function CompleteApp() {
         body: JSON.stringify({
           user_id: userId,
           place_id: acceptedQuest.place_id || acceptedQuest.id,
-          duration_minutes: Math.max(duration, 30),
+          duration_minutes: Math.max(Number(missionStates['stay_minutes']?.value) || duration || 1, 1),
           rating: reviewData.rating,
           mood: selectedMood,
           spent_amount: null,
           companions: 1,
           user_latitude: userLocation.lat,
           user_longitude: userLocation.lng,
+          place_name: acceptedQuest?.name || undefined,
+          place_category: (acceptedQuest as any)?.primary_category || (acceptedQuest as any)?.category || undefined,
         })
       })
       
@@ -765,16 +780,35 @@ export function CompleteApp() {
             const missionLines = currentMissions
               .filter((m) => missionStates[m.id]?.completed && (missionStates[m.id]?.value != null || missionStates[m.id]?.photo != null || m.type === 'arrival'))
               .map((m) => {
-                const label = m.feedLabel || m.title
+                const question = m.prompt || m.title
                 const val = missionStates[m.id]?.value
                 const photo = missionStates[m.id]?.photo
-                if (m.id === 'star_rating') return `${label}: ${reviewData.rating}점`
-                if (m.type === 'arrival') return `${label} 완료`
-                if (photo) return `${label}: (사진)`
-                if (val !== undefined && val !== '') return `${label}: ${val}`
-                return `${label} 완료`
+                if (m.id === 'star_rating') return `⭐ ${m.title}: ${reviewData.rating}점`
+                if (m.type === 'arrival') return `📍 ${m.title}: 완료`
+                if (photo) return `📷 ${m.title}: 사진 첨부`
+                if (val !== undefined && val !== '') return `Q. ${question}\nA. ${val}`
+                return `✓ ${m.title}: 완료`
               })
-            const bodyParts = [`${placeName} 방문했어요. 별점 ${rating}점!`, reviewData.review?.trim(), missionLines.length ? missionLines.join(' · ') : ''].filter(Boolean)
+            const bodyParts = [`${placeName} 방문했어요. 별점 ${rating}점!`, reviewData.review?.trim(), missionLines.length ? ['[미션 기록]', ...missionLines].join('\n') : ''].filter(Boolean)
+
+            // base64 사진은 콤마를 포함해 join/split이 깨지므로 CDN 업로드 후 URL 사용
+            const uploadToCdn = async (dataUrl: string): Promise<string> => {
+              try {
+                const res = await fetch(dataUrl)
+                const blob = await res.blob()
+                const form = new FormData()
+                form.append('file', new File([blob], 'photo.jpg', { type: blob.type || 'image/jpeg' }))
+                const up = await fetch(`${typeof window !== 'undefined' ? window.location.origin : ''}/api/upload`, { method: 'POST', body: form })
+                const ud = await up.json().catch(() => ({}))
+                if (up.ok && ud.url) return ud.url
+              } catch {}
+              return ''
+            }
+            const reviewCdnUrls = await Promise.all(
+              (reviewData.photos || []).map((p) => p.startsWith('data:') ? uploadToCdn(p) : Promise.resolve(p))
+            ).then((urls) => urls.filter(Boolean))
+            const missionPhotos = [missionStates['best_angle']?.photo, missionStates['selfie']?.photo, missionStates['vibe_photo']?.photo, missionStates['food_photo']?.photo].filter(Boolean) as string[]
+            const allPhotos = [...reviewCdnUrls, ...missionPhotos]
             const postRes = await fetch(`${API_BASE}/api/v1/local/posts`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -786,7 +820,7 @@ export function CompleteApp() {
                 rating: rating,
                 place_name: placeName,
                 place_address: placeAddress,
-                image_url: reviewData.photos?.[0] || missionStates['best_angle']?.photo || missionStates['selfie']?.photo || '',
+                image_url: allPhotos.length > 0 ? allPhotos.join(',') : '',
                 area_name: (acceptedQuest as any)?.region || (acceptedQuest as any)?.area || '내 주변',
               }),
             })
@@ -2093,7 +2127,7 @@ export function CompleteApp() {
             content: {
               title: post.title,
               description: description,
-              imageUrl: post.image_url || appUrl + 'og.png',
+              imageUrl: (post.image_url || '').split(',')[0].trim() || appUrl + 'og.png',
               link: {
                 webUrl: appUrl,
                 mobileWebUrl: appUrl,
@@ -2133,7 +2167,7 @@ export function CompleteApp() {
         body: (post.body || '').slice(0, 300),
         place_name: post.place_name || '',
         place_address: post.place_address || '',
-        image_url: post.image_url || '',
+        image_url: (post.image_url || '').split(',')[0].trim() || '',
         mood: '',
         rating: post.rating != null ? String(post.rating) : '',
       })
@@ -2294,8 +2328,8 @@ export function CompleteApp() {
                     onClick={() => setSelectedProfilePost(p)}
                     style={{ aspectRatio: '1', padding: 0, border: 'none', borderRadius: 8, overflow: 'hidden', background: isDarkMode ? 'rgba(255,255,255,0.08)' : '#E5E7EB', cursor: 'pointer' }}
                   >
-                    {p.image_url ? (
-                      <img src={p.image_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    {(p.image_url ? (p.image_url as string).split(',').map((u) => u.trim()).filter(Boolean)[0] : null) ? (
+                      <img src={(p.image_url as string).split(',').map((u) => u.trim()).filter(Boolean)[0]} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                     ) : (
                       <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24 }}>📝</div>
                     )}
@@ -2314,8 +2348,12 @@ export function CompleteApp() {
                   <button type="button" onClick={() => setSelectedProfilePost(null)} style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: textColor }}>×</button>
                 </div>
                 <div style={{ padding: 16, overflow: 'auto', flex: 1 }}>
-                  {selectedProfilePost.image_url && (
-                    <img src={selectedProfilePost.image_url} alt="" style={{ width: '100%', borderRadius: 12, marginBottom: 12, maxHeight: 240, objectFit: 'cover' }} />
+                  {(selectedProfilePost.image_url ? (selectedProfilePost.image_url as string).split(',').map((u) => u.trim()).filter(Boolean) : []).length > 0 && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
+                      {(selectedProfilePost.image_url as string).split(',').map((u) => u.trim()).filter(Boolean).map((src, i) => (
+                        <img key={i} src={src} alt="" style={{ width: '100%', borderRadius: 12, maxHeight: 240, objectFit: 'cover' }} />
+                      ))}
+                    </div>
                   )}
                   <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>{selectedProfilePost.title}</div>
                   {selectedProfilePost.body && <div style={{ fontSize: 14, color: isDarkMode ? 'rgba(255,255,255,0.8)' : '#374151', marginBottom: 8, whiteSpace: 'pre-wrap' }}>{selectedProfilePost.body}</div>}
@@ -2754,7 +2792,9 @@ export function CompleteApp() {
                                         display_name: prev?.display_name || displayName || undefined,
                                         profile_image_url: absoluteUrl
                                       }))
-                                      refetchUserProfile()
+                                      // refetchUserProfile()은 DB write와 race condition이 생길 수 있어 제거
+                                      // 대신 1.5초 후 refetch로 DB 반영 확인
+                                      setTimeout(() => refetchUserProfile(), 1500)
                                       alert('프로필 사진이 저장되었어요!')
                                     } else {
                                       alert('프로필 업데이트에 실패했어요.')

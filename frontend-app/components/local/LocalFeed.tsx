@@ -164,8 +164,12 @@ export function LocalFeed({
               <span style={{ fontSize: 11, color: '#E8740C', fontWeight: 600 }}>{typeLabel(post.type)}</span>
               <h3 style={{ fontSize: 16, fontWeight: 700, marginTop: 4, marginBottom: 6, color: textColor }}>{post.title}</h3>
               <p style={{ fontSize: 13, color: isDarkMode ? 'rgba(255,255,255,0.8)' : '#374151', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{post.body}</p>
-              {post.image_url && (
-                <img src={post.image_url} alt="" style={{ maxWidth: '100%', borderRadius: 8, marginTop: 8, maxHeight: 200, objectFit: 'cover' }} />
+              {(post.image_url ? (post.image_url as string).split(',').map((url) => url.trim()).filter(Boolean) : []).length > 0 && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 8 }}>
+                  {(post.image_url as string).split(',').map((url) => url.trim()).filter(Boolean).map((src, i) => (
+                    <img key={i} src={src} alt="" style={{ maxWidth: '100%', borderRadius: 8, maxHeight: 200, objectFit: 'cover', flex: '1 1 min(200px, 100%)' }} />
+                  ))}
+                </div>
               )}
               {post.rating != null && post.rating > 0 && (
                 <p style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280', marginTop: 6 }}>평점 {post.rating} / 5</p>

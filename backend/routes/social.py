@@ -338,6 +338,8 @@ async def update_social_profile(
     """
     if db is None:
         return {"success": False, "message": "DB not connected"}
+    # 유저 row가 없으면 먼저 생성 (profile_image_url upsert 실패 방지)
+    await db.ensure_user_exists(req.user_id)
     ok = await db.update_user_profile_basic(
         user_id=req.user_id,
         display_name=req.display_name,
