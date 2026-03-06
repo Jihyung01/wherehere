@@ -1,11 +1,12 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """
-AI 湲곕뒫 API ?쇱슦??
-- 媛쒖씤???꾨줈??
-- 留욎땄??誘몄뀡
-- ?꾩튂 湲곕컲 媛?대뱶
-- ?⑦꽩 遺꾩꽍
+AI 기능 API 라우터
+- 개인화 추천
+- 장소 추천
+- 패턴 기반 분석
+- 탐험 분석
 """
+
 
 from fastapi import APIRouter, HTTPException, Depends
 from typing import Optional, List, Dict, Any, Tuple
@@ -156,7 +157,7 @@ def _should_run_llm(profile: Dict[str, Any], visits: List[Dict[str, Any]], min_n
 
 
 # ============================================================
-# 媛쒖씤???꾨줈??
+# 개인화 추천
 # ============================================================
 
 @router.post("/personality/analyze")
@@ -165,11 +166,11 @@ async def analyze_personality(
     db = Depends(get_db)
 ):
     """
-    ?ъ슜???깃꺽 遺꾩꽍 (Big Five)
+    사용자 성격 분석 (Big Five)
     """
     
     try:
-        # Mock 紐⑤뱶: ?섑뵆 ?곗씠??諛섑솚
+        # Mock 모드: 샘플 데이터 반환
         if db is None:
             return {
                 "success": True,
@@ -352,7 +353,7 @@ async def on_arrival(
     db = Depends(get_db)
 ):
     """
-    ?μ냼 ?꾩갑 ??AI 媛?대뱶 ?쒓났
+        장소 도착 시 AI 인사이트 제공
     """
     
     try:
@@ -377,7 +378,7 @@ async def check_progress(
     db = Depends(get_db)
 ):
     """
-    吏꾪뻾 以묒씤 ?섏뒪??泥댄겕 諛??ㅼ쓬 ?쒖븞
+    진행 상황 체크 및 다음 제안
     """
     
     try:
@@ -389,7 +390,7 @@ async def check_progress(
         )
         
         if not suggestion:
-            return {"message": "?꾩쭅 30遺꾩씠 吏?섏? ?딆븯?댁슂"}
+            return {"message": "최소 30일이 지난 후 다시 시도해주세요"}
         
         return suggestion
     
@@ -398,34 +399,34 @@ async def check_progress(
 
 
 # ============================================================
-# ?⑦꽩 遺꾩꽍
+# 탐험 분석
 # ============================================================
 
 @router.post("/pattern/analyze")
 async def analyze_pattern(request: PatternAnalysisRequest):
     """
-    ?ъ슜???⑦꽩 遺꾩꽍 (吏???쒓컖?붿슜) - ?ㅼ젣 ?곗씠??湲곕컲
+        사용자 탐험 분석 (최근 기간 활용) - 실제 데이터 기반
     """
     try:
         from db.rest_helpers import RestDatabaseHelpers
         helpers = RestDatabaseHelpers()
         
-        # ?ъ슜??諛⑸Ц 湲곕줉 媛?몄삤湲?(Supabase??由ъ뒪??吏곸젒 諛섑솚)
+                # 사용자 방문 기록 가져오기 (Supabase 등 DB에서 직접 반환)
         raw_visits = await helpers.get_user_visits(request.user_id)
         visits = raw_visits if isinstance(raw_visits, list) else (raw_visits.get("visits") or [])
         
-        # 諛⑸Ц蹂?移댄뀒怨좊━: places ?뚯씠釉붿뿉??議고쉶 (?놁쑝硫?湲고?)
+                # 방문별 카테고리: places 테이블에서 조회 (없으면 기타)
         for v in visits:
             if v.get("category"):
                 continue
             place = await helpers.get_place_by_id(v.get("place_id") or "")
-            v["category"] = (place.get("primary_category") or "湲고?") if place else "湲고?"
+            v["category"] = (place.get("primary_category") or "기타") if place else "기타"
         
-        # ?곗씠?곌? 遺議깊븳 寃쎌슦
+                # 데이터량 부족한 경우
         if len(visits) < 3:
             return {
                 "insufficient_data": True,
-                "message": f"?꾩쭅 異⑸텇???곗씠?곌? ?놁뼱?? {len(visits)}/3媛?諛⑸Ц ?꾨즺!",
+                "message": f"충분한 분석 데이터가 없어요. {len(visits)}/3회 이상 방문해주세요!",
                 "stats": {
                     "total_visits": len(visits),
                     "unique_places": len(visits),
@@ -437,42 +438,42 @@ async def analyze_pattern(request: PatternAnalysisRequest):
                     "max_budget": 0,
                     "total_distance_km": 0,
                     "exploration_radius_km": 0,
-                    "main_region": "?쒖슱"
+                    "main_region": "서울"
                 },
                 "analysis": {
-                    "dominant_style": "珥덈낫 ?먰뿕媛",
+                    "dominant_style": "탐험가",
                     "favorite_categories": [],
-                    "preferred_time": "?ㅽ썑",
+                    "preferred_time": "오후",
                     "avg_duration_minutes": 0,
                     "exploration_radius_km": 0
                 },
-                "ai_analysis": "?댁젣 留??먰뿕???쒖옉?덉뼱?? ??留롮? ?μ냼瑜?諛⑸Ц?섎㈃ ?뱀떊留뚯쓽 ?ㅽ??쇱쓣 遺꾩꽍?대뱶由닿쾶??"
+                "ai_analysis": "조금 더 탐험을 시작해보세요. 새 장소를 방문하면 탐험의 인사이트를 분석해드릴게요."
             }
         
-        # ?듦퀎 怨꾩궛
+        # 집계 계산
         total_visits = len(visits)
         unique_places = len(set(v['place_id'] for v in visits))
         total_xp = sum(v.get('xp_earned', 0) for v in visits)
         
-        # 移댄뀒怨좊━ 遺꾪룷
+        # 카테고리 분포
         category_dist = {}
         for v in visits:
-            cat = v.get('category', '湲고?')
+            cat = v.get('category', '기타')
             category_dist[cat] = category_dist.get(cat, 0) + 1
         
         favorite_categories = sorted(category_dist.items(), key=lambda x: x[1], reverse=True)[:3]
         favorite_categories = [cat for cat, _ in favorite_categories]
         
-        # ?됯퇏 泥대쪟 ?쒓컙
+        # 평균 체류 시간
         durations = [v.get('duration_minutes', 0) for v in visits if v.get('duration_minutes')]
         avg_duration = sum(durations) / len(durations) if durations else 60
         
-        # ?됯퇏 鍮꾩슜
+        # 평균 소비
         amounts = [v.get('spent_amount', 0) for v in visits if v.get('spent_amount')]
         avg_budget = sum(amounts) / len(amounts) if amounts else 0
         max_budget = max(amounts) if amounts else 0
         
-        # ?좏샇 ?쒓컙? 遺꾩꽍
+                # 시간대별 분석
         from datetime import datetime
         time_dist = {'morning': 0, 'afternoon': 0, 'evening': 0, 'night': 0}
         for v in visits:
@@ -488,30 +489,30 @@ async def analyze_pattern(request: PatternAnalysisRequest):
                     time_dist['night'] += 1
         
         preferred_time = max(time_dist, key=time_dist.get)
-        time_map = {'morning': 'morning', 'afternoon': 'afternoon', 'evening': 'evening', 'night': 'night'}
-        preferred_time_kr = time_map.get(preferred_time, 'afternoon')
+        time_map = {'morning': '오전', 'afternoon': '오후', 'evening': '저녁', 'night': '밤'}
+        preferred_time_kr = time_map.get(preferred_time, '오후')
         
-        # ?먰뿕 ?ㅽ???寃곗젙 (移댄뀒怨좊━媛 紐⑤몢 '湲고?'硫?援ъ껜???ㅽ???????쇰컲 臾멸뎄)
-        effective_cats = [c for c in favorite_categories if c and c != "湲고?"]
+                # 탐험 스타일 판정 (카테고리가 모두 기타면 기본 스타일 문장)
+        effective_cats = [c for c in favorite_categories if c and c != "기타"]
         if avg_duration > 90:
-            style = "?ъ쑀濡쒖슫 媛먯긽媛"
+            style = "천천히 즐기는 여유가"
         elif len(effective_cats) > 0 and category_dist.get(effective_cats[0], 0) > total_visits * 0.5:
-            style = "?꾨Ц ?먰뿕媛"
+            style = "집중 탐험가"
         elif total_visits > 10:
-            style = "?댁젙?곸씤 紐⑦뿕媛"
+            style = "조용한 동네 탐험가"
         elif len(effective_cats) > 0:
-            style = "?멸린??留롮? ?먰뿕媛"
+            style = "다양한 장소 탐험가"
         else:
-            style = "珥덈낫 ?먰뿕媛"
+            style = "초보 탐험가"
         
-        # AI 遺꾩꽍 臾멸뎄
-        ai_analysis = f"?뱀떊? {style}?낅땲?? "
+        # AI 분석 문장
+        ai_analysis = f"탐험은 {style}이에요. "
         if favorite_categories:
-            ai_analysis += f"{', '.join(favorite_categories)} ?μ냼瑜??뱁엳 醫뗭븘?섏떆?ㅼ슂. "
-        ai_analysis += f"{preferred_time_kr} ?쒓컙???二쇰줈 ?쒕룞?섏떆硫? "
-        ai_analysis += f"?됯퇏 {int(avg_duration)}遺??뺣룄 癒몃Т瑜대뒗 ?몄씠?먯슂. "
+            ai_analysis += f"{', '.join(favorite_categories)} 장소를 자주 찾아오셨네요. "
+        ai_analysis += f"{preferred_time_kr} 시간대에 몰려있어요. "
+        ai_analysis += f"평균 {int(avg_duration)}분 정도 머무는 편이에요. "
         if total_xp > 500:
-            ai_analysis += "踰뚯뜥 留롮? 寃쏀뿕???볦쑝?⑤꽕?? ?럦"
+            ai_analysis += "트렌드 장소의 감각을 놓치지 마세요."
         
         return {
             "insufficient_data": False,
@@ -526,7 +527,7 @@ async def analyze_pattern(request: PatternAnalysisRequest):
                 "max_budget": int(max_budget),
                 "total_distance_km": 0,
                 "exploration_radius_km": 5,
-                "main_region": "?쒖슱"
+                "main_region": "서울"
             },
             "analysis": {
                 "dominant_style": style,
@@ -542,28 +543,28 @@ async def analyze_pattern(request: PatternAnalysisRequest):
         import traceback
         print(f"Error in pattern analysis: {str(e)}")
         print(traceback.format_exc())
-        # ?먮윭 ?쒖뿉??湲곕낯 ?묐떟 諛섑솚
+                # 에러 시 기본 응답 반환
         return {
             "insufficient_data": True,
-            "message": "?곗씠??遺꾩꽍 以?臾몄젣媛 諛쒖깮?덉뼱??",
+            "message": "데이터 분석 중 문제가 발생했어요.",
             "stats": {
                 "total_visits": 0,
                 "unique_places": 0,
                 "total_xp": 0
             },
             "analysis": {
-                "dominant_style": "?먰뿕媛",
+                "dominant_style": "탐험가",
                 "favorite_categories": [],
-                "preferred_time": "?ㅽ썑",
+                "preferred_time": "오후",
                 "avg_duration_minutes": 60,
                 "exploration_radius_km": 5
             },
-            "ai_analysis": "??留롮? ?μ냼瑜?諛⑸Ц?섎㈃ ?뱀떊留뚯쓽 ?ㅽ??쇱쓣 遺꾩꽍?대뱶由닿쾶??"
+            "ai_analysis": "새 장소를 방문하면 탐험의 인사이트를 분석해드릴게요."
         }
 
 
 # ============================================================
-# 媛쒖씤??硫붿떆吏
+# 개인화 메시지
 # ============================================================
 
 @router.post("/message/generate")
@@ -574,8 +575,8 @@ async def generate_personalized_message(
     db = Depends(get_db)
 ):
     """
-    媛쒖씤?붾맂 AI 硫붿떆吏 ?앹꽦
-    
+    개인화된 AI 메시지 생성
+
     context_type: "arrival", "mission_complete", "recommendation"
     """
     
