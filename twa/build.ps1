@@ -8,10 +8,18 @@ $manifestUrl = "https://wherehere-seven.vercel.app/manifest.webmanifest"
 
 Push-Location $twaDir
 
+# Bubblewrap: use npx if not in PATH (no global install needed)
+$bubblewrap = Get-Command bubblewrap -ErrorAction SilentlyContinue
+if (-not $bubblewrap) { $bubblewrap = Get-Command npx -ErrorAction SilentlyContinue; $bubblewrapArgs = @("--yes", "@bubblewrap/cli") } else { $bubblewrapArgs = @() }
+
 # 1. Init Android project if not present
 if (-not (Test-Path "android")) {
     Write-Host "Running bubblewrap init..."
-    & bubblewrap init --manifest $manifestUrl
+    if (-not $bubblewrap) {
+        Write-Host "Node/npx not found. Install Node.js from https://nodejs.org and run this script again." -ForegroundColor Red
+        Pop-Location; exit 1
+    }
+    & $bubblewrap.Source @bubblewrapArgs init --manifest $manifestUrl
     if ($LASTEXITCODE -ne 0) { Pop-Location; exit 1 }
 }
 
@@ -30,7 +38,11 @@ if (-not (Test-Path "keystore.jks")) {
 
 # 3. Build
 Write-Host "Running bubblewrap build..."
-& bubblewrap build
+if (-not $bubblewrap) {
+    Write-Host "Node/npx not found. Install Node.js and run again." -ForegroundColor Red
+    Pop-Location; exit 1
+}
+& $bubblewrap.Source @bubblewrapArgs build
 $exitCode = $LASTEXITCODE
 Pop-Location
 

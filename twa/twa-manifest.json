@@ -20,8 +20,8 @@
     "path": "keystore.jks",
     "alias": "wherehere"
   },
-  "appVersionName": "1",
-  "appVersionCode": 1,
+  "appVersionName": "2",
+  "appVersionCode": 2,
   "shortcuts": [
     {
       "name": "오늘의 한 곳",
@@ -63,5 +63,5 @@
   "fileHandlers": [],
   "launchHandlerClientMode": "",
   "displayOverride": [],
-  "appVersion": "1"
+  "appVersion": "2"
 }
