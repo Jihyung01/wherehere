@@ -38,6 +38,8 @@ type LocalHubProps = {
   onToast: (msg: string) => void
   BottomNav: React.ReactNode
   userAvatarUrl?: string
+  /** Supabase 카카오 로그인 시 provider_token. 있으면 친구 목록/메시지 API에 사용 */
+  kakaoAccessToken?: string | null
 }
 
 export function LocalHub({
@@ -62,6 +64,7 @@ export function LocalHub({
   onToast,
   BottomNav,
   userAvatarUrl,
+  kakaoAccessToken,
 }: LocalHubProps) {
   const [topTab, setTopTab] = useState<'neighborhood' | 'friend'>('neighborhood')
   const [subTab, setSubTab] = useState<'home' | 'compose' | 'feed'>('compose')
@@ -106,8 +109,8 @@ export function LocalHub({
         // 공유 취소 등이면 그냥 링크 복사로
       }
     }
-    // 2) 카카오 로그인 토큰 있으면 친구 목록 모달
-    const token = kakao?.Auth?.getAccessToken?.()
+    // 2) 카카오 로그인 토큰 있으면 친구 목록 모달 (Supabase provider_token 우선, 없으면 Kakao SDK)
+    const token = kakaoAccessToken ?? kakao?.Auth?.getAccessToken?.()
     if (token) {
       setKakaoFriendsLoading(true)
       setKakaoFriendsList([])
@@ -132,9 +135,10 @@ export function LocalHub({
         setKakaoFriendsLoading(false)
       }
     } else {
+      onToast('카카오로 로그인하면 친구 목록에서 바로 초대할 수 있어요. 지금은 초대 링크를 복사해 드릴게요.')
       copyInviteAndToast()
     }
-  }, [apiBase, copyInviteAndToast, myFriendCode, onToast])
+  }, [apiBase, copyInviteAndToast, kakaoAccessToken, myFriendCode, onToast])
 
   const sendKakaoInviteToFriend = useCallback(async (friendUuid?: string) => {
     if (!friendUuid) {
@@ -142,7 +146,7 @@ export function LocalHub({
       return
     }
     const kakao = typeof window !== 'undefined' ? (window as any).Kakao : undefined
-    const token = kakao?.Auth?.getAccessToken?.()
+    const token = kakaoAccessToken ?? kakao?.Auth?.getAccessToken?.()
     if (!token) {
       onToast('카카오 로그인 토큰을 찾지 못했어요. 다시 로그인 후 시도해 주세요.')
       copyInviteAndToast()
@@ -181,7 +185,7 @@ export function LocalHub({
     } finally {
       setKakaoSendingUuid(null)
     }
-  }, [apiBase, copyInviteAndToast, myFriendCode, onToast])
+  }, [apiBase, copyInviteAndToast, kakaoAccessToken, myFriendCode, onToast])
 
   const fetchLocalPosts = useCallback(async () => {
     const params = new URLSearchParams({ scope: 'neighborhood', limit: '100' })

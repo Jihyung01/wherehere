@@ -179,6 +179,8 @@ export function CompleteApp() {
   const [confirmModal, setConfirmModal] = useState<{ message: string; subMessage?: string; confirmText?: string; onConfirm: () => void } | null>(null)
   // 프리미엄 모달
   const [showPremiumModal, setShowPremiumModal] = useState(false)
+  // 카카오 친구/메시지 API용 토큰 (Supabase 카카오 로그인 시 provider_token)
+  const [kakaoAccessToken, setKakaoAccessToken] = useState<string | null>(null)
 
   // displayName 계산: userProfile state 이후에 위치
   const displayName = userProfile?.display_name ?? user?.user_metadata?.name ?? user?.user_metadata?.full_name ?? user?.user_metadata?.user_name ?? user?.user_metadata?.kakao_account?.profile?.nickname ?? user?.email ?? (user ? '로그인한 사용자' : null)
@@ -237,6 +239,23 @@ export function CompleteApp() {
       }
     } catch (_) {}
   }, [])
+
+  // 카카오 로그인 시 provider_token 저장 (친구 목록/메시지 API용)
+  useEffect(() => {
+    if (!user) {
+      setKakaoAccessToken(null)
+      return
+    }
+    const provider = (user as any).app_metadata?.provider
+    if (provider !== 'kakao') {
+      setKakaoAccessToken(null)
+      return
+    }
+    createClient().auth.getSession().then(({ data: { session } }) => {
+      const token = (session as any)?.provider_token ?? null
+      setKakaoAccessToken(token)
+    })
+  }, [user?.id, user?.app_metadata?.provider])
 
   const finishOnboarding = () => {
     try {
@@ -2376,6 +2395,7 @@ export function CompleteApp() {
         onToast={(msg) => toast(msg)}
         BottomNav={<BottomNav />}
         userAvatarUrl={userProfile?.profile_image_url}
+        kakaoAccessToken={kakaoAccessToken}
       />
       {instagramShareModalEl}
       </div>
