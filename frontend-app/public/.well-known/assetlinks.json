@@ -3,6 +3,6 @@
   "target": {
     "namespace": "android_app",
     "package_name": "com.wherehere.app",
-    "sha256_cert_fingerprints": ["__FINGERPRINT_PLACEHOLDER__"]
+    "sha256_cert_fingerprints": ["EA:A0:82:6F:B9:4A:86:5B:D1:07:85:2A:6A:35:FD:83:DD:D7:3E:DD:2B:55:8F:14:A2:A4:A2:DD:3E:27:88:31"]
   }
 }]

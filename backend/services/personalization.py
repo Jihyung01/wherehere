@@ -528,8 +528,8 @@ class PersonalizationService:
         durations = [v.get("duration_minutes", 60) for v in visits]
         avg_duration = int(sum(durations) / len(durations)) if durations else 60
         
-        # 예산
-        costs = [v.get("estimated_cost", 10000) for v in visits]
+        # 예산 (estimated_cost 또는 spent_amount)
+        costs = [v.get("estimated_cost") or v.get("spent_amount") or 10000 for v in visits]
         avg_budget = int(sum(costs) / len(costs)) if costs else 10000
         max_budget = max(costs) if costs else 10000
         
@@ -556,22 +556,23 @@ class PersonalizationService:
     
     def _prepare_map_data(self, locations: List[Dict], visits: List[Dict]) -> Dict:
         """
-        지도 시각화용 데이터 준비
+        지도 시각화용 데이터 준비. visit에 latitude/longitude 없으면 마커에서 제외.
         """
-        
-        return {
-            "polyline": [
-                {"lat": loc["latitude"], "lng": loc["longitude"]}
-                for loc in locations[:100]  # 최근 100개
-            ],
-            "markers": [
-                {
-                    "lat": visit["latitude"],
-                    "lng": visit["longitude"],
-                    "place_name": visit["place_name"],
-                    "category": visit["category"],
-                    "completed_at": visit["completed_at"]
-                }
-                for visit in visits[:50]  # 최근 50개
-            ]
-        }
+        polyline = [
+            {"lat": loc["latitude"], "lng": loc["longitude"]}
+            for loc in locations[:100]
+            if loc.get("latitude") is not None and loc.get("longitude") is not None
+        ]
+        markers = []
+        for visit in visits[:50]:
+            lat, lng = visit.get("latitude"), visit.get("longitude")
+            if lat is None or lng is None:
+                continue
+            markers.append({
+                "lat": lat,
+                "lng": lng,
+                "place_name": visit.get("place_name", ""),
+                "category": visit.get("category", "기타"),
+                "completed_at": visit.get("completed_at") or visit.get("visited_at", ""),
+            })
+        return {"polyline": polyline, "markers": markers}

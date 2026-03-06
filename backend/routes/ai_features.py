@@ -42,6 +42,12 @@ class PatternAnalysisRequest(BaseModel):
     days: int = 90
 
 
+class RecommendationIntentRequest(BaseModel):
+    query: str
+    latitude: Optional[float] = 37.5665
+    longitude: Optional[float] = 126.978
+
+
 def _safe_parse_dt(value: Optional[str]) -> Optional[datetime]:
     if not value:
         return None
@@ -543,7 +549,7 @@ async def analyze_pattern(request: PatternAnalysisRequest):
         import traceback
         print(f"Error in pattern analysis: {str(e)}")
         print(traceback.format_exc())
-                # 에러 시 기본 응답 반환
+        # 에러 시 기본 응답 반환
         return {
             "insufficient_data": True,
             "message": "데이터 분석 중 문제가 발생했어요.",
@@ -560,6 +566,141 @@ async def analyze_pattern(request: PatternAnalysisRequest):
                 "exploration_radius_km": 5
             },
             "ai_analysis": "새 장소를 방문하면 탐험의 인사이트를 분석해드릴게요."
+        }
+
+
+# ============================================================
+# 패턴 분석 고도화 (Claude 스타일 + 추천 3곳)
+# ============================================================
+
+@router.post("/pattern/analyze-rich")
+async def analyze_pattern_rich(request: PatternAnalysisRequest):
+    """
+    방문 5회 이상일 때 Claude로 탐험 스타일명·특징·추천 3곳 생성.
+    """
+    try:
+        from db.rest_helpers import RestDatabaseHelpers
+        from core.config import settings
+        helpers = RestDatabaseHelpers()
+        raw_visits = await helpers.get_user_visits(request.user_id)
+        visits = raw_visits if isinstance(raw_visits, list) else (raw_visits.get("visits") or [])
+        for v in visits:
+            place = await helpers.get_place_by_id(v.get("place_id") or "")
+            if place:
+                v["category"] = v.get("category") or place.get("primary_category") or "기타"
+                v["latitude"] = place.get("latitude") or v.get("latitude")
+                v["longitude"] = place.get("longitude") or v.get("longitude")
+                v["place_name"] = place.get("name") or v.get("place_name", "")
+            v.setdefault("category", v.get("category") or "기타")
+            v.setdefault("completed_at", v.get("visited_at"))
+        if len(visits) < 5:
+            return {
+                "insufficient_data": True,
+                "message": "5곳 이상 방문하면 AI가 스타일과 추천을 만들어 드려요.",
+            }
+        if not getattr(settings, "ANTHROPIC_API_KEY", None):
+            return {"insufficient_data": True, "message": "AI 분석 서비스가 준비 중이에요."}
+        personalization = PersonalizationService()
+        result = await personalization.analyze_user_pattern(
+            request.user_id, days=request.days, db=helpers
+        )
+        if result.get("insufficient_data"):
+            return result
+        analysis = result.get("ai_analysis") or {}
+        if isinstance(analysis, str):
+            analysis = {}
+        return {
+            "insufficient_data": False,
+            "style_name": analysis.get("style_name", "탐험가"),
+            "style_emoji": analysis.get("style_emoji", "🗺️"),
+            "style_description": analysis.get("style_description", ""),
+            "characteristics": analysis.get("characteristics", []),
+            "recommendations": analysis.get("recommendations", []),
+            "journey_map_data": result.get("journey_map_data"),
+        }
+    except Exception as e:
+        import traceback
+        print(f"Error in pattern/analyze-rich: {str(e)}")
+        print(traceback.format_exc())
+        return {"insufficient_data": True, "message": "AI 분석 중 문제가 발생했어요.", "error": str(e)}
+
+
+# ============================================================
+# 스트릭 알림
+# ============================================================
+
+@router.get("/notifications/streak-reminder")
+async def get_streak_reminder(user_id: str):
+    """
+    스트릭 유지 알림 메시지. 오늘 퀘스트를 안 하면 N일 스트릭이 끊긴다는 문구 반환.
+    """
+    try:
+        from db.rest_helpers import RestDatabaseHelpers
+        helpers = RestDatabaseHelpers()
+        stats = await helpers.get_user_stats_full(user_id)
+        current = int(stats.get("current_streak") or 0)
+        if current <= 0:
+            return {"message": None, "current_streak": 0}
+        return {
+            "message": f"오늘 퀘스트 안 하면 🔥 {current}일 스트릭이 끊겨요!",
+            "current_streak": current,
+        }
+    except Exception as e:
+        return {"message": None, "current_streak": 0}
+
+
+# ============================================================
+# 자연어 추천 의도 파싱
+# ============================================================
+
+@router.post("/recommendation/intent")
+async def parse_recommendation_intent(request: RecommendationIntentRequest):
+    """
+    자연어 질의(예: "조용한 카페 추천해줘")를 role_type, mood 등 추천 API 파라미터로 변환.
+    """
+    try:
+        from core.config import settings
+        from anthropic import Anthropic
+        if not getattr(settings, "ANTHROPIC_API_KEY", None):
+            return {
+                "role_type": "explorer",
+                "mood": "curious",
+                "radius_meters": 2000,
+                "parsed": False,
+            }
+        client = Anthropic(api_key=settings.ANTHROPIC_API_KEY)
+        prompt = f"""다음 사용자 말을 WhereHere 추천 API 파라미터로 변환해줘.
+사용자 말: "{request.query}"
+
+역할(role_type): explorer, healer, archivist, relation, achiever 중 하나만.
+기분(mood): curious, tired, energetic, social, calm, romantic 중 하나만.
+
+JSON만 출력 (다른 설명 없이):
+{{"role_type": "...", "mood": "...", "radius_meters": 2000}}
+"""
+        response = client.messages.create(
+            model="claude-3-5-haiku-20241022",
+            max_tokens=128,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        text = response.content[0].text.strip()
+        if "{" in text:
+            text = text[text.index("{"): text.rindex("}") + 1]
+        import json
+        data = json.loads(text)
+        return {
+            "role_type": data.get("role_type", "explorer"),
+            "mood": data.get("mood", "curious"),
+            "radius_meters": int(data.get("radius_meters", 2000)),
+            "parsed": True,
+        }
+    except Exception as e:
+        return {
+            "role_type": "explorer",
+            "mood": "curious",
+            "radius_meters": 2000,
+            "parsed": False,
+            "error": str(e),
         }
 
 

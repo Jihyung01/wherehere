@@ -62,7 +62,11 @@ class RestDatabaseHelpers:
             if response.status_code == 200:
                 return response.json()
             return []
-    
+
+    async def get_location_history(self, user_id: str, days: int = 90) -> List[Dict[str, Any]]:
+        """위치 이력 조회 (미구현 시 빈 목록 반환)"""
+        return []
+
     async def get_user_profile(self, user_id: str) -> Dict[str, Any]:
         """사용자 프로필 조회"""
         async with httpx.AsyncClient(timeout=30.0) as client:
