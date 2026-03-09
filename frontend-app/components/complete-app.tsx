@@ -318,7 +318,8 @@ export function CompleteApp() {
 
     // 스크립트 로드 (올바른 Kakao SDK CDN URL)
     const script = document.createElement('script')
-    script.src = 'https://t1.kakaocdn.net/kakaojs/latest/kakao.js'
+    script.src = 'https://t1.kakaocdn.net/kakao_js_sdk/2.7.4/kakao.min.js'
+    script.crossOrigin = 'anonymous'
     script.async = true
     script.onload = () => {
       if ((window as any).Kakao && !(window as any).Kakao.isInitialized?.()) {
@@ -2810,7 +2811,15 @@ export function CompleteApp() {
               {step2Done ? (
                 <div style={{ fontSize: 13, color: '#16a34a' }}>✓ 완료 (친구 목록 조회로 동의 확인됨)</div>
               ) : (
-                <div style={{ fontSize: 13, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280' }}>③에서 친구 목록 불러오기를 하면 동의된 것으로 간주됩니다.</div>
+                <div>
+                  <div style={{ fontSize: 13, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280', marginBottom: 10 }}>동의가 필요하면 아래 버튼을 누르면 카카오 동의창이 열립니다. 동의 후 돌아오면 ③ 친구 목록 불러오기를 누르세요.</div>
+                  <form method="GET" action="/api/auth/kakao-consent" style={{ display: 'inline-block' }}>
+                    <input type="hidden" name="return" value="kakao-api-test" />
+                    <button type="submit" style={{ padding: '10px 16px', borderRadius: 10, border: 'none', background: '#FEE500', color: '#3C1E1E', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>
+                      카카오 동의창 띄우기 (친구 목록 권한 허용)
+                    </button>
+                  </form>
+                </div>
               )}
             </div>
 
@@ -2875,20 +2884,14 @@ export function CompleteApp() {
                     <div style={{ marginTop: 12, padding: 12, background: isDarkMode ? 'rgba(239,68,68,0.15)' : '#FEE2E2', borderRadius: 10, border: '1px solid #DC2626' }}>
                       <div style={{ fontSize: 12, color: '#B91C1C', marginBottom: 6 }}>403: 친구 목록 권한이 없습니다.</div>
                       <div style={{ fontSize: 11, color: '#B91C1C', lineHeight: 1.6, marginBottom: 10 }}>
-                        아래 <b>「친구 목록 권한 허용」</b>을 누르면 카카오 동의창이 뜹니다. 동의 후 돌아오면 <b>친구 목록 불러오기</b>를 다시 누르세요.
+                        아래 버튼을 누르면 카카오 동의창이 열립니다. 동의 후 돌아오면 <b>친구 목록 불러오기</b>를 다시 누르세요.
                       </div>
-                      <a
-                        href={`${typeof window !== 'undefined' ? window.location.origin : ''}/api/auth/kakao-consent?return=kakao-api-test`}
-                        onClick={(e) => {
-                          e.preventDefault()
-                          try { sessionStorage.setItem('kakao_consent_return', 'kakao-api-test') } catch (_) {}
-                          const url = `${window.location.origin}/api/auth/kakao-consent?return=kakao-api-test`
-                          window.location.href = url
-                        }}
-                        style={{ display: 'inline-block', padding: '10px 16px', borderRadius: 10, border: 'none', background: '#FEE500', color: '#3C1E1E', fontWeight: 600, fontSize: 13, cursor: 'pointer', textDecoration: 'none' }}
-                      >
-                        친구 목록 권한 허용 (동의창 띄우기)
-                      </a>
+                      <form method="GET" action="/api/auth/kakao-consent" style={{ display: 'inline-block' }}>
+                        <input type="hidden" name="return" value="kakao-api-test" />
+                        <button type="submit" style={{ padding: '10px 16px', borderRadius: 10, border: 'none', background: '#FEE500', color: '#3C1E1E', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}>
+                          친구 목록 권한 허용 (동의창 띄우기)
+                        </button>
+                      </form>
                     </div>
                   )}
                 </>
