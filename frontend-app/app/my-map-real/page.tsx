@@ -322,13 +322,13 @@ export default function MyMapReal() {
         initKakaoMapWithVisits(filteredVisits, hexagonStats);
         const m = mapRef.current;
         if (m && typeof m.relayout === 'function') {
-          setTimeout(() => m.relayout(), 150);
+          setTimeout(() => m.relayout(), 400);
         }
       } catch (e) {
         console.error('Kakao map init error:', e);
         setMapLoadError('지도를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.');
       }
-    }, 100);
+    }, 400);
     return () => clearTimeout(t);
   }, [kakaoLoaded, filteredVisits, tab, isDarkMode, hexagonStats]);
 
@@ -347,7 +347,7 @@ export default function MyMapReal() {
   const initKakaoMapWithVisits = (visitsToShow: Visit[], hexStats: HexagonStats) => {
     if (!window.kakao?.maps || !mapContainerRef.current) return;
     const el = mapContainerRef.current;
-    if (!el || el.offsetWidth === 0 || el.offsetHeight === 0) return;
+    if (!el) return;
     while (el.firstChild) el.removeChild(el.firstChild);
 
     const hasVisits = visitsToShow.length > 0;

@@ -125,6 +125,7 @@ export function CompleteApp() {
   const [isDarkMode, setIsDarkMode] = useState(false)
   type ThemeMode = 'light' | 'dark' | 'system'
   const [themeMode, setThemeMode] = useState<ThemeMode>('system')
+  const [accentColor, setAccentColor] = useState(accentColor)
   const [missionStates, setMissionStates] = useState<Record<string, { completed: boolean; value?: string | number; photo?: string }>>({})
   const [currentMissions, setCurrentMissions] = useState<Mission[]>([])
   const [expandedMissionId, setExpandedMissionId] = useState<string | null>(null)
@@ -190,8 +191,18 @@ export function CompleteApp() {
   const [kakaoTestSentTo, setKakaoTestSentTo] = useState<string | null>(null)
   const [kakaoTestSendingUuid, setKakaoTestSendingUuid] = useState<string | null>(null)
 
+  // accentColor rgba 헬퍼
+  const accentRgba = (alpha: number): string => {
+    try {
+      const r = parseInt(accentColor.slice(1, 3), 16)
+      const g = parseInt(accentColor.slice(3, 5), 16)
+      const b = parseInt(accentColor.slice(5, 7), 16)
+      return `rgba(${r},${g},${b},${alpha})`
+    } catch { return `rgba(232,116,12,${alpha})` }
+  }
+
   // displayName 계산: userProfile state 이후에 위치
-  const displayName = userProfile?.display_name ?? user?.user_metadata?.name ?? user?.user_metadata?.full_name ?? user?.user_metadata?.user_name ?? user?.user_metadata?.kakao_account?.profile?.nickname ?? user?.email ?? (user ? '로그인한 사용자' : null)
+  const displayName = userProfile?.display_name ?? user?.user_metadata?.display_name ?? user?.user_metadata?.name ?? user?.user_metadata?.full_name ?? user?.user_metadata?.user_name ?? user?.user_metadata?.kakao_account?.profile?.nickname ?? user?.email ?? (user ? '로그인한 사용자' : null)
 
   useEffect(() => {
     setNicknameInput(displayName || '')
@@ -404,6 +415,8 @@ export function CompleteApp() {
       const savedDark = localStorage.getItem('isDarkMode')
       if (savedDark !== null) setThemeMode(savedDark === 'true' ? 'dark' : 'light')
     }
+    const savedAccent = localStorage.getItem('wherehere_accentColor')
+    if (savedAccent) setAccentColor(savedAccent)
   }, [])
 
   useEffect(() => {
@@ -421,7 +434,8 @@ export function CompleteApp() {
   useEffect(() => {
     localStorage.setItem('wherehere_themeMode', themeMode)
     if (themeMode !== 'system') localStorage.setItem('isDarkMode', isDarkMode.toString())
-  }, [themeMode, isDarkMode])
+    try { localStorage.setItem('wherehere_accentColor', accentColor) } catch (_) {}
+  }, [themeMode, isDarkMode, accentColor])
 
   // 프로필 정보 불러오기 (지속 반영: 포커스·화면 전환 시 재조회로 기본값 복귀 방지)
   const refetchUserProfile = useCallback(async () => {
@@ -542,7 +556,7 @@ export function CompleteApp() {
       const polyline = new window.kakao.maps.Polyline({
         path,
         strokeWeight: 4,
-        strokeColor: '#E8740C',
+        strokeColor: accentColor,
         strokeOpacity: 0.9,
         strokeStyle: 'solid',
       })
@@ -604,7 +618,7 @@ export function CompleteApp() {
       const polyline = new window.kakao.maps.Polyline({
         path,
         strokeWeight: 4,
-        strokeColor: '#E8740C',
+        strokeColor: accentColor,
         strokeOpacity: 0.9,
         strokeStyle: 'solid',
       })
@@ -1142,15 +1156,14 @@ export function CompleteApp() {
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok || data?.success === false) {
+        // 백엔드 실패 시 Supabase auth.updateUser로 user_metadata에 저장 (항상 허용됨)
         const supabase = createClient()
-        const { error } = await (supabase as any)
-          .from('users')
-          .upsert({ id: userId, display_name: name }, { onConflict: 'id' })
-        if (error) throw new Error(data?.message || 'API error')
+        const { error } = await supabase.auth.updateUser({ data: { display_name: name, name } })
+        if (error) throw new Error(error.message)
       }
       await refetchUserProfile()
     } catch (_) {
-      alert('닉네임 저장에 실패했어요. 다시 시도해주세요.')
+      toast.error('이름 변경에 실패했어요. 다시 시도해주세요.')
       try {
         await refetchUserProfile()
       } catch {
@@ -1232,7 +1245,7 @@ export function CompleteApp() {
         }} onMouseEnter={(e) => e.currentTarget.style.opacity = '1'}
            onMouseLeave={(e) => e.currentTarget.style.opacity = '0.7'}>
           <div style={{ fontSize: 20 }}>{n.icon}</div>
-          <div style={{ fontSize: 9, marginTop: 2, color: '#E8740C', fontWeight: 600 }}>{n.label}</div>
+          <div style={{ fontSize: 9, marginTop: 2, color: accentColor, fontWeight: 600 }}>{n.label}</div>
         </div>
       ))}
     </div>
@@ -1320,10 +1333,10 @@ export function CompleteApp() {
             onClick={() => router.push('/login')}
             style={{
               padding: '8px 14px',
-              background: isDarkMode ? 'rgba(255,255,255,0.1)' : 'rgba(232,116,12,0.15)',
+              background: isDarkMode ? 'rgba(255,255,255,0.1)' : accentRgba(0.15),
               border: '1px solid #E8740C',
               borderRadius: 10,
-              color: '#E8740C',
+              color: accentColor,
               fontSize: 13,
               fontWeight: 600,
               cursor: 'pointer',
@@ -1344,7 +1357,7 @@ export function CompleteApp() {
                   <p style={{ padding: 24, textAlign: 'center', color: isDarkMode ? 'rgba(255,255,255,0.5)' : '#9CA3AF', fontSize: 14 }}>알림이 없어요</p>
                 ) : (
                   notifications.slice(0, 30).map((n: { id: string; title: string; body?: string; read?: boolean; created_at?: string }) => (
-                    <div key={n.id} style={{ padding: '12px 16px', borderBottom: `1px solid ${borderColor}`, background: n.read ? 'transparent' : (isDarkMode ? 'rgba(232,116,12,0.08)' : 'rgba(232,116,12,0.06)') }}>
+                    <div key={n.id} style={{ padding: '12px 16px', borderBottom: `1px solid ${borderColor}`, background: n.read ? 'transparent' : (isDarkMode ? accentRgba(0.08) : accentRgba(0.06)) }}>
                       <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 4 }}>{n.title}</div>
                       {n.body && <div style={{ fontSize: 13, color: isDarkMode ? 'rgba(255,255,255,0.7)' : '#6B7280' }}>{n.body}</div>}
                       {n.created_at && <div style={{ fontSize: 11, color: isDarkMode ? 'rgba(255,255,255,0.4)' : '#9CA3AF', marginTop: 6 }}>{new Date(n.created_at).toLocaleDateString('ko-KR')}</div>}
@@ -1363,9 +1376,9 @@ export function CompleteApp() {
             const nextXP = userStats?.xp_to_next_level ?? 1000
             const progress = nextXP > 0 ? Math.min(100, (totalXP / nextXP) * 100) : 0
             return (
-              <div style={{ marginBottom: 20, padding: '12px 16px', background: isDarkMode ? 'rgba(255,255,255,0.06)' : 'rgba(232,116,12,0.08)', borderRadius: 14, border: `1px solid ${isDarkMode ? 'rgba(232,116,12,0.2)' : 'rgba(232,116,12,0.25)'}` }}>
+              <div style={{ marginBottom: 20, padding: '12px 16px', background: isDarkMode ? 'rgba(255,255,255,0.06)' : accentRgba(0.08), borderRadius: 14, border: `1px solid ${isDarkMode ? accentRgba(0.2) : accentRgba(0.25)}` }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                  <span style={{ fontSize: 13, fontWeight: 700, color: '#E8740C' }}>Lv.{level} 탐험가</span>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: accentColor }}>Lv.{level} 탐험가</span>
                   <span style={{ fontSize: 11, color: isDarkMode ? 'rgba(255,255,255,0.5)' : '#78350F' }}>다음 레벨까지 {(nextXP - totalXP).toLocaleString()} XP</span>
                 </div>
                 <div style={{ height: 8, borderRadius: 4, background: isDarkMode ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.6)', overflow: 'hidden' }}>
@@ -1404,7 +1417,7 @@ export function CompleteApp() {
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
               <span style={{ fontSize: 24 }}>🗺️</span>
-              <span style={{ fontSize: 16, fontWeight: 800, color: '#E8740C' }}>동네 정복 지도</span>
+              <span style={{ fontSize: 16, fontWeight: 800, color: accentColor }}>동네 정복 지도</span>
             </div>
             <div style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280' }}>
               방문한 구역을 헥사곤으로 채워가며 탐험 완성도를 확인하세요
@@ -1439,12 +1452,12 @@ export function CompleteApp() {
                     }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
                         <div>
-                          <div style={{ fontSize: 11, color: '#E8740C', fontWeight: 600, marginBottom: 4 }}>오늘의 한 곳</div>
+                          <div style={{ fontSize: 11, color: accentColor, fontWeight: 600, marginBottom: 4 }}>오늘의 한 곳</div>
                           <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 4 }}>{rec.name}</div>
                           <div style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280' }}>{rec.address}</div>
                         </div>
                         <div style={{ textAlign: 'right' }}>
-                          <div style={{ fontSize: 20, fontWeight: 800, color: '#E8740C' }}>{rec.score}</div>
+                          <div style={{ fontSize: 20, fontWeight: 800, color: accentColor }}>{rec.score}</div>
                           <div style={{ fontSize: 9, color: isDarkMode ? 'rgba(255,255,255,0.4)' : '#9CA3AF' }}>점수</div>
                           <div style={{ marginTop: 6, fontSize: 11 }}>
                             <span>📍 {rec.distance_meters}m</span>
@@ -1580,10 +1593,10 @@ export function CompleteApp() {
             onClick={() => router.push('/login')}
             style={{
               padding: '8px 14px',
-              background: isDarkMode ? 'rgba(255,255,255,0.1)' : 'rgba(232,116,12,0.15)',
+              background: isDarkMode ? 'rgba(255,255,255,0.1)' : accentRgba(0.15),
               border: '1px solid #E8740C',
               borderRadius: 10,
-              color: '#E8740C',
+              color: accentColor,
               fontSize: 13,
               fontWeight: 600,
               cursor: 'pointer',
@@ -1604,7 +1617,7 @@ export function CompleteApp() {
                   <p style={{ padding: 24, textAlign: 'center', color: isDarkMode ? 'rgba(255,255,255,0.5)' : '#9CA3AF', fontSize: 14 }}>알림이 없어요</p>
                 ) : (
                   notifications.slice(0, 30).map((n: { id: string; title: string; body?: string; read?: boolean; created_at?: string }) => (
-                    <div key={n.id} style={{ padding: '12px 16px', borderBottom: `1px solid ${borderColor}`, background: n.read ? 'transparent' : (isDarkMode ? 'rgba(232,116,12,0.08)' : 'rgba(232,116,12,0.06)') }}>
+                    <div key={n.id} style={{ padding: '12px 16px', borderBottom: `1px solid ${borderColor}`, background: n.read ? 'transparent' : (isDarkMode ? accentRgba(0.08) : accentRgba(0.06)) }}>
                       <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 4 }}>{n.title}</div>
                       {n.body && <div style={{ fontSize: 13, color: isDarkMode ? 'rgba(255,255,255,0.7)' : '#6B7280' }}>{n.body}</div>}
                       {n.created_at && <div style={{ fontSize: 11, color: isDarkMode ? 'rgba(255,255,255,0.4)' : '#9CA3AF', marginTop: 6 }}>{new Date(n.created_at).toLocaleDateString('ko-KR')}</div>}
@@ -1665,11 +1678,11 @@ export function CompleteApp() {
                      onMouseLeave={(e) => e.currentTarget.style.borderColor = borderColor}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
                     <div>
-                      <div style={{ fontSize: 10, color: '#E8740C', fontWeight: 600, marginBottom: 4 }}>{quest.category}</div>
+                      <div style={{ fontSize: 10, color: accentColor, fontWeight: 600, marginBottom: 4 }}>{quest.category}</div>
                       <div style={{ fontSize: 18, fontWeight: 700 }}>{quest.name}</div>
                     </div>
                     <div style={{ textAlign: 'right' }}>
-                      <div style={{ fontSize: 20, fontWeight: 800, color: '#E8740C' }}>{quest.score}</div>
+                      <div style={{ fontSize: 20, fontWeight: 800, color: accentColor }}>{quest.score}</div>
                       <div style={{ fontSize: 9, color: isDarkMode ? 'rgba(255,255,255,0.4)' : '#9CA3AF' }}>점수</div>
                     </div>
                   </div>
@@ -1682,7 +1695,7 @@ export function CompleteApp() {
                   {quest.reason && (
                     <p style={{ fontSize: 11, color: isDarkMode ? 'rgba(255,255,255,0.7)' : '#4B5563', marginBottom: 8 }}>{quest.reason}</p>
                   )}
-                  <button type="button" onClick={(e) => { e.stopPropagation(); setAcceptedQuest(quest); setScreen('accepted'); }} style={{ fontSize: 12, color: '#E8740C', fontWeight: 600, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>경로 보기 →</button>
+                  <button type="button" onClick={(e) => { e.stopPropagation(); setAcceptedQuest(quest); setScreen('accepted'); }} style={{ fontSize: 12, color: accentColor, fontWeight: 600, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>경로 보기 →</button>
                 </div>
               ))}
             </div>
@@ -1691,7 +1704,7 @@ export function CompleteApp() {
               <div style={{ fontSize: 40, marginBottom: 16 }}>🔍</div>
               <p style={{ fontSize: 16, fontWeight: 600, marginBottom: 8 }}>조금 더 넓은 범위로 찾아볼까요?</p>
               <p style={{ fontSize: 13, marginBottom: 20 }}>역할·무드를 바꾸거나 위치를 허용하면 더 많은 퀘스트가 나와요</p>
-              <button onClick={() => { setScreen('role'); setSelectedRole(null); setSelectedMood(null); }} style={{ padding: '12px 24px', background: '#E8740C', border: 'none', borderRadius: 12, color: '#fff', fontWeight: 600, cursor: 'pointer' }}>역할 다시 고르기</button>
+              <button onClick={() => { setScreen('role'); setSelectedRole(null); setSelectedMood(null); }} style={{ padding: '12px 24px', background: accentColor, border: 'none', borderRadius: 12, color: '#fff', fontWeight: 600, cursor: 'pointer' }}>역할 다시 고르기</button>
             </div>
           ) : (
             <div style={{ textAlign: 'center', padding: 60, color: isDarkMode ? 'rgba(255,255,255,0.5)' : '#9CA3AF' }}>
@@ -1749,7 +1762,7 @@ export function CompleteApp() {
           {/* AI 서사 */}
           <div style={{ marginBottom: 12 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: '#E8740C', display: 'flex', alignItems: 'center', gap: 4 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: accentColor, display: 'flex', alignItems: 'center', gap: 4 }}>
                 <span>✨ AI 서사</span>
                 {instagramNarrativeLoading && <span style={{ fontSize: 11, color: 'rgba(128,128,128,0.8)' }}>생성 중…</span>}
               </div>
@@ -1775,7 +1788,7 @@ export function CompleteApp() {
                     .then((data) => { if (data.narrative) setInstagramShareForm((f) => ({ ...f, aiNarrative: data.narrative })) })
                     .catch(() => {})
                     .finally(() => setInstagramNarrativeLoading(false))
-                }} style={{ background: 'none', border: `1px solid #E8740C`, borderRadius: 6, padding: '3px 8px', fontSize: 11, color: '#E8740C', cursor: 'pointer', fontWeight: 600 }}>
+                }} style={{ background: 'none', border: `1px solid #E8740C`, borderRadius: 6, padding: '3px 8px', fontSize: 11, color: accentColor, cursor: 'pointer', fontWeight: 600 }}>
                   🔄 재생성
                 </button>
               )}
@@ -1786,7 +1799,7 @@ export function CompleteApp() {
               onChange={(e) => setInstagramShareForm((f) => ({ ...f, aiNarrative: e.target.value }))}
               rows={3}
               disabled={instagramNarrativeLoading}
-              style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: `1px solid ${instagramNarrativeLoading ? borderColor : '#E8740C44'}`, background: isDarkMode ? 'rgba(232,116,12,0.06)' : '#FFF8F2', color: textColor, fontSize: 13, resize: 'none', boxSizing: 'border-box', lineHeight: 1.6, opacity: instagramNarrativeLoading ? 0.6 : 1 }}
+              style={{ width: '100%', padding: '10px 12px', borderRadius: 10, border: `1px solid ${instagramNarrativeLoading ? borderColor : '#E8740C44'}`, background: isDarkMode ? accentRgba(0.06) : '#FFF8F2', color: textColor, fontSize: 13, resize: 'none', boxSizing: 'border-box', lineHeight: 1.6, opacity: instagramNarrativeLoading ? 0.6 : 1 }}
             />
           </div>
 
@@ -1888,8 +1901,8 @@ export function CompleteApp() {
           </div>
 
           {/* 소셜 공유 */}
-          <div style={{ background: isDarkMode ? 'rgba(232,116,12,0.1)' : '#FEF3C7', border: '1px solid rgba(232,116,12,0.3)', borderRadius: 16, padding: 20, marginBottom: 16 }}>
-            <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 12, color: '#E8740C' }}>📢 친구에게 공유하기</div>
+          <div style={{ background: isDarkMode ? accentRgba(0.1) : '#FEF3C7', border: '1px solid rgba(232,116,12,0.3)', borderRadius: 16, padding: 20, marginBottom: 16 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 12, color: accentColor }}>📢 친구에게 공유하기</div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 8 }}>
               {[
                 { icon: '💬', name: '카카오톡', platform: 'kakao' },
@@ -1975,7 +1988,7 @@ export function CompleteApp() {
                       background: isDarkMode ? 'rgba(255,255,255,0.08)' : '#FFF',
                       border: `1px solid ${borderColor}`,
                       borderRadius: 12,
-                      color: '#E8740C',
+                      color: accentColor,
                       fontWeight: 600,
                       fontSize: 14,
                       cursor: 'pointer',
@@ -2022,7 +2035,7 @@ export function CompleteApp() {
           {/* 동적 미션 카드 */}
           <div style={{ marginBottom: 16 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-              <span style={{ fontSize: 13, fontWeight: 700, color: '#E8740C' }}>📋 미션</span>
+              <span style={{ fontSize: 13, fontWeight: 700, color: accentColor }}>📋 미션</span>
               <span style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280' }}>
                 {completedMissionCount}/{currentMissions.length}
               </span>
@@ -2040,7 +2053,7 @@ export function CompleteApp() {
                   onClick={() => setExpandedMissionId(isExpanded ? null : m.id)}
                   style={{
                     background: cardBg,
-                    border: `1px solid ${completed ? 'rgba(232,116,12,0.5)' : borderColor}`,
+                    border: `1px solid ${completed ? accentRgba(0.5) : borderColor}`,
                     borderRadius: 12,
                     marginBottom: 8,
                     overflow: 'hidden',
@@ -2099,7 +2112,7 @@ export function CompleteApp() {
                       {m.type === 'choice' && m.choices && (
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                           {m.choices.map((c) => (
-                            <button key={c} type="button" onClick={() => { setMissionStates((prev) => ({ ...prev, [m.id]: { completed: true, value: c } })); const nextIdx = currentMissions.findIndex((x) => x.id === m.id) + 1; if (currentMissions[nextIdx]) setExpandedMissionId(currentMissions[nextIdx].id) }} style={{ padding: '8px 12px', borderRadius: 8, border: `1px solid ${borderColor}`, background: (state?.value === c) ? '#E8740C' : cardBg, color: (state?.value === c) ? '#fff' : textColor, fontSize: 12, cursor: 'pointer' }}>{c}</button>
+                            <button key={c} type="button" onClick={() => { setMissionStates((prev) => ({ ...prev, [m.id]: { completed: true, value: c } })); const nextIdx = currentMissions.findIndex((x) => x.id === m.id) + 1; if (currentMissions[nextIdx]) setExpandedMissionId(currentMissions[nextIdx].id) }} style={{ padding: '8px 12px', borderRadius: 8, border: `1px solid ${borderColor}`, background: (state?.value === c) ? accentColor : cardBg, color: (state?.value === c) ? '#fff' : textColor, fontSize: 12, cursor: 'pointer' }}>{c}</button>
                           ))}
                         </div>
                       )}
@@ -2183,7 +2196,7 @@ export function CompleteApp() {
               별점 선택 {reviewData.rating === 0 && <span style={{ color: '#EF4444', fontSize: 11 }}>(필수)</span>}
             </div>
             {reviewData.rating > 0 && (
-              <div style={{ fontSize: 11, color: '#E8740C', marginBottom: 8 }}>
+              <div style={{ fontSize: 11, color: accentColor, marginBottom: 8 }}>
                 ⭐ {reviewData.rating}점 선택됨
               </div>
             )}
@@ -2231,7 +2244,7 @@ export function CompleteApp() {
               cursor: 'pointer',
               transition: 'all 0.2s',
               marginBottom: uploadedPhotos.length > 0 ? 12 : 0,
-            }} onMouseEnter={(e) => e.currentTarget.style.borderColor = '#E8740C'}
+            }} onMouseEnter={(e) => e.currentTarget.style.borderColor = accentColor}
                onMouseLeave={(e) => e.currentTarget.style.borderColor = borderColor}>
               <input type="file" accept="image/*" multiple onChange={handlePhotoUpload} style={{ display: 'none' }} />
               <div style={{ fontSize: 32, marginBottom: 8 }}>📷</div>
@@ -2313,7 +2326,7 @@ export function CompleteApp() {
 
           <div style={{ display: 'flex', gap: 6, marginBottom: 16, flexWrap: 'wrap' }}>
             {CHALLENGE_CATEGORIES.map((cat) => (
-              <button key={cat.id} type="button" onClick={() => setChallengeCategory(cat.id)} style={{ padding: '8px 14px', borderRadius: 10, border: `1px solid ${challengeCategory === cat.id ? '#E8740C' : borderColor}`, background: challengeCategory === cat.id ? 'rgba(232,116,12,0.15)' : cardBg, color: textColor, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>{cat.label}</button>
+              <button key={cat.id} type="button" onClick={() => setChallengeCategory(cat.id)} style={{ padding: '8px 14px', borderRadius: 10, border: `1px solid ${challengeCategory === cat.id ? accentColor : borderColor}`, background: challengeCategory === cat.id ? accentRgba(0.15) : cardBg, color: textColor, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>{cat.label}</button>
             ))}
           </div>
           <div style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280', marginBottom: 16 }}>
@@ -2340,20 +2353,20 @@ export function CompleteApp() {
               const done = progress >= c.total
               const tierColor = c.tier === 'gold' ? '#F59E0B' : c.tier === 'silver' ? '#9CA3AF' : c.tier === 'bronze' ? '#D97706' : undefined
               return (
-                <div key={c.id} style={{ background: done ? (isDarkMode ? 'rgba(232,116,12,0.15)' : 'rgba(232,116,12,0.08)') : cardBg, border: `1px solid ${done ? '#E8740C' : borderColor}`, borderRadius: 16, padding: 20, boxShadow: isDarkMode ? 'none' : '0 2px 8px rgba(0,0,0,0.05)', opacity: !done && c.tier ? 0.85 : 1 }}>
+                <div key={c.id} style={{ background: done ? (isDarkMode ? accentRgba(0.15) : accentRgba(0.08)) : cardBg, border: `1px solid ${done ? accentColor : borderColor}`, borderRadius: 16, padding: 20, boxShadow: isDarkMode ? 'none' : '0 2px 8px rgba(0,0,0,0.05)', opacity: !done && c.tier ? 0.85 : 1 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 12 }}>
                     <div style={{ fontSize: 32 }}>{c.icon}</div>
                     <div style={{ flex: 1 }}>
                       <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>{c.title}</div>
                       <div style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280' }}>{c.desc}</div>
                     </div>
-                    {done && <span style={{ fontSize: 11, color: '#E8740C', fontWeight: 700 }}>✅ 완료! +{c.rewardXP} XP</span>}
+                    {done && <span style={{ fontSize: 11, color: accentColor, fontWeight: 700 }}>✅ 완료! +{c.rewardXP} XP</span>}
                     {!done && c.tier && <span style={{ fontSize: 18 }} title="업적">🔒</span>}
                   </div>
                   <div style={{ marginBottom: 0 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, marginBottom: 4 }}>
                       <span>{progress}/{c.total}</span>
-                      <span style={{ color: '#E8740C', fontWeight: 600 }}>+{c.rewardXP} XP</span>
+                      <span style={{ color: accentColor, fontWeight: 600 }}>+{c.rewardXP} XP</span>
                     </div>
                     <div style={{ height: 6, background: isDarkMode ? 'rgba(255,255,255,0.1)' : '#E5E7EB', borderRadius: 3, overflow: 'hidden' }}>
                       <div style={{ width: `${c.total ? (progress / c.total) * 100 : 0}%`, height: '100%', background: tierColor ? `linear-gradient(90deg, ${tierColor}, #F59E0B)` : 'linear-gradient(90deg, #E8740C, #F59E0B)', transition: 'width 0.3s' }} />
@@ -2512,7 +2525,7 @@ export function CompleteApp() {
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 4 }}>{displayName || '이름 없음'}</div>
               <div style={{ fontSize: 13, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280' }}>@{myFriendCode}</div>
-              <button type="button" onClick={() => setScreen('settings')} style={{ marginTop: 8, fontSize: 12, color: '#E8740C', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>설정에서 프로필 수정</button>
+              <button type="button" onClick={() => setScreen('settings')} style={{ marginTop: 8, fontSize: 12, color: accentColor, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>설정에서 프로필 수정</button>
             </div>
           </div>
 
@@ -2525,8 +2538,8 @@ export function CompleteApp() {
             marginBottom: 20,
           }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-              <span style={{ fontSize: 14, fontWeight: 700, color: '#E8740C' }}>레벨 & XP</span>
-              <span style={{ fontSize: 18, fontWeight: 800, color: '#E8740C' }}>Lv.{level}</span>
+              <span style={{ fontSize: 14, fontWeight: 700, color: accentColor }}>레벨 & XP</span>
+              <span style={{ fontSize: 18, fontWeight: 800, color: accentColor }}>Lv.{level}</span>
             </div>
             <div style={{
               height: 12,
@@ -2583,7 +2596,7 @@ export function CompleteApp() {
             {profilePosts.length === 0 ? (
               <div style={{ textAlign: 'center', padding: 32, background: cardBg, borderRadius: 16, border: `1px solid ${borderColor}` }}>
                 <p style={{ fontSize: 14, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280', marginBottom: 8 }}>아직 게시글이 없어요</p>
-                <button type="button" onClick={() => setScreen('social')} style={{ padding: '10px 20px', borderRadius: 10, border: 'none', background: '#E8740C', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>소셜에서 작성하기</button>
+                <button type="button" onClick={() => setScreen('social')} style={{ padding: '10px 20px', borderRadius: 10, border: 'none', background: accentColor, color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>소셜에서 작성하기</button>
               </div>
             ) : (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 4 }}>
@@ -2643,7 +2656,7 @@ export function CompleteApp() {
                     onKeyDown={(e) => e.key === 'Enter' && submitProfileComment()}
                     style={{ flex: 1, padding: 10, borderRadius: 10, border: `1px solid ${borderColor}`, background: isDarkMode ? 'rgba(0,0,0,0.2)' : '#fff', color: textColor, fontSize: 14 }}
                   />
-                  <button type="button" onClick={submitProfileComment} style={{ padding: '10px 16px', borderRadius: 10, border: 'none', background: '#E8740C', color: '#fff', fontWeight: 600, cursor: 'pointer' }}>등록</button>
+                  <button type="button" onClick={submitProfileComment} style={{ padding: '10px 16px', borderRadius: 10, border: 'none', background: accentColor, color: '#fff', fontWeight: 600, cursor: 'pointer' }}>등록</button>
                 </div>
               </div>
             </div>
@@ -2730,7 +2743,7 @@ export function CompleteApp() {
                       maxWidth: '70%',
                       padding: '8px 12px',
                       borderRadius: 16,
-                      background: isMine ? '#E8740C' : (isDarkMode ? 'rgba(255,255,255,0.06)' : '#E5E7EB'),
+                      background: isMine ? accentColor : (isDarkMode ? 'rgba(255,255,255,0.06)' : '#E5E7EB'),
                       color: isMine ? '#fff' : textColor,
                       fontSize: 13,
                       lineHeight: 1.5,
@@ -2793,7 +2806,7 @@ export function CompleteApp() {
               padding: '10px 14px',
               borderRadius: 999,
               border: 'none',
-              background: chatInput.trim() ? '#E8740C' : (isDarkMode ? 'rgba(255,255,255,0.1)' : '#E5E7EB'),
+              background: chatInput.trim() ? accentColor : (isDarkMode ? 'rgba(255,255,255,0.1)' : '#E5E7EB'),
               color: chatInput.trim() ? '#fff' : (isDarkMode ? 'rgba(255,255,255,0.5)' : '#9CA3AF'),
               fontSize: 13,
               fontWeight: 600,
@@ -2820,7 +2833,7 @@ export function CompleteApp() {
     return (
       <div style={{ maxWidth: 430, margin: '0 auto', minHeight: '100vh', background: bgColor, color: textColor, fontFamily: 'Pretendard, sans-serif' }}>
         <div style={{ padding: '50px 20px 100px' }}>
-          <button type="button" onClick={() => setScreen('settings')} style={{ marginBottom: 16, background: 'none', border: 'none', color: '#E8740C', fontSize: 14, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>← 설정으로</button>
+          <button type="button" onClick={() => setScreen('settings')} style={{ marginBottom: 16, background: 'none', border: 'none', color: accentColor, fontSize: 14, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>← 설정으로</button>
           <h2 style={{ fontSize: 18, fontWeight: 800, marginBottom: 8 }}>카카오톡 친구 목록 / 메시지 API 테스트</h2>
           <p style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280', marginBottom: 24 }}>아래 4단계를 순서대로 진행한 뒤, 이 화면 전체를 한 장 캡처해 심사에 제출하세요.</p>
 
@@ -2985,7 +2998,7 @@ export function CompleteApp() {
                             padding: '6px 12px',
                             borderRadius: 999,
                             border: 'none',
-                            background: kakaoTestSendingUuid === uid ? '#9CA3AF' : '#E8740C',
+                            background: kakaoTestSendingUuid === uid ? '#9CA3AF' : accentColor,
                             color: '#fff',
                             fontSize: 12,
                             fontWeight: 600,
@@ -3060,7 +3073,7 @@ export function CompleteApp() {
                         toast.success('앱이 홈 화면에 추가됐어요!')
                       }
                     }}
-                    style={{ width: '100%', padding: '13px 0', borderRadius: 12, border: 'none', background: '#fff', color: '#E8740C', fontWeight: 800, fontSize: 15, cursor: 'pointer', letterSpacing: -0.3 }}
+                    style={{ width: '100%', padding: '13px 0', borderRadius: 12, border: 'none', background: '#fff', color: accentColor, fontWeight: 800, fontSize: 15, cursor: 'pointer', letterSpacing: -0.3 }}
                   >
                     📲 지금 설치하기
                   </button>
@@ -3090,9 +3103,9 @@ export function CompleteApp() {
                   <button key={mode} onClick={() => setThemeMode(mode)} style={{
                     padding: '10px 16px',
                     borderRadius: 10,
-                    border: `2px solid ${themeMode === mode ? '#E8740C' : borderColor}`,
-                    background: themeMode === mode ? (isDarkMode ? 'rgba(232,116,12,0.2)' : 'rgba(232,116,12,0.1)') : 'transparent',
-                    color: themeMode === mode ? '#E8740C' : textColor,
+                    border: `2px solid ${themeMode === mode ? accentColor : borderColor}`,
+                    background: themeMode === mode ? (isDarkMode ? accentRgba(0.2) : accentRgba(0.1)) : 'transparent',
+                    color: themeMode === mode ? accentColor : textColor,
                     fontWeight: themeMode === mode ? 700 : 500,
                     fontSize: 13,
                     cursor: 'pointer',
@@ -3102,6 +3115,47 @@ export function CompleteApp() {
                     {mode === 'system' && '🖥️ 시스템 따라가기'}
                   </button>
                 ))}
+              </div>
+              {/* 강조 색상 선택 */}
+              <div style={{ marginTop: 16, paddingTop: 16, borderTop: `1px solid ${borderColor}` }}>
+                <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>강조 색상</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                  {['#E8740C', '#2563EB', '#16A34A', '#9333EA', '#DC2626', '#0891B2'].map(preset => (
+                    <button
+                      key={preset}
+                      onClick={() => setAccentColor(preset)}
+                      style={{
+                        width: 28, height: 28, borderRadius: '50%', background: preset, border: `3px solid ${accentColor === preset ? textColor : 'transparent'}`,
+                        cursor: 'pointer', padding: 0, flexShrink: 0,
+                      }}
+                    />
+                  ))}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <input
+                      type="color"
+                      value={accentColor}
+                      onChange={e => setAccentColor(e.target.value)}
+                      style={{ width: 28, height: 28, border: 'none', borderRadius: '50%', cursor: 'pointer', padding: 0, background: 'none' }}
+                      title="색상 선택"
+                    />
+                    <input
+                      type="text"
+                      value={accentColor}
+                      onChange={e => {
+                        const v = e.target.value
+                        if (/^#[0-9A-Fa-f]{0,6}$/.test(v)) setAccentColor(v)
+                      }}
+                      onBlur={e => {
+                        if (!/^#[0-9A-Fa-f]{6}$/.test(e.target.value)) setAccentColor('#E8740C')
+                      }}
+                      placeholder="#E8740C"
+                      style={{
+                        width: 80, padding: '4px 8px', borderRadius: 8, border: `1px solid ${borderColor}`,
+                        background: isDarkMode ? 'rgba(0,0,0,0.2)' : '#fff', color: textColor, fontSize: 12, fontFamily: 'monospace',
+                      }}
+                    />
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -3120,7 +3174,7 @@ export function CompleteApp() {
                   <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>알림 설정</div>
                   <div style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280' }}>푸시 알림 관리</div>
                 </div>
-                <div style={{ fontSize: 16, color: '#E8740C' }}>{showNotificationSettings ? '▼' : '→'}</div>
+                <div style={{ fontSize: 16, color: accentColor }}>{showNotificationSettings ? '▼' : '→'}</div>
               </div>
               {showNotificationSettings && (
                 <div style={{ marginTop: 16, paddingTop: 16, borderTop: `1px solid ${borderColor}` }}>
@@ -3149,7 +3203,7 @@ export function CompleteApp() {
                   <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>위치 서비스</div>
                   <div style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280' }}>GPS 권한 관리</div>
                 </div>
-                <div style={{ fontSize: 16, color: '#E8740C' }}>{showLocationSettings ? '▼' : '→'}</div>
+                <div style={{ fontSize: 16, color: accentColor }}>{showLocationSettings ? '▼' : '→'}</div>
               </div>
               {showLocationSettings && (
                 <div style={{ marginTop: 16, paddingTop: 16, borderTop: `1px solid ${borderColor}` }}>
@@ -3169,7 +3223,7 @@ export function CompleteApp() {
                     }
                   }} style={{
                     padding: '8px 16px',
-                    background: '#E8740C',
+                    background: accentColor,
                     border: 'none',
                     borderRadius: 8,
                     color: '#fff',
@@ -3229,7 +3283,7 @@ export function CompleteApp() {
                   <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 2 }}>카카오 API 테스트 (심사 제출용)</div>
                   <div style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280' }}>4단계 완료 후 한 장 캡처해서 제출</div>
                 </div>
-                <div style={{ fontSize: 16, color: '#E8740C' }}>→</div>
+                <div style={{ fontSize: 16, color: accentColor }}>→</div>
               </div>
             </div>
 
@@ -3248,14 +3302,14 @@ export function CompleteApp() {
                   <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>개인정보</div>
                   <div style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280' }}>계정 및 보안</div>
                 </div>
-                <div style={{ fontSize: 16, color: '#E8740C' }}>{showPrivacySettings ? '▼' : '→'}</div>
+                <div style={{ fontSize: 16, color: accentColor }}>{showPrivacySettings ? '▼' : '→'}</div>
               </div>
               {showPrivacySettings && (
                 <div style={{ marginTop: 16, paddingTop: 16, borderTop: `1px solid ${borderColor}` }} onClick={(e) => e.stopPropagation()}>
                   {isLoggedIn ? (
                     <>
                       {/* 현재 프로필 미리보기 */}
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16, padding: 12, background: isDarkMode ? 'rgba(232,116,12,0.1)' : '#FEF3C7', borderRadius: 12 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16, padding: 12, background: isDarkMode ? accentRgba(0.1) : '#FEF3C7', borderRadius: 12 }}>
                         <div style={{ width: 56, height: 56, borderRadius: '50%', overflow: 'hidden', background: 'linear-gradient(135deg, #E8740C, #F59E0B)', flexShrink: 0 }}>
                           {userProfile?.profile_image_url ? (
                             <img src={userProfile.profile_image_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
@@ -3304,7 +3358,7 @@ export function CompleteApp() {
                               padding: '0 14px',
                               borderRadius: 8,
                               border: 'none',
-                              background: savingNickname || !nicknameInput.trim() ? (isDarkMode ? 'rgba(255,255,255,0.12)' : '#E5E7EB') : '#E8740C',
+                              background: savingNickname || !nicknameInput.trim() ? (isDarkMode ? 'rgba(255,255,255,0.12)' : '#E5E7EB') : accentColor,
                               color: savingNickname || !nicknameInput.trim() ? (isDarkMode ? 'rgba(255,255,255,0.5)' : '#9CA3AF') : '#fff',
                               fontSize: 13,
                               fontWeight: 700,
@@ -3442,7 +3496,7 @@ export function CompleteApp() {
                         router.push('/login')
                       }} style={{
                         padding: '8px 16px',
-                        background: '#E8740C',
+                        background: accentColor,
                         border: 'none',
                         borderRadius: 8,
                         color: '#fff',
@@ -3482,7 +3536,7 @@ export function CompleteApp() {
                   <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>장소 제안하기</div>
                   <div style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280' }}>새 장소를 등록해보세요 (검수 후 반영)</div>
                 </div>
-                <div style={{ fontSize: 16, color: '#E8740C' }}>{showCreatorSettings ? '▼' : '→'}</div>
+                <div style={{ fontSize: 16, color: accentColor }}>{showCreatorSettings ? '▼' : '→'}</div>
               </div>
               {showCreatorSettings && (
                 <div style={{ marginTop: 16, paddingTop: 16, borderTop: `1px solid ${borderColor}` }} onClick={(e) => e.stopPropagation()}>
@@ -3497,8 +3551,8 @@ export function CompleteApp() {
                     <option value="문화시설">문화시설</option>
                   </select>
                   <textarea placeholder="설명 (선택)" value={placeSuggestionForm.description} onChange={(e) => setPlaceSuggestionForm((f) => ({ ...f, description: e.target.value }))} rows={2} style={{ width: '100%', padding: 12, marginBottom: 8, borderRadius: 8, border: `1px solid ${borderColor}`, background: isDarkMode ? 'rgba(0,0,0,0.2)' : '#fff', color: textColor, resize: 'vertical' }} />
-                  {placeSuggestionMessage && <p style={{ fontSize: 12, marginBottom: 8, color: '#E8740C' }}>{placeSuggestionMessage}</p>}
-                  <button onClick={submitPlaceSuggestion} disabled={placeSuggestionSubmitting} style={{ width: '100%', padding: 12, background: '#E8740C', border: 'none', borderRadius: 8, color: '#fff', fontWeight: 600, cursor: placeSuggestionSubmitting ? 'not-allowed' : 'pointer', opacity: placeSuggestionSubmitting ? 0.7 : 1 }}>{placeSuggestionSubmitting ? '제출 중…' : '제안 제출'}</button>
+                  {placeSuggestionMessage && <p style={{ fontSize: 12, marginBottom: 8, color: accentColor }}>{placeSuggestionMessage}</p>}
+                  <button onClick={submitPlaceSuggestion} disabled={placeSuggestionSubmitting} style={{ width: '100%', padding: 12, background: accentColor, border: 'none', borderRadius: 8, color: '#fff', fontWeight: 600, cursor: placeSuggestionSubmitting ? 'not-allowed' : 'pointer', opacity: placeSuggestionSubmitting ? 0.7 : 1 }}>{placeSuggestionSubmitting ? '제출 중…' : '제안 제출'}</button>
                 </div>
               )}
             </div>
@@ -3518,7 +3572,7 @@ export function CompleteApp() {
                   <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>도움말</div>
                   <div style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280' }}>사용 가이드</div>
                 </div>
-                <div style={{ fontSize: 16, color: '#E8740C' }}>{showHelpSettings ? '▼' : '→'}</div>
+                <div style={{ fontSize: 16, color: accentColor }}>{showHelpSettings ? '▼' : '→'}</div>
               </div>
               {showHelpSettings && (
                 <div style={{ marginTop: 16, paddingTop: 16, borderTop: `1px solid ${borderColor}` }}>
