@@ -2798,7 +2798,8 @@ export function CompleteApp() {
   // 카카오 API 테스트 (심사 제출용) — 4단계 한 화면에 모아서 한 장 캡처
   if (screen === 'kakao-api-test') {
     const isKakaoLoggedIn = !!(user && (user as any).app_metadata?.provider === 'kakao')
-    const tokenForFriends = kakaoFriendsToken || kakaoAccessToken
+    // 친구 목록/메시지 API는 동의창에서 돌아온 토큰만 사용. 로그인 토큰 쓰면 403.
+    const tokenForFriends = kakaoFriendsToken ?? null
     const step2Done = kakaoTestFriends.length > 0
     const step4Done = !!kakaoTestSentTo
     const appUrl = typeof window !== 'undefined' ? window.location.origin + '/' : ''
@@ -2855,11 +2856,17 @@ export function CompleteApp() {
                 </div>
               ) : (
                 <>
+                  {isKakaoLoggedIn && !tokenForFriends && (
+                    <div style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.7)' : '#6B7280', marginBottom: 10 }}>
+                      ②에서 <b>카카오 동의창 띄우기</b>를 누르고, 카카오에서 동의한 뒤 이 페이지로 돌아오면 이 버튼을 누르세요.
+                    </div>
+                  )}
                   <button
                     type="button"
                     disabled={!tokenForFriends || !isKakaoLoggedIn}
                     onClick={async () => {
-                      if (!tokenForFriends) { toast('카카오로 로그인 후 이용해 주세요.'); return }
+                      if (!isKakaoLoggedIn) { toast('카카오로 로그인 후 이용해 주세요.'); return }
+                      if (!tokenForFriends) { toast('먼저 ②에서 "카카오 동의창 띄우기"를 누르고, 동의한 뒤 돌아오세요.'); return }
                       setKakaoTestFriendsLoading(true)
                       setKakaoTestFriendsError(null)
                       try {
