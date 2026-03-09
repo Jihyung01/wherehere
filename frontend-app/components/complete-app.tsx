@@ -201,8 +201,8 @@ export function CompleteApp() {
     } catch { return `rgba(232,116,12,${alpha})` }
   }
 
-  // displayName 계산: userProfile state 이후에 위치
-  const displayName = userProfile?.display_name ?? user?.user_metadata?.display_name ?? user?.user_metadata?.name ?? user?.user_metadata?.full_name ?? user?.user_metadata?.user_name ?? user?.user_metadata?.kakao_account?.profile?.nickname ?? user?.email ?? (user ? '로그인한 사용자' : null)
+  // displayName 계산: user_metadata 우선 (auth.updateUser로 저장된 값) → userProfile(백엔드) fallback
+  const displayName = user?.user_metadata?.display_name ?? userProfile?.display_name ?? user?.user_metadata?.name ?? user?.user_metadata?.full_name ?? user?.user_metadata?.user_name ?? user?.user_metadata?.kakao_account?.profile?.nickname ?? user?.email ?? (user ? '로그인한 사용자' : null)
 
   useEffect(() => {
     setNicknameInput(displayName || '')
@@ -1149,28 +1149,20 @@ export function CompleteApp() {
     setSavingNickname(true)
     setUserProfile(prev => ({ ...prev, display_name: name, profile_image_url: prev?.profile_image_url }))
     try {
-      const res = await fetch(`${API_BASE}/api/v1/social/profile`, {
+      // 항상 auth.updateUser 먼저 저장 (user_metadata → displayName 계산에서 우선 사용됨)
+      const supabase = createClient()
+      const { error } = await supabase.auth.updateUser({ data: { display_name: name, name } })
+      if (error) throw new Error(error.message)
+      // 백엔드에도 저장 시도 (실패해도 무시 — auth.updateUser가 primary)
+      fetch(`${API_BASE}/api/v1/social/profile`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user_id: userId, display_name: name }),
-      })
-      const data = await res.json().catch(() => ({}))
-      if (!res.ok || data?.success === false) {
-        // 백엔드 실패 시 Supabase auth.updateUser로 user_metadata에 저장 (항상 허용됨)
-        const supabase = createClient()
-        const { error } = await supabase.auth.updateUser({ data: { display_name: name, name } })
-        if (error) throw new Error(error.message)
-        // auth.updateUser만 성공한 경우: 로컬 상태는 낙관적 업데이트로 이미 반영됨 → refetch 불필요
-        toast.success('이름이 변경되었어요.')
-      } else {
-        // 백엔드 성공: 서버 최신값으로 갱신
-        await refetchUserProfile()
-        toast.success('이름이 변경되었어요.')
-      }
+      }).catch(() => {})
+      toast.success('이름이 변경되었어요.')
     } catch (_) {
       toast.error('이름 변경에 실패했어요. 다시 시도해주세요.')
-      // 실패 시 낙관적 업데이트 롤백
-      try { await refetchUserProfile() } catch { /* noop */ }
+      setUserProfile(prev => ({ ...prev, display_name: displayName || undefined }))
     } finally {
       setSavingNickname(false)
     }
