@@ -305,14 +305,7 @@ export default function MyMapReal() {
     return () => window.removeEventListener("focus", onFocus);
   }, [userId]);
 
-  // 카카오맵 스크립트 로드 대기 (5초 내 미완료 시 도메인 미등록 안내)
-  useEffect(() => {
-    if (kakaoLoaded) return;
-    const timeout = setTimeout(() => {
-      if (!kakaoLoaded) setMapLoadError('지도를 불러오지 못했습니다. 카카오 개발자 콘솔 → 내 애플리케이션 → 앱 설정 → 플랫폼 → Web → 사이트 도메인에 https://wherehere-seven.vercel.app 을 추가해 주세요.');
-    }, 5000);
-    return () => clearTimeout(timeout);
-  }, [kakaoLoaded]);
+  // 에러 타이머는 onLoad 콜백에서 시작 (스크립트 다운로드 시간 제외)
 
   // Init Kakao Map: 지도 탭일 때 표시. DOM 레이아웃 후 초기화 + 헥사곤 오버레이 + relayout
   useEffect(() => {
@@ -551,12 +544,14 @@ export default function MyMapReal() {
         src={`https://dapi.kakao.com/v2/maps/sdk.js?appkey=${process.env.NEXT_PUBLIC_KAKAO_MAP_KEY || '160238a590f3d2957230d764fb745322'}&autoload=false`}
         strategy="afterInteractive"
         onLoad={() => {
-          // maps.load 콜백이 안 오는 경우(도메인 미등록 등) 대비 4초 폴백
-          const fallback = setTimeout(() => setKakaoLoaded(true), 4000);
+          // 스크립트 로드 완료 후 5초 내 maps.load 콜백 미실행 시 에러 표시
+          const errorTimer = setTimeout(() => {
+            setMapLoadError('지도를 불러오지 못했습니다. 카카오 개발자 콘솔 → 내 애플리케이션 → 앱 설정 → 플랫폼 → Web → 사이트 도메인에 https://wherehere-seven.vercel.app 을 추가해 주세요.');
+          }, 5000);
           if (window.kakao?.maps?.load) {
-            window.kakao.maps.load(() => { clearTimeout(fallback); setKakaoLoaded(true); });
+            window.kakao.maps.load(() => { clearTimeout(errorTimer); setKakaoLoaded(true); });
           } else {
-            clearTimeout(fallback);
+            clearTimeout(errorTimer);
             setKakaoLoaded(true);
           }
         }}
