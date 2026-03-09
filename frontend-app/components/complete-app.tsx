@@ -278,6 +278,7 @@ export function CompleteApp() {
     const returnTo = params.get('return')
     const err = params.get('error')
     const kakaoDesc = params.get('kakao_desc') || ''
+    const kakaoReason = params.get('reason') || ''
 
     const needsUrlClean = token || returnTo || err
     if (needsUrlClean) {
@@ -287,6 +288,7 @@ export function CompleteApp() {
       u.searchParams.delete('error')
       u.searchParams.delete('kakao_error')
       u.searchParams.delete('kakao_desc')
+      u.searchParams.delete('reason')
       window.history.replaceState({}, '', u.pathname + (u.search || ''))
     }
 
@@ -305,7 +307,7 @@ export function CompleteApp() {
       err === 'kakao_config'
         ? '동의창을 띄우려면 Vercel 환경 변수에 NEXT_PUBLIC_KAKAO_MAP_KEY(카카오 REST API 키)가 필요합니다.'
         : err === 'kakao_consent_denied' || err === 'kakao.consent_denied'
-          ? '친구 목록 동의가 거부되었어요. 동의하지 않으면 친구 목록을 사용할 수 없어요.'
+          ? `카카오 동의 거부/오류${kakaoReason ? ` (${kakaoReason})` : ''}. 카카오 개발자 콘솔 → 동의항목에서 "카카오톡 친구 목록"과 "카카오톡 메시지 전송"을 선택 동의로 활성화하세요.`
           : err === 'kakao_consent_no_code'
             ? '동의 후 돌아오는 과정에서 코드를 받지 못했어요. 다시 동의창부터 시도해 주세요.'
             : err === 'kakao_consent_exchange' || err === 'kakao.consent_exchange'
@@ -2888,7 +2890,9 @@ export function CompleteApp() {
                         const data = await res.json().catch(() => ({}))
                         if (res.status === 403) {
                           setKakaoTestFriendsError('403')
-                          toast('친구목록 동의가 필요해요. 아래 버튼으로 동의 후 다시 시도하세요.')
+                          setKakaoFriendsToken(null)
+                          try { sessionStorage.removeItem('kakao_friends_token') } catch (_) {}
+                          toast.error('친구 목록 권한이 없어요. 카카오 개발자 콘솔 → 동의항목에서 "카카오톡 친구 목록"을 선택 동의로 활성화한 뒤 ②번 동의창을 다시 눌러 주세요.')
                           return
                         }
                         const elements = data.elements ?? []
