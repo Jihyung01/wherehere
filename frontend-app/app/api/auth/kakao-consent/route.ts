@@ -21,8 +21,8 @@ export async function GET(request: NextRequest) {
     )
   }
 
-  // "이용 중 동의" 방식: 추가 항목(friends, talk_message)만 scope에 포함.
-  // 이미 동의된 기본 스코프를 함께 보내거나 prompt=consent를 쓰면 Kakao가 동의창을 건너뜀.
+  // 추가 항목만 scope에 포함 (friends, talk_message).
+  // prompt=consent: 이전에 동의했더라도 동의창을 강제로 다시 표시.
   const scope = 'friends talk_message'
   const url = new URL(KAKAO_AUTH)
   url.searchParams.set('client_id', clientId)
@@ -30,5 +30,6 @@ export async function GET(request: NextRequest) {
   url.searchParams.set('response_type', 'code')
   url.searchParams.set('scope', scope)
   url.searchParams.set('state', returnTo || 'friends-consent')
+  url.searchParams.set('prompt', 'consent')
   return NextResponse.redirect(url.toString(), 302)
 }
