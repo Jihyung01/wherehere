@@ -28,7 +28,7 @@ declare global {
   }
 }
 
-type Screen = 'home' | 'role' | 'mood' | 'quests' | 'accepted' | 'checkin' | 'review' | 'challenges' | 'profile' | 'social' | 'chat' | 'settings'
+type Screen = 'home' | 'role' | 'mood' | 'quests' | 'accepted' | 'checkin' | 'review' | 'challenges' | 'profile' | 'social' | 'chat' | 'settings' | 'kakao-api-test'
 
 // 브라우저에서는 같은 출처 사용 → Next API 프록시가 백엔드로 전달 (405/CORS 방지)
 const API_BASE = typeof window !== 'undefined' ? window.location.origin : (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000')
@@ -181,6 +181,11 @@ export function CompleteApp() {
   const [showPremiumModal, setShowPremiumModal] = useState(false)
   // 카카오 친구/메시지 API용 토큰 (Supabase 카카오 로그인 시 provider_token)
   const [kakaoAccessToken, setKakaoAccessToken] = useState<string | null>(null)
+  // 카카오 API 테스트(심사용) 화면 상태
+  const [kakaoTestFriends, setKakaoTestFriends] = useState<Array<{ uuid?: string; id?: string; profile_nickname?: string }>>([])
+  const [kakaoTestFriendsLoading, setKakaoTestFriendsLoading] = useState(false)
+  const [kakaoTestSentTo, setKakaoTestSentTo] = useState<string | null>(null)
+  const [kakaoTestSendingUuid, setKakaoTestSendingUuid] = useState<string | null>(null)
 
   // displayName 계산: userProfile state 이후에 위치
   const displayName = userProfile?.display_name ?? user?.user_metadata?.name ?? user?.user_metadata?.full_name ?? user?.user_metadata?.user_name ?? user?.user_metadata?.kakao_account?.profile?.nickname ?? user?.email ?? (user ? '로그인한 사용자' : null)
@@ -2740,6 +2745,173 @@ export function CompleteApp() {
     )
   }
 
+  // 카카오 API 테스트 (심사 제출용) — 4단계 한 화면에 모아서 한 장 캡처
+  if (screen === 'kakao-api-test') {
+    const isKakaoLoggedIn = !!(user && (user as any).app_metadata?.provider === 'kakao')
+    const step2Done = kakaoTestFriends.length > 0
+    const step4Done = !!kakaoTestSentTo
+    const appUrl = typeof window !== 'undefined' ? window.location.origin + '/' : ''
+    const inviteText = `WhereHere 초대\n친구 코드: ${myFriendCode}\n${appUrl}`
+
+    return (
+      <div style={{ maxWidth: 430, margin: '0 auto', minHeight: '100vh', background: bgColor, color: textColor, fontFamily: 'Pretendard, sans-serif' }}>
+        <div style={{ padding: '50px 20px 100px' }}>
+          <button type="button" onClick={() => setScreen('settings')} style={{ marginBottom: 16, background: 'none', border: 'none', color: '#E8740C', fontSize: 14, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>← 설정으로</button>
+          <h2 style={{ fontSize: 18, fontWeight: 800, marginBottom: 8 }}>카카오톡 친구 목록 / 메시지 API 테스트</h2>
+          <p style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280', marginBottom: 24 }}>아래 4단계를 순서대로 진행한 뒤, 이 화면 전체를 한 장 캡처해 심사에 제출하세요.</p>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            {/* ① 카카오 로그인 */}
+            <div style={{ background: cardBg, border: `1px solid ${borderColor}`, borderRadius: 12, padding: 16 }}>
+              <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 6 }}>① 카카오 로그인</div>
+              {isKakaoLoggedIn ? (
+                <div style={{ fontSize: 13, color: '#16a34a' }}>✓ 완료 (카카오 계정으로 로그인됨)</div>
+              ) : (
+                <div style={{ fontSize: 13, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280' }}>로그인 필요 · 설정에서 카카오로 로그인 후 다시 이 화면으로 오세요.</div>
+              )}
+            </div>
+
+            {/* ② 친구목록 동의 */}
+            <div style={{ background: cardBg, border: `1px solid ${borderColor}`, borderRadius: 12, padding: 16 }}>
+              <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 6 }}>② 카카오톡 서비스 내 친구목록 동의</div>
+              {step2Done ? (
+                <div style={{ fontSize: 13, color: '#16a34a' }}>✓ 완료 (친구 목록 조회로 동의 확인됨)</div>
+              ) : (
+                <div style={{ fontSize: 13, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280' }}>③에서 친구 목록 불러오기를 하면 동의된 것으로 간주됩니다.</div>
+              )}
+            </div>
+
+            {/* ③ 친구 목록 가져오기 */}
+            <div style={{ background: cardBg, border: `1px solid ${borderColor}`, borderRadius: 12, padding: 16 }}>
+              <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 6 }}>③ 친구 목록 가져오기</div>
+              {kakaoTestFriendsLoading ? (
+                <div style={{ fontSize: 13 }}>불러오는 중...</div>
+              ) : kakaoTestFriends.length > 0 ? (
+                <div>
+                  <div style={{ fontSize: 13, color: '#16a34a', marginBottom: 8 }}>✓ 완료 — {kakaoTestFriends.length}명 조회됨</div>
+                  <div style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280' }}>
+                    {kakaoTestFriends.slice(0, 5).map((f, i) => (f.profile_nickname || f.uuid || f.id || '친구') + (i < kakaoTestFriends.length - 1 ? ', ' : '')).join('')}
+                    {kakaoTestFriends.length > 5 && ' 외 ' + (kakaoTestFriends.length - 5) + '명'}
+                  </div>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  disabled={!kakaoAccessToken || !isKakaoLoggedIn}
+                  onClick={async () => {
+                    if (!kakaoAccessToken) { toast('카카오로 로그인 후 이용해 주세요.'); return }
+                    setKakaoTestFriendsLoading(true)
+                    try {
+                      const res = await fetch(`${API_BASE}/api/v1/social/kakao-friends`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ access_token: kakaoAccessToken }),
+                      })
+                      const data = await res.json().catch(() => ({}))
+                      const elements = data.elements ?? []
+                      setKakaoTestFriends(elements)
+                      if (elements.length === 0) toast('친구 목록이 비어있거나 동의가 필요해요. 설정에서 카카오 친구목록 동의 후 다시 시도하세요.')
+                    } catch {
+                      toast('친구 목록을 불러오지 못했어요.')
+                    } finally {
+                      setKakaoTestFriendsLoading(false)
+                    }
+                  }}
+                  style={{
+                    padding: '10px 16px',
+                    borderRadius: 10,
+                    border: 'none',
+                    background: kakaoAccessToken && isKakaoLoggedIn ? '#FEE500' : (isDarkMode ? 'rgba(255,255,255,0.1)' : '#E5E7EB'),
+                    color: kakaoAccessToken && isKakaoLoggedIn ? '#3C1E1E' : (isDarkMode ? 'rgba(255,255,255,0.5)' : '#9CA3AF'),
+                    fontWeight: 600,
+                    fontSize: 13,
+                    cursor: kakaoAccessToken && isKakaoLoggedIn ? 'pointer' : 'default',
+                  }}
+                >
+                  친구 목록 불러오기
+                </button>
+              )}
+            </div>
+
+            {/* ④ 친구에게 메시지 전송 */}
+            <div style={{ background: cardBg, border: `1px solid ${borderColor}`, borderRadius: 12, padding: 16 }}>
+              <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 6 }}>④ 친구에게 메시지 전송</div>
+              {step4Done ? (
+                <div style={{ fontSize: 13, color: '#16a34a' }}>✓ 완료 — {kakaoTestSentTo}에게 초대 메시지 전송함</div>
+              ) : kakaoTestFriends.length > 0 ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <div style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280', marginBottom: 4 }}>한 명 선택 후 바로 보내기를 누르세요.</div>
+                  {kakaoTestFriends.slice(0, 5).map((f) => {
+                    const uid = f.uuid || f.id || ''
+                    const name = f.profile_nickname || uid || '친구'
+                    return (
+                      <div key={uid} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: `1px solid ${borderColor}` }}>
+                        <span style={{ fontSize: 13 }}>{name}</span>
+                        <button
+                          type="button"
+                          disabled={!!kakaoTestSendingUuid}
+                          onClick={async () => {
+                            if (!kakaoAccessToken || !uid) return
+                            setKakaoTestSendingUuid(uid)
+                            try {
+                              const res = await fetch(`${API_BASE}/api/v1/social/kakao-friends/send-message`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                  access_token: kakaoAccessToken,
+                                  receiver_uuid: uid,
+                                  text: inviteText,
+                                  title: 'WhereHere 열기',
+                                  link_url: appUrl,
+                                }),
+                              })
+                              const data = await res.json().catch(() => ({}))
+                              if (res.ok && data.success !== false) {
+                                setKakaoTestSentTo(name)
+                                toast.success('메시지 전송 완료')
+                              } else {
+                                toast.error(data.detail || '전송 실패')
+                              }
+                            } catch {
+                              toast.error('전송 실패')
+                            } finally {
+                              setKakaoTestSendingUuid(null)
+                            }
+                          }}
+                          style={{
+                            padding: '6px 12px',
+                            borderRadius: 999,
+                            border: 'none',
+                            background: kakaoTestSendingUuid === uid ? '#9CA3AF' : '#E8740C',
+                            color: '#fff',
+                            fontSize: 12,
+                            fontWeight: 600,
+                            cursor: kakaoTestSendingUuid ? 'not-allowed' : 'pointer',
+                          }}
+                        >
+                          {kakaoTestSendingUuid === uid ? '전송 중...' : '바로 보내기'}
+                        </button>
+                      </div>
+                    )
+                  })}
+                </div>
+              ) : (
+                <div style={{ fontSize: 13, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280' }}>③에서 친구 목록을 먼저 불러온 뒤, 한 명에게 메시지를 보내세요.</div>
+              )}
+            </div>
+          </div>
+
+          {(isKakaoLoggedIn && step2Done && step4Done) && (
+            <div style={{ marginTop: 24, padding: 16, background: isDarkMode ? 'rgba(34,197,94,0.15)' : '#DCFCE7', borderRadius: 12, border: '1px solid #16a34a', textAlign: 'center' }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: '#16a34a', marginBottom: 4 }}>캡처 준비 완료</div>
+              <div style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.7)' : '#166534' }}>이 화면 전체를 한 장 스크린샷으로 찍어 카카오 개발자 콘솔 심사에 제출하세요.</div>
+            </div>
+          )}
+        </div>
+      </div>
+    )
+  }
+
   // 설정 화면
   if (screen === 'settings') {
     return (
@@ -2946,6 +3118,27 @@ export function CompleteApp() {
                 </button>
               </div>
             )}
+
+            {/* 카카오 API 테스트 (심사 제출용) — 한 장 캡처용 */}
+            <div
+              onClick={() => setScreen('kakao-api-test')}
+              style={{
+                background: isDarkMode ? 'rgba(254,229,0,0.12)' : '#FFFDE7',
+                border: `2px solid #FEE500`,
+                borderRadius: 16,
+                padding: 20,
+                cursor: 'pointer',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                <div style={{ fontSize: 24 }}>📋</div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 2 }}>카카오 API 테스트 (심사 제출용)</div>
+                  <div style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280' }}>4단계 완료 후 한 장 캡처해서 제출</div>
+                </div>
+                <div style={{ fontSize: 16, color: '#E8740C' }}>→</div>
+              </div>
+            </div>
 
             {/* 개인정보 */}
             <div onClick={() => setShowPrivacySettings(!showPrivacySettings)} style={{
