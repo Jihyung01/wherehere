@@ -23,5 +23,6 @@ export async function GET(request: NextRequest) {
   url.searchParams.set('response_type', 'code')
   url.searchParams.set('scope', scope)
   url.searchParams.set('state', returnTo || 'friends-consent')
+  url.searchParams.set('prompt', 'consent')
   return NextResponse.redirect(url.toString())
 }
