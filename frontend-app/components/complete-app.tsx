@@ -125,7 +125,7 @@ export function CompleteApp() {
   const [isDarkMode, setIsDarkMode] = useState(false)
   type ThemeMode = 'light' | 'dark' | 'system'
   const [themeMode, setThemeMode] = useState<ThemeMode>('system')
-  const [accentColor, setAccentColor] = useState(accentColor)
+  const [accentColor, setAccentColor] = useState('#E8740C')
   const [missionStates, setMissionStates] = useState<Record<string, { completed: boolean; value?: string | number; photo?: string }>>({})
   const [currentMissions, setCurrentMissions] = useState<Mission[]>([])
   const [expandedMissionId, setExpandedMissionId] = useState<string | null>(null)
