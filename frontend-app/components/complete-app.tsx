@@ -181,6 +181,9 @@ export function CompleteApp() {
   const [showPremiumModal, setShowPremiumModal] = useState(false)
   // 카카오 친구/메시지 API용 토큰 (Supabase 카카오 로그인 시 provider_token)
   const [kakaoAccessToken, setKakaoAccessToken] = useState<string | null>(null)
+  /** 추가 동의 플로우로 받은 토큰 (friends/talk_message scope). 3·4단계용 */
+  const [kakaoFriendsToken, setKakaoFriendsToken] = useState<string | null>(null)
+  const [kakaoTestFriendsError, setKakaoTestFriendsError] = useState<'403' | null>(null)
   // 카카오 API 테스트(심사용) 화면 상태
   const [kakaoTestFriends, setKakaoTestFriends] = useState<Array<{ uuid?: string; id?: string; profile_nickname?: string }>>([])
   const [kakaoTestFriendsLoading, setKakaoTestFriendsLoading] = useState(false)
@@ -261,6 +264,28 @@ export function CompleteApp() {
       setKakaoAccessToken(token)
     })
   }, [user?.id, user?.app_metadata?.provider])
+
+  // 추가 동의 플로우 복귀: URL의 kakao_friends_token, return 처리
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const params = new URLSearchParams(window.location.search)
+    const token = params.get('kakao_friends_token')
+    const returnTo = params.get('return')
+    if (token) {
+      setKakaoFriendsToken(token)
+      try { sessionStorage.setItem('kakao_friends_token', token) } catch (_) {}
+    } else {
+      const stored = sessionStorage.getItem('kakao_friends_token')
+      if (stored) setKakaoFriendsToken(stored)
+    }
+    if (returnTo === 'kakao-api-test') setScreen('kakao-api-test')
+    if (token || returnTo) {
+      const u = new URL(window.location.href)
+      u.searchParams.delete('kakao_friends_token')
+      u.searchParams.delete('return')
+      window.history.replaceState({}, '', u.pathname + u.search)
+    }
+  }, [])
 
   const finishOnboarding = () => {
     try {
@@ -2748,6 +2773,7 @@ export function CompleteApp() {
   // 카카오 API 테스트 (심사 제출용) — 4단계 한 화면에 모아서 한 장 캡처
   if (screen === 'kakao-api-test') {
     const isKakaoLoggedIn = !!(user && (user as any).app_metadata?.provider === 'kakao')
+    const tokenForFriends = kakaoFriendsToken || kakaoAccessToken
     const step2Done = kakaoTestFriends.length > 0
     const step4Done = !!kakaoTestSentTo
     const appUrl = typeof window !== 'undefined' ? window.location.origin + '/' : ''
@@ -2795,41 +2821,65 @@ export function CompleteApp() {
                   </div>
                 </div>
               ) : (
-                <button
-                  type="button"
-                  disabled={!kakaoAccessToken || !isKakaoLoggedIn}
-                  onClick={async () => {
-                    if (!kakaoAccessToken) { toast('카카오로 로그인 후 이용해 주세요.'); return }
-                    setKakaoTestFriendsLoading(true)
-                    try {
-                      const res = await fetch(`${API_BASE}/api/v1/social/kakao-friends`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ access_token: kakaoAccessToken }),
-                      })
-                      const data = await res.json().catch(() => ({}))
-                      const elements = data.elements ?? []
-                      setKakaoTestFriends(elements)
-                      if (elements.length === 0) toast('친구 목록이 비어있거나 동의가 필요해요. 설정에서 카카오 친구목록 동의 후 다시 시도하세요.')
-                    } catch {
-                      toast('친구 목록을 불러오지 못했어요.')
-                    } finally {
-                      setKakaoTestFriendsLoading(false)
-                    }
-                  }}
-                  style={{
-                    padding: '10px 16px',
-                    borderRadius: 10,
-                    border: 'none',
-                    background: kakaoAccessToken && isKakaoLoggedIn ? '#FEE500' : (isDarkMode ? 'rgba(255,255,255,0.1)' : '#E5E7EB'),
-                    color: kakaoAccessToken && isKakaoLoggedIn ? '#3C1E1E' : (isDarkMode ? 'rgba(255,255,255,0.5)' : '#9CA3AF'),
-                    fontWeight: 600,
-                    fontSize: 13,
-                    cursor: kakaoAccessToken && isKakaoLoggedIn ? 'pointer' : 'default',
-                  }}
-                >
-                  친구 목록 불러오기
-                </button>
+                <>
+                  <button
+                    type="button"
+                    disabled={!tokenForFriends || !isKakaoLoggedIn}
+                    onClick={async () => {
+                      if (!tokenForFriends) { toast('카카오로 로그인 후 이용해 주세요.'); return }
+                      setKakaoTestFriendsLoading(true)
+                      setKakaoTestFriendsError(null)
+                      try {
+                        const res = await fetch(`${API_BASE}/api/v1/social/kakao-friends`, {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ access_token: tokenForFriends }),
+                        })
+                        const data = await res.json().catch(() => ({}))
+                        if (res.status === 403) {
+                          setKakaoTestFriendsError('403')
+                          toast('친구목록 동의가 필요해요. 아래 버튼으로 동의 후 다시 시도하세요.')
+                          return
+                        }
+                        const elements = data.elements ?? []
+                        setKakaoTestFriends(elements)
+                        setKakaoTestFriendsError(null)
+                        if (elements.length === 0) toast('친구 목록이 비어있거나 동의가 필요해요. 아래 동의하기를 눌러 다시 시도하세요.')
+                      } catch {
+                        toast('친구 목록을 불러오지 못했어요.')
+                      } finally {
+                        setKakaoTestFriendsLoading(false)
+                      }
+                    }}
+                    style={{
+                      padding: '10px 16px',
+                      borderRadius: 10,
+                      border: 'none',
+                      background: tokenForFriends && isKakaoLoggedIn ? '#FEE500' : (isDarkMode ? 'rgba(255,255,255,0.1)' : '#E5E7EB'),
+                      color: tokenForFriends && isKakaoLoggedIn ? '#3C1E1E' : (isDarkMode ? 'rgba(255,255,255,0.5)' : '#9CA3AF'),
+                      fontWeight: 600,
+                      fontSize: 13,
+                      cursor: tokenForFriends && isKakaoLoggedIn ? 'pointer' : 'default',
+                    }}
+                  >
+                    친구 목록 불러오기
+                  </button>
+                  {kakaoTestFriendsError === '403' && (
+                    <div style={{ marginTop: 12, padding: 12, background: isDarkMode ? 'rgba(239,68,68,0.15)' : '#FEE2E2', borderRadius: 10, border: '1px solid #DC2626' }}>
+                      <div style={{ fontSize: 12, color: '#B91C1C', marginBottom: 6 }}>403: 친구 목록 권한이 없습니다.</div>
+                      <div style={{ fontSize: 11, color: '#B91C1C', lineHeight: 1.6, marginBottom: 10 }}>
+                        아래 <b>「친구 목록 권한 허용」</b>을 누르면 카카오 동의창이 뜹니다. 동의 후 돌아오면 <b>친구 목록 불러오기</b>를 다시 누르세요.
+                      </div>
+                      <a
+                        href="/api/auth/kakao-consent?return=kakao-api-test"
+                        onClick={() => { try { sessionStorage.setItem('kakao_consent_return', 'kakao-api-test') } catch (_) {} }}
+                        style={{ display: 'inline-block', padding: '10px 16px', borderRadius: 10, border: 'none', background: '#FEE500', color: '#3C1E1E', fontWeight: 600, fontSize: 13, cursor: 'pointer', textDecoration: 'none' }}
+                      >
+                        친구 목록 권한 허용 (동의창 띄우기)
+                      </a>
+                    </div>
+                  )}
+                </>
               )}
             </div>
 
@@ -2851,14 +2901,14 @@ export function CompleteApp() {
                           type="button"
                           disabled={!!kakaoTestSendingUuid}
                           onClick={async () => {
-                            if (!kakaoAccessToken || !uid) return
+                            if (!tokenForFriends || !uid) return
                             setKakaoTestSendingUuid(uid)
                             try {
                               const res = await fetch(`${API_BASE}/api/v1/social/kakao-friends/send-message`, {
                                 method: 'POST',
                                 headers: { 'Content-Type': 'application/json' },
                                 body: JSON.stringify({
-                                  access_token: kakaoAccessToken,
+                                  access_token: tokenForFriends,
                                   receiver_uuid: uid,
                                   text: inviteText,
                                   title: 'WhereHere 열기',
@@ -3094,28 +3144,14 @@ export function CompleteApp() {
                   <div style={{ fontWeight: 700, marginBottom: 4 }}>필요한 추가 동의 항목</div>
                   <div>• <b>카카오톡 친구 목록</b> — 앱 친구에게 장소 공유</div>
                   <div>• <b>카카오톡 메시지 발송</b> — 친구에게 퀘스트 초대</div>
-                  <div style={{ marginTop: 6, color: isDarkMode ? 'rgba(255,255,255,0.5)' : '#9CA3AF' }}>동의 후 친구 초대 기능이 활성화됩니다</div>
+                  <div style={{ marginTop: 6, color: isDarkMode ? 'rgba(255,255,255,0.5)' : '#9CA3AF' }}>아래 버튼으로 동의창만 띄워 권한을 받습니다. 메인 로그인은 건드리지 않습니다.</div>
                 </div>
-                <button
-                  onClick={() => {
-                    const { signInWithOAuth } = useAuth ? {} as any : {}
-                    // Supabase OAuth re-consent with friends + talk_message scopes
-                    const supabaseClient = createClient()
-                    supabaseClient.auth.signInWithOAuth({
-                      provider: 'kakao',
-                      options: {
-                        scopes: 'profile_nickname profile_image account_email friends talk_message',
-                        queryParams: { prompt: 'consent' },
-                      },
-                    }).then(({ data, error }) => {
-                      if (error) { toast.error('카카오 연동에 실패했어요.'); return }
-                      if (data?.url) window.location.href = data.url
-                    })
-                  }}
-                  style={{ width: '100%', padding: '12px 0', borderRadius: 12, border: 'none', background: '#FEE500', color: '#3C1E1E', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}
+                <a
+                  href="/api/auth/kakao-consent"
+                  style={{ display: 'block', width: '100%', padding: '12px 0', borderRadius: 12, border: 'none', background: '#FEE500', color: '#3C1E1E', fontWeight: 700, fontSize: 14, cursor: 'pointer', textAlign: 'center', textDecoration: 'none' }}
                 >
-                  💬 카카오톡 친구 목록 동의하기
-                </button>
+                  💬 카카오톡 친구 목록 권한 허용 (동의창 띄우기)
+                </a>
               </div>
             )}
 
