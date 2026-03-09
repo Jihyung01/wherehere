@@ -305,11 +305,12 @@ export default function MyMapReal() {
     return () => window.removeEventListener("focus", onFocus);
   }, [userId]);
 
-  // 카카오맵 스크립트 로드 대기 (첫 로딩이 느리면 타임아웃으로 안내)
+  // 카카오맵 스크립트 로드 대기 (5초 내 미완료 시 도메인 미등록 안내)
   useEffect(() => {
+    if (kakaoLoaded) return;
     const timeout = setTimeout(() => {
-      if (!kakaoLoaded) setMapLoadError('지도 로딩이 지연되고 있습니다. 배포 도메인이 카카오 개발자 콘솔 앱 키에 등록되어 있는지 확인해 주세요.');
-    }, 15000);
+      if (!kakaoLoaded) setMapLoadError('지도를 불러오지 못했습니다. 카카오 개발자 콘솔 → 내 애플리케이션 → 앱 설정 → 플랫폼 → Web → 사이트 도메인에 https://wherehere-seven.vercel.app 을 추가해 주세요.');
+    }, 5000);
     return () => clearTimeout(timeout);
   }, [kakaoLoaded]);
 
@@ -550,9 +551,12 @@ export default function MyMapReal() {
         src={`https://dapi.kakao.com/v2/maps/sdk.js?appkey=${process.env.NEXT_PUBLIC_KAKAO_MAP_KEY || '160238a590f3d2957230d764fb745322'}&autoload=false`}
         strategy="afterInteractive"
         onLoad={() => {
+          // maps.load 콜백이 안 오는 경우(도메인 미등록 등) 대비 4초 폴백
+          const fallback = setTimeout(() => setKakaoLoaded(true), 4000);
           if (window.kakao?.maps?.load) {
-            window.kakao.maps.load(() => setKakaoLoaded(true));
+            window.kakao.maps.load(() => { clearTimeout(fallback); setKakaoLoaded(true); });
           } else {
+            clearTimeout(fallback);
             setKakaoLoaded(true);
           }
         }}

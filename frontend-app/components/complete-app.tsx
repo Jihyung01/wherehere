@@ -1160,15 +1160,17 @@ export function CompleteApp() {
         const supabase = createClient()
         const { error } = await supabase.auth.updateUser({ data: { display_name: name, name } })
         if (error) throw new Error(error.message)
+        // auth.updateUser만 성공한 경우: 로컬 상태는 낙관적 업데이트로 이미 반영됨 → refetch 불필요
+        toast.success('이름이 변경되었어요.')
+      } else {
+        // 백엔드 성공: 서버 최신값으로 갱신
+        await refetchUserProfile()
+        toast.success('이름이 변경되었어요.')
       }
-      await refetchUserProfile()
     } catch (_) {
       toast.error('이름 변경에 실패했어요. 다시 시도해주세요.')
-      try {
-        await refetchUserProfile()
-      } catch {
-        // noop
-      }
+      // 실패 시 낙관적 업데이트 롤백
+      try { await refetchUserProfile() } catch { /* noop */ }
     } finally {
       setSavingNickname(false)
     }
