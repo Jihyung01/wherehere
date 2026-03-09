@@ -266,6 +266,7 @@ export function CompleteApp() {
   }, [user?.id, user?.app_metadata?.provider])
 
   // 추가 동의 플로우 복귀: URL의 kakao_friends_token, return, error 처리 (한 번만 처리 후 URL 정리)
+  // toast/setScreen는 다음 틱으로 미뤄서 React 418(렌더 중 다른 컴포넌트 업데이트) 방지
   useEffect(() => {
     if (typeof window === 'undefined') return
     const params = new URLSearchParams(window.location.search)
@@ -273,31 +274,6 @@ export function CompleteApp() {
     const returnTo = params.get('return')
     const err = params.get('error')
     const kakaoDesc = params.get('kakao_desc') || ''
-
-    if (err === 'kakao_config') {
-      toast.error('동의창을 띄우려면 Vercel 환경 변수에 NEXT_PUBLIC_KAKAO_MAP_KEY(카카오 REST API 키)가 필요합니다.')
-    } else if (err === 'kakao_consent_denied' || err === 'kakao.consent_denied') {
-      toast.error('친구 목록 동의가 거부되었어요. 동의하지 않으면 친구 목록을 사용할 수 없어요.')
-    } else if (err === 'kakao_consent_no_code') {
-      toast.error('동의 후 돌아오는 과정에서 코드를 받지 못했어요. 다시 동의창부터 시도해 주세요.')
-    } else if (err === 'kakao_consent_exchange' || err === 'kakao.consent_exchange') {
-      const isRateLimit = /rate\s*limit|한도|exceeded/i.test(decodeURIComponent(kakaoDesc))
-      if (isRateLimit) {
-        toast.error('토큰 요청 한도를 초과했어요. 약 10분 후 다시 「동의창 띄우기」를 눌러 주세요.')
-      } else {
-        toast.error('동의 후 토큰 발급에 실패했어요. Redirect URI가 카카오 개발자 콘솔과 일치하는지 확인 후 다시 시도해 주세요.')
-      }
-      if (returnTo !== 'kakao-api-test') setScreen('kakao-api-test')
-    }
-
-    if (token) {
-      setKakaoFriendsToken(token)
-      try { sessionStorage.setItem('kakao_friends_token', token) } catch (_) {}
-    } else {
-      const stored = sessionStorage.getItem('kakao_friends_token')
-      if (stored) setKakaoFriendsToken(stored)
-    }
-    if (returnTo === 'kakao-api-test') setScreen('kakao-api-test')
 
     const needsUrlClean = token || returnTo || err
     if (needsUrlClean) {
@@ -308,6 +284,36 @@ export function CompleteApp() {
       u.searchParams.delete('kakao_error')
       u.searchParams.delete('kakao_desc')
       window.history.replaceState({}, '', u.pathname + (u.search || ''))
+    }
+
+    if (token) {
+      setKakaoFriendsToken(token)
+      try { sessionStorage.setItem('kakao_friends_token', token) } catch (_) {}
+    } else {
+      const stored = sessionStorage.getItem('kakao_friends_token')
+      if (stored) setKakaoFriendsToken(stored)
+    }
+
+    if (returnTo === 'kakao-api-test') setScreen('kakao-api-test')
+    else if (err === 'kakao_consent_exchange' || err === 'kakao.consent_exchange') setScreen('kakao-api-test')
+
+    const msg =
+      err === 'kakao_config'
+        ? '동의창을 띄우려면 Vercel 환경 변수에 NEXT_PUBLIC_KAKAO_MAP_KEY(카카오 REST API 키)가 필요합니다.'
+        : err === 'kakao_consent_denied' || err === 'kakao.consent_denied'
+          ? '친구 목록 동의가 거부되었어요. 동의하지 않으면 친구 목록을 사용할 수 없어요.'
+          : err === 'kakao_consent_no_code'
+            ? '동의 후 돌아오는 과정에서 코드를 받지 못했어요. 다시 동의창부터 시도해 주세요.'
+            : err === 'kakao_consent_exchange' || err === 'kakao.consent_exchange'
+              ? /rate\s*limit|한도|exceeded/i.test(decodeURIComponent(kakaoDesc))
+                ? '토큰 요청 한도를 초과했어요. 약 10분 후 다시 「동의창 띄우기」를 눌러 주세요.'
+                : '동의 후 토큰 발급에 실패했어요. Redirect URI가 카카오 개발자 콘솔과 일치하는지 확인 후 다시 시도해 주세요.'
+              : null
+    if (msg) {
+      const t = setTimeout(() => {
+        toast.error(msg)
+      }, 0)
+      return () => clearTimeout(t)
     }
   }, [])
 

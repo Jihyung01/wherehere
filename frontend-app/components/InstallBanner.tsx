@@ -33,7 +33,7 @@ export function InstallBanner() {
 
     // Android / Chrome Desktop: beforeinstallprompt 이벤트 대기
     const handler = (e: Event) => {
-      e.preventDefault()
+      if (typeof (e as any).preventDefault === 'function') (e as any).preventDefault()
       setDeferredPrompt(e)
       setShow(true)
     }
