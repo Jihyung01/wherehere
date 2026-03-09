@@ -198,7 +198,12 @@ export function CompleteApp() {
   }, [displayName])
 
   // 로그인 유도: 비로그인 시 데모 수락 전에는 로그인 화면 강조
-  const showLoginGate = !isLoggedIn && typeof window !== 'undefined' && typeof sessionStorage !== 'undefined' && sessionStorage.getItem('wherehere_demo_accepted') !== '1'
+  // sessionStorage는 useEffect에서만 읽어야 hydration 에러(#418) 방지됨
+  const [demoAccepted, setDemoAccepted] = useState(false)
+  useEffect(() => {
+    try { setDemoAccepted(sessionStorage.getItem('wherehere_demo_accepted') === '1') } catch (_) {}
+  }, [])
+  const showLoginGate = !isLoggedIn && !demoAccepted
 
   // 퀘스트 수락 시 Role+Mood에 따라 동적 미션 선택
   useEffect(() => {
@@ -2837,13 +2842,12 @@ export function CompleteApp() {
               ) : (
                 <div>
                   <div style={{ fontSize: 13, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280', marginBottom: 10 }}>동의가 필요하면 아래 버튼을 누르면 카카오 동의창이 열립니다. 동의 후 돌아오면 ③ 친구 목록 불러오기를 누르세요.</div>
-                  <button
-                    type="button"
-                    onClick={() => { window.location.href = window.location.origin + '/api/auth/kakao-consent?return=kakao-api-test' }}
-                    style={{ padding: '10px 16px', borderRadius: 10, border: 'none', background: '#FEE500', color: '#3C1E1E', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}
+                  <a
+                    href="/api/auth/kakao-consent?return=kakao-api-test"
+                    style={{ display: 'inline-block', padding: '10px 16px', borderRadius: 10, background: '#FEE500', color: '#3C1E1E', fontWeight: 600, fontSize: 13, cursor: 'pointer', textDecoration: 'none' }}
                   >
                     카카오 동의창 띄우기 (친구 목록 권한 허용)
-                  </button>
+                  </a>
                 </div>
               )}
             </div>
@@ -2917,13 +2921,12 @@ export function CompleteApp() {
                       <div style={{ fontSize: 11, color: '#B91C1C', lineHeight: 1.6, marginBottom: 10 }}>
                         아래 버튼을 누르면 카카오 동의창이 열립니다. 동의 후 돌아오면 <b>친구 목록 불러오기</b>를 다시 누르세요.
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => { window.location.href = window.location.origin + '/api/auth/kakao-consent?return=kakao-api-test' }}
-                        style={{ padding: '10px 16px', borderRadius: 10, border: 'none', background: '#FEE500', color: '#3C1E1E', fontWeight: 600, fontSize: 13, cursor: 'pointer' }}
+                      <a
+                        href="/api/auth/kakao-consent?return=kakao-api-test"
+                        style={{ display: 'inline-block', padding: '10px 16px', borderRadius: 10, background: '#FEE500', color: '#3C1E1E', fontWeight: 600, fontSize: 13, cursor: 'pointer', textDecoration: 'none' }}
                       >
                         친구 목록 권한 허용 (동의창 띄우기)
-                      </button>
+                      </a>
                     </div>
                   )}
                 </>
