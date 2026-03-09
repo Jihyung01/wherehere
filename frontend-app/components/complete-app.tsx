@@ -199,7 +199,6 @@ export function CompleteApp() {
 
   // 로그인 유도: 비로그인 시 데모 수락 전에는 로그인 화면 강조
   // sessionStorage는 useEffect에서만 읽어야 hydration 에러(#418) 방지됨
-  const [demoAccepted, setDemoAccepted] = useState(false)
   useEffect(() => {
     try { setDemoAccepted(sessionStorage.getItem('wherehere_demo_accepted') === '1') } catch (_) {}
   }, [])
