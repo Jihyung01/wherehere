@@ -7,7 +7,9 @@ import { NextRequest, NextResponse } from 'next/server'
 const KAKAO_AUTH = 'https://kauth.kakao.com/oauth/authorize'
 
 export async function GET(request: NextRequest) {
-  const origin = request.headers.get('origin') || request.nextUrl.origin
+  const host = request.headers.get('x-forwarded-host') || request.nextUrl.host || request.headers.get('host') || ''
+  const proto = request.headers.get('x-forwarded-proto') || 'https'
+  const origin = host ? `${proto}://${host}` : request.nextUrl.origin
   const returnTo = request.nextUrl.searchParams.get('return') || ''
   const redirectUri = `${origin}/api/auth/kakao-friends-callback`
   const clientId = process.env.NEXT_PUBLIC_KAKAO_MAP_KEY || process.env.KAKAO_REST_API_KEY

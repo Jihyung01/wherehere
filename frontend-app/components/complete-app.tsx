@@ -265,12 +265,19 @@ export function CompleteApp() {
     })
   }, [user?.id, user?.app_metadata?.provider])
 
-  // 추가 동의 플로우 복귀: URL의 kakao_friends_token, return 처리
+  // 추가 동의 플로우 복귀: URL의 kakao_friends_token, return, error 처리
   useEffect(() => {
     if (typeof window === 'undefined') return
     const params = new URLSearchParams(window.location.search)
     const token = params.get('kakao_friends_token')
     const returnTo = params.get('return')
+    const err = params.get('error')
+    if (err === 'kakao_config') {
+      toast.error('동의창을 띄우려면 Vercel 환경 변수에 NEXT_PUBLIC_KAKAO_MAP_KEY(카카오 REST API 키)가 필요합니다.')
+      const u = new URL(window.location.href)
+      u.searchParams.delete('error')
+      window.history.replaceState({}, '', u.pathname + u.search)
+    }
     if (token) {
       setKakaoFriendsToken(token)
       try { sessionStorage.setItem('kakao_friends_token', token) } catch (_) {}
@@ -2871,8 +2878,13 @@ export function CompleteApp() {
                         아래 <b>「친구 목록 권한 허용」</b>을 누르면 카카오 동의창이 뜹니다. 동의 후 돌아오면 <b>친구 목록 불러오기</b>를 다시 누르세요.
                       </div>
                       <a
-                        href="/api/auth/kakao-consent?return=kakao-api-test"
-                        onClick={() => { try { sessionStorage.setItem('kakao_consent_return', 'kakao-api-test') } catch (_) {} }}
+                        href={`${typeof window !== 'undefined' ? window.location.origin : ''}/api/auth/kakao-consent?return=kakao-api-test`}
+                        onClick={(e) => {
+                          e.preventDefault()
+                          try { sessionStorage.setItem('kakao_consent_return', 'kakao-api-test') } catch (_) {}
+                          const url = `${window.location.origin}/api/auth/kakao-consent?return=kakao-api-test`
+                          window.location.href = url
+                        }}
                         style={{ display: 'inline-block', padding: '10px 16px', borderRadius: 10, border: 'none', background: '#FEE500', color: '#3C1E1E', fontWeight: 600, fontSize: 13, cursor: 'pointer', textDecoration: 'none' }}
                       >
                         친구 목록 권한 허용 (동의창 띄우기)
@@ -3147,7 +3159,11 @@ export function CompleteApp() {
                   <div style={{ marginTop: 6, color: isDarkMode ? 'rgba(255,255,255,0.5)' : '#9CA3AF' }}>아래 버튼으로 동의창만 띄워 권한을 받습니다. 메인 로그인은 건드리지 않습니다.</div>
                 </div>
                 <a
-                  href="/api/auth/kakao-consent"
+                  href={`${typeof window !== 'undefined' ? window.location.origin : ''}/api/auth/kakao-consent`}
+                  onClick={(e) => {
+                    e.preventDefault()
+                    window.location.href = `${window.location.origin}/api/auth/kakao-consent`
+                  }}
                   style={{ display: 'block', width: '100%', padding: '12px 0', borderRadius: 12, border: 'none', background: '#FEE500', color: '#3C1E1E', fontWeight: 700, fontSize: 14, cursor: 'pointer', textAlign: 'center', textDecoration: 'none' }}
                 >
                   💬 카카오톡 친구 목록 권한 허용 (동의창 띄우기)
