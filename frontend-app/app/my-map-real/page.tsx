@@ -191,8 +191,11 @@ function getValueRedistributionTips(visits: Visit[], analysis: { favorite_catego
 
 // API Functions
 async function fetchUserVisits(userId: string): Promise<Visit[]> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 6000); // 6초 타임아웃
   try {
-    const response = await fetch(`${API_BASE}/api/v1/visits/${userId}`);
+    const response = await fetch(`${API_BASE}/api/v1/visits/${userId}`, { signal: controller.signal });
+    clearTimeout(timer);
     if (!response.ok) {
       console.error('[나의 지도] API 에러:', response.status);
       return [];
@@ -200,33 +203,46 @@ async function fetchUserVisits(userId: string): Promise<Visit[]> {
     const data = await response.json();
     return data.visits || [];
   } catch (error) {
-    console.error("[나의 지도] 조회 실패:", error);
+    clearTimeout(timer);
+    if ((error as any)?.name !== 'AbortError') {
+      console.error("[나의 지도] 조회 실패:", error);
+    }
     return [];
   }
 }
 
 async function fetchPatternAnalysis(userId: string) {
+  const FALLBACK = {
+    analysis: {
+      dominant_style: "탐험가",
+      favorite_categories: [],
+      preferred_time: "오후",
+      avg_duration_minutes: 0,
+      exploration_radius_km: 0
+    },
+    stats: { total_visits: 0, unique_places: 0, total_xp: 0 },
+    ai_analysis: "방문 기록이 쌓이면 AI가 패턴을 분석해드려요."
+  };
+  // 데모 유저는 AI 호출 생략
+  if (!userId || userId === "user-demo-001") return FALLBACK;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8000); // 8초 타임아웃
   try {
     const response = await fetch(`${API_BASE}/api/v1/ai/pattern/analyze`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ user_id: userId, days: 90 })
+      body: JSON.stringify({ user_id: userId, days: 90 }),
+      signal: controller.signal,
     });
+    clearTimeout(timer);
     if (!response.ok) throw new Error("Failed to fetch pattern");
     return await response.json();
   } catch (error) {
-    console.error("Error fetching pattern:", error);
-    return {
-      analysis: {
-        dominant_style: "탐험가",
-        favorite_categories: [],
-        preferred_time: "오후",
-        avg_duration_minutes: 0,
-        exploration_radius_km: 0
-      },
-      stats: { total_visits: 0, unique_places: 0, total_xp: 0 },
-      ai_analysis: "데이터를 분석 중입니다..."
-    };
+    clearTimeout(timer);
+    if ((error as any)?.name !== 'AbortError') {
+      console.error("Error fetching pattern:", error);
+    }
+    return FALLBACK;
   }
 }
 
@@ -328,13 +344,19 @@ export default function MyMapReal() {
 
   const loadData = async () => {
     setLoading(true);
-    const [visitsData, patternData] = await Promise.all([
-      fetchUserVisits(userId),
-      fetchPatternAnalysis(userId)
-    ]);
-    setVisits(visitsData);
-    setPattern(patternData);
-    setLoading(false);
+    // 최대 10초 안전 타임아웃: 네트워크 이슈로 setLoading(false)가 안 불리는 상황 방지
+    const safetyTimer = setTimeout(() => setLoading(false), 10000);
+    try {
+      const [visitsData, patternData] = await Promise.all([
+        fetchUserVisits(userId),
+        fetchPatternAnalysis(userId)
+      ]);
+      setVisits(visitsData);
+      setPattern(patternData);
+    } finally {
+      clearTimeout(safetyTimer);
+      setLoading(false);
+    }
   };
 
   type HexagonStats = { explorationPercent: number; conqueredCount: number; totalHexes: number; visitedCells: Set<string>; visitCountPerCell: Map<string, number>; neighborhoodCells: string[] };
