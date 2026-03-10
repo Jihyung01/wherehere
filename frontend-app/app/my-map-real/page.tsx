@@ -321,7 +321,29 @@ export default function MyMapReal() {
     return () => window.removeEventListener("focus", onFocus);
   }, [userId]);
 
-  // 에러 타이머는 onLoad 콜백에서 시작 (스크립트 다운로드 시간 제외)
+  // 마운트 시 kakao SDK가 이미 로드되어 있으면 즉시 초기화 (SPA 재방문 대응)
+  useEffect(() => {
+    if (kakaoLoaded) return;
+    const tryInit = () => {
+      if (window.kakao?.maps) {
+        setKakaoLoaded(true);
+        return true;
+      }
+      if (window.kakao?.maps?.load) {
+        window.kakao.maps.load(() => setKakaoLoaded(true));
+        return true;
+      }
+      return false;
+    };
+    if (tryInit()) return;
+    // 아직 스크립트가 실행 중이면 폴링으로 대기 (최대 10초)
+    let attempts = 0;
+    const interval = setInterval(() => {
+      attempts++;
+      if (tryInit() || attempts > 100) clearInterval(interval);
+    }, 100);
+    return () => clearInterval(interval);
+  }, []);
 
   // Init Kakao Map: 지도 탭일 때 표시. DOM 레이아웃 후 초기화 + 헥사곤 오버레이 + relayout
   useEffect(() => {
@@ -555,16 +577,17 @@ export default function MyMapReal() {
         src={`https://dapi.kakao.com/v2/maps/sdk.js?appkey=${process.env.NEXT_PUBLIC_KAKAO_MAP_KEY || '160238a590f3d2957230d764fb745322'}&autoload=false`}
         strategy="afterInteractive"
         onLoad={() => {
-          // 스크립트 로드 완료 후 5초 내 maps.load 콜백 미실행 시 에러 표시
-          const errorTimer = setTimeout(() => {
-            setMapLoadError('지도를 불러오지 못했습니다. 카카오 개발자 콘솔 → 내 애플리케이션 → 앱 설정 → 플랫폼 → Web → 사이트 도메인에 https://wherehere-seven.vercel.app 을 추가해 주세요.');
-          }, 5000);
-          if (window.kakao?.maps?.load) {
-            window.kakao.maps.load(() => { clearTimeout(errorTimer); setKakaoLoaded(true); });
-          } else {
-            clearTimeout(errorTimer);
-            setKakaoLoaded(true);
-          }
+          const tryLoad = () => {
+            if (window.kakao?.maps?.load) {
+              window.kakao.maps.load(() => setKakaoLoaded(true));
+            } else if (window.kakao?.maps) {
+              setKakaoLoaded(true);
+            } else {
+              // kakao 객체가 아직 없으면 짧게 대기 후 재시도
+              setTimeout(tryLoad, 200);
+            }
+          };
+          tryLoad();
         }}
         onError={() => setMapLoadError('지도 스크립트를 불러오지 못했습니다. 배포 도메인이 카카오맵 앱 키에 등록되어 있는지 확인해 주세요.')}
       />
