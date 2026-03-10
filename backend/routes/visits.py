@@ -143,23 +143,48 @@ async def get_user_visits(
             }
         
         visits = await db.get_user_visits(user_id, days=days)
-        
-        # 장소 정보와 조인 (optional - place가 없어도 visit은 표시)
+
+        # visits 테이블에 place_name/latitude/longitude 컬럼이 있으면 N+1 쿼리 스킵
+        # 없는 경우에만 places 테이블 조회 (백워드 호환)
         enriched_visits = []
+        missing_place_ids: list = []
+        for visit in visits:
+            if visit.get("latitude") is None and visit.get("place_id"):
+                missing_place_ids.append(visit.get("place_id"))
+
+        # 좌표 없는 place만 일괄 조회 (최대 1번 쿼리로 처리)
+        place_cache: dict = {}
+        if missing_place_ids:
+            for pid in missing_place_ids[:20]:  # 최대 20개만 보완 조회
+                try:
+                    p = await db.get_place_by_id(pid)
+                    if p:
+                        place_cache[pid] = p
+                except Exception:
+                    pass
+
         for visit in visits:
             place_id = visit.get("place_id")
-            place = await db.get_place_by_id(place_id) if place_id else None
+            # visits 테이블에 이미 좌표가 있으면 바로 사용 (빠른 경로)
+            if visit.get("latitude") is not None:
+                enriched_visits.append({
+                    "id": visit.get("id"),
+                    "place_id": place_id,
+                    "visited_at": visit.get("visited_at"),
+                    "duration_minutes": visit.get("duration_minutes", 60),
+                    "xp_earned": visit.get("xp_earned", 100),
+                    "mood": visit.get("mood"),
+                    "rating": visit.get("rating"),
+                    "spent_amount": visit.get("spent_amount"),
+                    "place_name": visit.get("place_name") or "장소",
+                    "category": visit.get("category") or "기타",
+                    "latitude": visit.get("latitude"),
+                    "longitude": visit.get("longitude"),
+                })
+                continue
 
-            # place가 없고 kakao- ID 또는 숫자형 ID면 Kakao API로 lazy fetch & save 시도
-            if not place and place_id:
-                pid = str(place_id)
-                if pid.startswith("kakao-") or pid.isdigit():
-                    kakao_pid = f"kakao-{pid}" if pid.isdigit() else pid
-                    try:
-                        place = await _fetch_and_save_kakao_place(kakao_pid, db)
-                    except Exception:
-                        pass
-
+            # 캐시에서 place 정보 사용
+            place = place_cache.get(place_id)
             enriched_visit = {
                 "id": visit.get("id"),
                 "place_id": place_id,
@@ -170,25 +195,20 @@ async def get_user_visits(
                 "rating": visit.get("rating"),
                 "spent_amount": visit.get("spent_amount"),
             }
-
-            # place 정보가 있으면 추가
             if place:
                 enriched_visit.update({
-                    "place_name": place.get("name") or visit.get("place_name"),
+                    "place_name": place.get("name") or visit.get("place_name") or "장소",
                     "category": place.get("primary_category") or "기타",
                     "latitude": place.get("latitude"),
                     "longitude": place.get("longitude"),
                 })
             else:
-                # 최후 폴백: visits 테이블 place_name 컬럼 → place_id → 기타
-                fallback_name = visit.get("place_name") or "장소 정보 없음"
                 enriched_visit.update({
-                    "place_name": fallback_name,
+                    "place_name": visit.get("place_name") or "장소 정보 없음",
                     "category": visit.get("category") or "기타",
                     "latitude": None,
                     "longitude": None,
                 })
-            
             enriched_visits.append(enriched_visit)
         
         return {
