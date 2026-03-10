@@ -3,7 +3,38 @@
 import React from 'react'
 import Script from 'next/script'
 import { useRouter } from 'next/navigation'
-import { getLevelBenefits } from '@/contexts/AppContext'
+
+const LEVEL_BENEFITS: Record<number, { icon: string; title: string; desc: string; type: string }[]> = {
+  1: [{ icon: '🗺️', title: '퀘스트 탐험', desc: '기본 역할 퀘스트 수락 가능', type: 'unlock' }],
+  2: [{ icon: '💬', title: '동네 피드 작성', desc: '리뷰·이야기 게시글 작성 개방', type: 'unlock' }],
+  3: [{ icon: '🎯', title: '챌린지 도전', desc: '일일·주간 챌린지 전체 참가 가능', type: 'unlock' }, { icon: '⚡', title: 'XP 보너스 +10%', desc: '모든 퀘스트 보상 10% 추가', type: 'bonus' }],
+  5: [{ icon: '📸', title: '포토 미션 강화', desc: '사진 미션 완료 시 추가 XP +15', type: 'bonus' }],
+  6: [{ icon: '🔮', title: '히든 퀘스트 해금', desc: '숨겨진 특별 장소 퀘스트 등장', type: 'unlock' }],
+  8: [{ icon: '🔥', title: '스트릭 보너스', desc: '5일 연속 방문 시 XP 2배', type: 'bonus' }],
+  10: [{ icon: '🗺️', title: '동네 정복 통계', desc: '구역별 정복률·히트맵 고급 분석 개방', type: 'unlock' }, { icon: '👑', title: '탐험가 칭호', desc: '프로필에 "베테랑 탐험가" 배지 표시', type: 'social' }],
+  12: [{ icon: '🤝', title: '함께 도전 기능', desc: '친구를 퀘스트에 초대하고 함께 완료 가능', type: 'social' }],
+  15: [{ icon: '✨', title: '프리미엄 AI 서사', desc: '더 깊고 개성 있는 장소 스토리 생성', type: 'unlock' }, { icon: '💰', title: 'XP 보너스 +25%', desc: '누적 보너스 적용, 레벨 3 포함', type: 'bonus' }],
+  20: [{ icon: '🏆', title: '동네 명예의 전당', desc: '동네 최다 방문자 랭킹 노출', type: 'social' }, { icon: '🎁', title: '파트너 혜택', desc: '제휴 카페·식당 첫 방문 할인 쿠폰', type: 'unlock' }],
+  25: [{ icon: '🌟', title: '크리에이터 뱃지', desc: '피드 게시글에 특별 아이콘 표시', type: 'social' }],
+  30: [{ icon: '🗝️', title: '비밀 지역 해금', desc: '앱 내 VIP 전용 숨겨진 지역 퀘스트', type: 'unlock' }, { icon: '⚡', title: 'XP 보너스 +50%', desc: '레벨 3·15 포함 누적 적용', type: 'bonus' }],
+  50: [{ icon: '👑', title: '레전드 탐험가', desc: '최고 등급 칭호 및 영구 프로필 뱃지', type: 'social' }],
+}
+
+function getLevelBenefits(currentLevel: number) {
+  const current: { icon: string; title: string; desc: string; type: string }[] = []
+  const upcoming: Array<{ level: number; benefits: { icon: string; title: string; desc: string; type: string }[] }> = []
+  const levels = Object.keys(LEVEL_BENEFITS).map(Number).sort((a, b) => a - b)
+  for (const lv of levels) {
+    if (lv <= currentLevel) {
+      current.push(...LEVEL_BENEFITS[lv])
+    } else if (upcoming.length < 2) {
+      upcoming.push({ level: lv, benefits: LEVEL_BENEFITS[lv] })
+    }
+  }
+  return { current, upcoming }
+}
+
+export type HomeScreenContentRef = React.RefObject<HTMLDivElement | null>
 
 export interface HomeScreenContentProps {
   setScreen: (s: string) => void
@@ -20,7 +51,7 @@ export interface HomeScreenContentProps {
   textColor: string
   accentColor: string
   accentRgba: (a: number) => string
-  homeMapContainerRef: React.RefObject<HTMLDivElement | null>
+  homeMapContainerRef: HomeScreenContentRef
   kakaoMapLoaded: boolean
   setKakaoMapLoaded: (v: boolean) => void
 }
