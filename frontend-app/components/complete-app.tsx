@@ -485,6 +485,17 @@ export function CompleteApp() {
     try { localStorage.setItem('wherehere_accentColor', accentColor) } catch (_) {}
   }, [themeMode, isDarkMode, accentColor])
 
+  // userStats는 레벨업 감지·프로필·챌린지에서 사용하므로 useQuery를 먼저 선언
+  const { data: userStats, refetch: refetchUserStats } = useQuery({
+    queryKey: ['userStats', userId],
+    queryFn: async () => {
+      const res = await fetch(`${API_BASE}/api/v1/users/me/stats?user_id=${encodeURIComponent(userId)}`)
+      if (!res.ok) return null
+      return res.json()
+    },
+    enabled: (screen === 'profile' || screen === 'challenges' || screen === 'home') && !!userId,
+  })
+
   // 레벨업 감지: userStats.level 변화 시 축하 모달 표시
   const userStatsLevel = (userStats as any)?.level ?? null
   useEffect(() => {
@@ -749,16 +760,6 @@ export function CompleteApp() {
       console.warn('Home map init failed:', e)
     }
   }, [screen, homeData, userLocation.lat, userLocation.lng, kakaoMapLoaded])
-
-  const { data: userStats, refetch: refetchUserStats } = useQuery({
-    queryKey: ['userStats', userId],
-    queryFn: async () => {
-      const res = await fetch(`${API_BASE}/api/v1/users/me/stats?user_id=${encodeURIComponent(userId)}`)
-      if (!res.ok) return null
-      return res.json()
-    },
-    enabled: (screen === 'profile' || screen === 'challenges' || screen === 'home') && !!userId,
-  })
 
   const { data: profilePostsData } = useQuery({
     queryKey: ['profilePosts', userId],
