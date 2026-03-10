@@ -43,6 +43,9 @@ type LocalFeedProps = {
   onShareKakao?: (post: Post) => void
   onShareInstagram?: (post: Post) => void
   onPlaceFilter?: (placeName: string) => void
+  /** 피드 카드에서 "나도 도전" 버튼 클릭 시 콜백 */
+  onAcceptQuest?: (post: Post) => void
+  accentColor?: string
 }
 
 function relativeTime(iso?: string) {
@@ -61,7 +64,8 @@ export function LocalFeed({
   apiBase, userId, scope, areaName,
   isDarkMode, cardBg, borderColor, textColor,
   feedType = 'all',
-  onShareKakao, onShareInstagram, onPlaceFilter,
+  onShareKakao, onShareInstagram, onPlaceFilter, onAcceptQuest,
+  accentColor = '#E8740C',
 }: LocalFeedProps) {
   const [posts, setPosts] = useState<Post[]>([])
   const [commentsByPostId, setCommentsByPostId] = useState<Record<string, Comment[]>>({})
@@ -313,7 +317,7 @@ export function LocalFeed({
               )}
 
               {/* Meta */}
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 10 }}>
                 {post.rating != null && post.rating > 0 && (
                   <span style={{ fontSize: 12, color: '#F59E0B', fontWeight: 600 }}>
                     {'⭐'.repeat(Math.round(post.rating))} {post.rating}/5
@@ -327,8 +331,8 @@ export function LocalFeed({
                     type="button"
                     onClick={() => onPlaceFilter?.(post.place_name!)}
                     style={{
-                      fontSize: 12, color: '#E8740C', fontWeight: 600,
-                      background: 'rgba(232,116,12,0.1)', padding: '2px 8px', borderRadius: 20,
+                      fontSize: 12, color: accentColor, fontWeight: 600,
+                      background: `${accentColor}18`, padding: '2px 8px', borderRadius: 20,
                       border: 'none', cursor: onPlaceFilter ? 'pointer' : 'default',
                     }}
                   >
@@ -336,6 +340,54 @@ export function LocalFeed({
                   </button>
                 )}
               </div>
+
+              {/* 나도 도전 버튼 — 장소 정보 있는 퀘스트 완료 게시글에만 표시 */}
+              {post.place_name && onAcceptQuest && post.author_id !== userId && (
+                <div style={{
+                  margin: '4px 0 12px',
+                  padding: '10px 14px',
+                  background: isDarkMode
+                    ? `linear-gradient(135deg, ${accentColor}18, ${accentColor}08)`
+                    : `linear-gradient(135deg, ${accentColor}0F, ${accentColor}06)`,
+                  border: `1px dashed ${accentColor}60`,
+                  borderRadius: 12,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: 10,
+                }}>
+                  <div>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: accentColor, marginBottom: 2 }}>
+                      이 장소, 나도 도전할 수 있어요!
+                    </div>
+                    <div style={{ fontSize: 11, color: isDarkMode ? 'rgba(255,255,255,0.5)' : '#6B7280' }}>
+                      📍 {post.place_name}에서 퀘스트 시작하기
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => onAcceptQuest(post)}
+                    style={{
+                      padding: '8px 14px',
+                      borderRadius: 20,
+                      border: 'none',
+                      background: `linear-gradient(135deg, ${accentColor}, ${accentColor}CC)`,
+                      color: '#fff',
+                      fontSize: 12,
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      whiteSpace: 'nowrap',
+                      boxShadow: `0 2px 8px ${accentColor}40`,
+                      transition: 'all 0.15s',
+                      flexShrink: 0,
+                    }}
+                    onMouseEnter={e => { (e.currentTarget as HTMLElement).style.transform = 'scale(1.05)' }}
+                    onMouseLeave={e => { (e.currentTarget as HTMLElement).style.transform = 'scale(1)' }}
+                  >
+                    나도 도전 🚀
+                  </button>
+                </div>
+              )}
 
               {/* Action bar */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 4, paddingTop: 10, borderTop: `1px solid ${borderColor}` }}>

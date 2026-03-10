@@ -226,6 +226,11 @@ export function CompleteApp() {
   const [showLevelUpModal, setShowLevelUpModal] = useState(false)
   const [levelUpData, setLevelUpData] = useState<{ newLevel: number; benefits: typeof LEVEL_BENEFITS[number] } | null>(null)
   const prevLevelRef = React.useRef<number | null>(null)
+  // 클라이언트 마운트 후에만 본문 렌더 (하이드레이션/초기화 오류 방지)
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => {
+    setMounted(true)
+  }, [])
   // 챌린지 보상 수령 상태 (로컬 + 서버 동기)
   const [challengeClaims, setChallengeClaims] = useState<Record<string, { claimed: boolean; completed_at?: string }>>({})
   const [claimingChallenge, setClaimingChallenge] = useState<string | null>(null)
@@ -1393,6 +1398,15 @@ export function CompleteApp() {
       ))}
     </div>
   )
+
+  // 마운트 전: 서버·클라이언트 동일한 플레이스홀더로 하이드레이션/초기화 오류 방지
+  if (!mounted) {
+    return (
+      <div style={{ maxWidth: 430, margin: '0 auto', minHeight: '100vh', background: '#FFFFFF', color: '#1F2937', fontFamily: 'Pretendard, sans-serif', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div style={{ fontSize: 18, color: '#6B7280' }}>로딩 중...</div>
+      </div>
+    )
+  }
 
   // 로그인 유도 화면: 비로그인 사용자에게 로그인 후 이용 유도
   if (showLoginGate) {

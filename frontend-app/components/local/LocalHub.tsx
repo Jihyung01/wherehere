@@ -40,6 +40,9 @@ type LocalHubProps = {
   userAvatarUrl?: string
   /** Supabase 카카오 로그인 시 provider_token. 있으면 친구 목록/메시지 API에 사용 */
   kakaoAccessToken?: string | null
+  /** 피드 "나도 도전" 버튼 클릭 시 콜백 — place_name이 있는 게시글에 표시됨 */
+  onAcceptQuest?: (post: { place_name?: string; title?: string; place_address?: string }) => void
+  accentColor?: string
 }
 
 export function LocalHub({
@@ -65,6 +68,8 @@ export function LocalHub({
   BottomNav,
   userAvatarUrl,
   kakaoAccessToken,
+  onAcceptQuest,
+  accentColor = '#E8740C',
 }: LocalHubProps) {
   const [topTab, setTopTab] = useState<'neighborhood' | 'friend'>('neighborhood')
   const [subTab, setSubTab] = useState<'home' | 'compose' | 'feed'>('compose')
@@ -319,9 +324,10 @@ export function LocalHub({
                 cardBg={cardBg}
                 borderColor={borderColor}
                 textColor={textColor}
+                accentColor={accentColor}
                 onShareKakao={(p) => onShareKakao(p)}
                 onShareInstagram={(p) => onShareInstagramCard(p)}
-                onToast={onToast}
+                onAcceptQuest={onAcceptQuest}
               />
             )}
           </>
@@ -418,13 +424,35 @@ export function LocalHub({
                 feedActivities.map((a) => (
                   <div key={a.id} style={{ background: cardBg, border: `1px solid ${borderColor}`, borderRadius: 16, padding: 16 }}>
                     <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-                      <div style={{ width: 44, height: 44, borderRadius: '50%', background: 'linear-gradient(135deg, #E8740C, #F59E0B)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, flexShrink: 0 }}>👤</div>
+                      <div style={{ width: 44, height: 44, borderRadius: '50%', background: `linear-gradient(135deg, ${accentColor}, #F59E0B)`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, flexShrink: 0 }}>👤</div>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <p style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>
-                          {a.user_id === userId ? '나' : a.user_id.slice(0, 8) + '…'}님이 {a.place_name || '장소'}에서 체크인했어요
+                          {a.user_id === userId ? '나' : a.user_id.slice(0, 8) + '…'}님이{' '}
+                          <span style={{ color: accentColor }}>{a.place_name || '장소'}</span>에서 체크인했어요
                         </p>
-                        {a.xp_earned != null && <span style={{ fontSize: 12, color: '#E8740C', fontWeight: 600 }}>+{a.xp_earned} XP</span>}
+                        {a.xp_earned != null && <span style={{ fontSize: 12, color: accentColor, fontWeight: 600 }}>+{a.xp_earned} XP</span>}
                         {a.created_at && <div style={{ fontSize: 11, color: isDarkMode ? 'rgba(255,255,255,0.4)' : '#9CA3AF', marginTop: 6 }}>{new Date(a.created_at).toLocaleString('ko-KR')}</div>}
+                        {/* 나도 도전 — 내 활동 제외, place_name 있는 것만 */}
+                        {a.user_id !== userId && a.place_name && onAcceptQuest && (
+                          <button
+                            type="button"
+                            onClick={() => onAcceptQuest({ place_name: a.place_name, title: `${a.place_name} 도전`, place_address: '' })}
+                            style={{
+                              marginTop: 10,
+                              padding: '7px 14px',
+                              borderRadius: 20,
+                              border: 'none',
+                              background: `linear-gradient(135deg, ${accentColor}, ${accentColor}CC)`,
+                              color: '#fff',
+                              fontSize: 12,
+                              fontWeight: 700,
+                              cursor: 'pointer',
+                              boxShadow: `0 2px 6px ${accentColor}40`,
+                            }}
+                          >
+                            나도 도전 🚀
+                          </button>
+                        )}
                       </div>
                     </div>
                   </div>

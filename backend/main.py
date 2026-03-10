@@ -37,11 +37,46 @@ from routes.push import router as push_router
 from routes.local_feed import router as local_feed_router
 
 
+async def _send_daily_push_job():
+    """APScheduler 매일 오전 8시(KST) 실행 — 오늘의 한 곳 푸시 발송."""
+    import logging, httpx
+    logger = logging.getLogger("uvicorn.error")
+    try:
+        # 오늘의 추천 장소는 로컬 recommendations API에서 서울 중심 기준으로 가져옴
+        base_url = "http://localhost:8000"
+        async with httpx.AsyncClient(timeout=10) as client:
+            # 1) 추천 장소 한 개 조회 (서울 중심 좌표 기준)
+            rec_res = await client.get(
+                f"{base_url}/api/v1/recommendations",
+                params={"lat": 37.5665, "lng": 126.9780, "role": "explorer", "mood": "curious", "limit": 1},
+            )
+            rec_data = rec_res.json() if rec_res.status_code == 200 else {}
+            recs = rec_data.get("recommendations", [])
+            place_name = recs[0].get("name", "오늘의 추천 장소") if recs else "오늘의 추천 장소"
+            place_address = recs[0].get("address", "") if recs else ""
+            message = recs[0].get("reason", "앱을 열어 오늘의 한 곳을 확인해보세요!") if recs else ""
+
+            # 2) 일일 푸시 발송
+            secret = settings.DAILY_PUSH_SECRET if hasattr(settings, "DAILY_PUSH_SECRET") else ""
+            await client.post(
+                f"{base_url}/api/v1/push/send-daily",
+                json={
+                    "place_name": place_name,
+                    "place_address": place_address,
+                    "message": message,
+                    "secret": secret or "",
+                },
+            )
+        logger.info("[Scheduler] Daily push sent for place: %s", place_name)
+    except Exception as e:
+        logger.warning("[Scheduler] Daily push job failed: %s", e)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     import logging
     logger = logging.getLogger("uvicorn.error")
-    
+
     logger.info("Starting WhereHere API v2...")
     await Database.connect()
 
@@ -51,12 +86,29 @@ async def lifespan(app: FastAPI):
         logger.warning("Database: Not connected (Mock data mode)")
         logger.info("All APIs work with sample data!")
 
+    # APScheduler: 매일 오전 8시(KST = UTC+9) 일일 푸시 발송
+    scheduler = None
+    try:
+        from apscheduler.schedulers.asyncio import AsyncIOScheduler
+        from apscheduler.triggers.cron import CronTrigger
+        scheduler = AsyncIOScheduler()
+        # KST 08:00 = UTC 23:00 (전날)
+        scheduler.add_job(_send_daily_push_job, CronTrigger(hour=23, minute=0, timezone="UTC"))
+        scheduler.start()
+        logger.info("[Scheduler] Daily push job registered (KST 08:00 / UTC 23:00)")
+    except ImportError:
+        logger.warning("[Scheduler] apscheduler not installed — daily push disabled. Run: pip install apscheduler")
+    except Exception as e:
+        logger.warning("[Scheduler] Failed to start scheduler: %s", e)
+
     logger.info(f"API Docs: http://localhost:8000/docs")
     logger.info(f"Health: http://localhost:8000/health")
     logger.info("WhereHere API Ready!")
 
     yield
 
+    if scheduler and scheduler.running:
+        scheduler.shutdown(wait=False)
     await Database.disconnect()
     print("👋 WhereHere API Shutdown")
 
