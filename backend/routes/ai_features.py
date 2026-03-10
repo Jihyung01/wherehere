@@ -240,6 +240,9 @@ async def analyze_personality(
             personality=personality,
             db=db
         )
+        # DB에 성격·동행자 스타일 저장 (update_user_personality는 user_id, personality, companion_style 3인자 필요)
+        if hasattr(db, "update_user_personality"):
+            await db.update_user_personality(request.user_id, personality, companion_style)
         return {
             "success": True,
             "personality": personality,

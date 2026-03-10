@@ -117,10 +117,7 @@ class PersonalizationService:
             )
             
             result = json.loads(response.content[0].text.strip())
-            
-            # DB 업데이트
-            await db.update_user_personality(user_id, result)
-            
+            # DB 업데이트는 라우트에서 personality + companion_style 확보 후 한 번에 수행
             print(f"✅ 사용자 {user_id} 성격 분석 완료")
             print(f"   Openness: {result['openness']:.2f}")
             print(f"   Extraversion: {result['extraversion']:.2f}")

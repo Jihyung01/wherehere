@@ -158,8 +158,14 @@ export function PersonalityProfile({ userId }: PersonalityProfileProps) {
             </div>
           </div>
 
-          <button onClick={handleAnalyze} className="reanalyze-button">
-            🔄 재분석하기
+          <button
+            type="button"
+            onClick={handleAnalyze}
+            disabled={analyzing}
+            className="reanalyze-button"
+            aria-busy={analyzing}
+          >
+            {analyzing ? '🔄 AI 분석 중...' : '🔄 재분석하기'}
           </button>
         </>
       )}
@@ -301,10 +307,17 @@ export function PersonalityProfile({ userId }: PersonalityProfileProps) {
           font-weight: 600;
           cursor: pointer;
           transition: background 0.2s;
+          position: relative;
+          z-index: 1;
         }
 
-        .reanalyze-button:hover {
+        .reanalyze-button:hover:not(:disabled) {
           background: #E5E7EB;
+        }
+
+        .reanalyze-button:disabled {
+          cursor: not-allowed;
+          opacity: 0.8;
         }
       `}</style>
     </div>
