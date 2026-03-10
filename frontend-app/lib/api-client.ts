@@ -211,6 +211,24 @@ export async function getRecommendations(
   return response.json()
 }
 
+/** 2단계: 팔로우한 친구들이 별점 4 이상 준 장소 (GET /api/v1/recommendations/friend-picks) */
+export async function getFriendPicks(
+  userId: string,
+  lat: number,
+  lng: number,
+  limit: number = 5
+) {
+  const params = new URLSearchParams({
+    user_id: userId,
+    lat: String(lat),
+    lng: String(lng),
+    limit: String(limit),
+  })
+  const response = await fetch(`${API_BASE}/api/v1/recommendations/friend-picks?${params}`)
+  if (!response.ok) return { friend_picks: [], has_data: false, source: 'error' }
+  return response.json()
+}
+
 // User API stub (for compatibility with hooks/useUser.ts)
 export const userAPI = {
   getProfile: async (userId: string) => {

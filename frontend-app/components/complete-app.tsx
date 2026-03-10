@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import Script from 'next/script'
 import { useQuery } from '@tanstack/react-query'
-import { getRecommendations } from '@/lib/api-client'
+import { getRecommendations, getFriendPicks } from '@/lib/api-client'
 import { useUser } from '@/hooks/useUser'
 import { createClient } from '@/lib/supabase'
 import { useAuth } from '@/hooks/useAuth'
@@ -12,7 +12,7 @@ import { ChallengeCard } from './challenge-card'
 import { PersonalityProfile } from './personality-profile'
 import { ShareButton } from './share-button'
 import { LocalHub } from './local/LocalHub'
-import { RoleScreen, MoodScreen, ROLES, MOODS, type RoleType, type MoodType } from './screens'
+import { RoleScreen, MoodScreen, HomeScreenContent, ROLES, MOODS, type RoleType, type MoodType } from './screens'
 import { makeStoryCard, makeFeedCard, blobToFile, makeCaption, shareOrDownload } from '@/lib/instagram-cards'
 import type { Mission } from './missions'
 import { selectMissions } from './missions'
@@ -77,6 +77,38 @@ const CHALLENGES_BY_CATEGORY: Record<ChallengeCategory, { id: string; icon: stri
     { id: 'e4', icon: '🎨', title: '문화인', desc: '문화시설 3곳 방문', total: 3, rewardXP: 200 },
     { id: 'e5', icon: '🍺', title: '소셜 드링커', desc: '술집/바 3곳 방문', total: 3, rewardXP: 150 },
   ],
+}
+
+// 레벨별 혜택 (레벨업이 실질적으로 주는 것들)
+const LEVEL_BENEFITS: Record<number, { icon: string; title: string; desc: string; type: 'unlock' | 'bonus' | 'social' }[]> = {
+  1:  [{ icon: '🗺️', title: '퀘스트 탐험', desc: '기본 역할 퀘스트 수락 가능', type: 'unlock' }],
+  2:  [{ icon: '💬', title: '동네 피드 작성', desc: '리뷰·이야기 게시글 작성 개방', type: 'unlock' }],
+  3:  [{ icon: '🎯', title: '챌린지 도전', desc: '일일·주간 챌린지 전체 참가 가능', type: 'unlock' }, { icon: '⚡', title: 'XP 보너스 +10%', desc: '모든 퀘스트 보상 10% 추가', type: 'bonus' }],
+  5:  [{ icon: '📸', title: '포토 미션 강화', desc: '사진 미션 완료 시 추가 XP +15', type: 'bonus' }],
+  6:  [{ icon: '🔮', title: '히든 퀘스트 해금', desc: '숨겨진 특별 장소 퀘스트 등장', type: 'unlock' }],
+  8:  [{ icon: '🔥', title: '스트릭 보너스', desc: '5일 연속 방문 시 XP 2배', type: 'bonus' }],
+  10: [{ icon: '🗺️', title: '동네 정복 통계', desc: '구역별 정복률·히트맵 고급 분석 개방', type: 'unlock' }, { icon: '👑', title: '탐험가 칭호', desc: '프로필에 "베테랑 탐험가" 배지 표시', type: 'social' }],
+  12: [{ icon: '🤝', title: '함께 도전 기능', desc: '친구를 퀘스트에 초대하고 함께 완료 가능', type: 'social' }],
+  15: [{ icon: '✨', title: '프리미엄 AI 서사', desc: '더 깊고 개성 있는 장소 스토리 생성', type: 'unlock' }, { icon: '💰', title: 'XP 보너스 +25%', desc: '누적 보너스 적용, 레벨 3 포함', type: 'bonus' }],
+  20: [{ icon: '🏆', title: '동네 명예의 전당', desc: '동네 최다 방문자 랭킹 노출', type: 'social' }, { icon: '🎁', title: '파트너 혜택', desc: '제휴 카페·식당 첫 방문 할인 쿠폰', type: 'unlock' }],
+  25: [{ icon: '🌟', title: '크리에이터 뱃지', desc: '피드 게시글에 특별 아이콘 표시', type: 'social' }],
+  30: [{ icon: '🗝️', title: '비밀 지역 해금', desc: '앱 내 VIP 전용 숨겨진 지역 퀘스트', type: 'unlock' }, { icon: '⚡', title: 'XP 보너스 +50%', desc: '레벨 3·15 포함 누적 적용', type: 'bonus' }],
+  50: [{ icon: '👑', title: '레전드 탐험가', desc: '최고 등급 칭호 및 영구 프로필 뱃지', type: 'social' }],
+}
+
+// 현재 레벨에서 달성된 혜택 + 다음 레벨 혜택 가져오기
+function getLevelBenefits(currentLevel: number) {
+  const current: typeof LEVEL_BENEFITS[number] = []
+  const upcoming: Array<{ level: number; benefits: typeof LEVEL_BENEFITS[number] }> = []
+  const levels = Object.keys(LEVEL_BENEFITS).map(Number).sort((a, b) => a - b)
+  for (const lv of levels) {
+    if (lv <= currentLevel) {
+      current.push(...LEVEL_BENEFITS[lv])
+    } else if (upcoming.length < 2) {
+      upcoming.push({ level: lv, benefits: LEVEL_BENEFITS[lv] })
+    }
+  }
+  return { current, upcoming }
 }
 
 function getDistanceMeters(
@@ -190,6 +222,17 @@ export function CompleteApp() {
   const [kakaoTestFriendsLoading, setKakaoTestFriendsLoading] = useState(false)
   const [kakaoTestSentTo, setKakaoTestSentTo] = useState<string | null>(null)
   const [kakaoTestSendingUuid, setKakaoTestSendingUuid] = useState<string | null>(null)
+  // 레벨업 축하 모달
+  const [showLevelUpModal, setShowLevelUpModal] = useState(false)
+  const [levelUpData, setLevelUpData] = useState<{ newLevel: number; benefits: typeof LEVEL_BENEFITS[number] } | null>(null)
+  const prevLevelRef = React.useRef<number | null>(null)
+  // 챌린지 보상 수령 상태 (로컬 + 서버 동기)
+  const [challengeClaims, setChallengeClaims] = useState<Record<string, { claimed: boolean; completed_at?: string }>>({})
+  const [claimingChallenge, setClaimingChallenge] = useState<string | null>(null)
+  // 친구 비교 데이터
+  const [friendCompareData, setFriendCompareData] = useState<Array<{ user_id: string; display_name?: string; avatar_url?: string; total_places?: number; current_streak?: number; level?: number }>>([])
+  const [friendCompareLoading, setFriendCompareLoading] = useState(false)
+  const [showFriendCompare, setShowFriendCompare] = useState(false)
 
   // accentColor rgba 헬퍼
   const accentRgba = (alpha: number): string => {
@@ -437,6 +480,71 @@ export function CompleteApp() {
     try { localStorage.setItem('wherehere_accentColor', accentColor) } catch (_) {}
   }, [themeMode, isDarkMode, accentColor])
 
+  // 레벨업 감지: userStats.level 변화 시 축하 모달 표시
+  const userStatsLevel = (userStats as any)?.level ?? null
+  useEffect(() => {
+    if (userStatsLevel == null) return
+    if (prevLevelRef.current !== null && userStatsLevel > prevLevelRef.current) {
+      const newLevel = userStatsLevel as number
+      const benefits = LEVEL_BENEFITS[newLevel] || []
+      setLevelUpData({ newLevel, benefits })
+      setShowLevelUpModal(true)
+    }
+    prevLevelRef.current = userStatsLevel
+  }, [userStatsLevel])
+
+  // 챌린지 보상 수령 현황 서버에서 로드 (로그인 시)
+  useEffect(() => {
+    if (!userId || userId === 'user-demo-001') return
+    // localStorage 기존 데이터 로드
+    try {
+      const saved = localStorage.getItem(`wherehere_challenge_claims_${userId}`)
+      if (saved) setChallengeClaims(JSON.parse(saved))
+    } catch (_) {}
+    // 서버 동기화
+    fetch(`${API_BASE}/api/v1/challenges/user/${userId}/all-progress`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.claims) {
+          setChallengeClaims((prev) => ({ ...prev, ...data.claims }))
+        }
+      })
+      .catch(() => {})
+  }, [userId])
+
+  // 친구 비교 데이터 로드
+  const loadFriendCompare = async () => {
+    if (!userId || userId === 'user-demo-001') return
+    setFriendCompareLoading(true)
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/social/following?user_id=${encodeURIComponent(userId)}&limit=5`)
+      const data = await res.json().catch(() => ({ following: [] }))
+      const following = data.following || []
+      // 각 친구의 stats 조회
+      const statsPromises = following.slice(0, 5).map(async (f: any) => {
+        try {
+          const sr = await fetch(`${API_BASE}/api/v1/users/me/stats?user_id=${encodeURIComponent(f.user_id || f.id)}`)
+          const sd = await sr.json().catch(() => ({}))
+          return {
+            user_id: f.user_id || f.id,
+            display_name: f.display_name || f.username || '친구',
+            avatar_url: f.avatar_url,
+            total_places: sd.total_places_visited ?? 0,
+            current_streak: sd.current_streak ?? 0,
+            level: sd.level ?? 1,
+          }
+        } catch {
+          return null
+        }
+      })
+      const results = (await Promise.all(statsPromises)).filter(Boolean) as any[]
+      setFriendCompareData(results)
+    } catch (_) {
+    } finally {
+      setFriendCompareLoading(false)
+    }
+  }
+
   // 프로필 정보 불러오기 (지속 반영: 포커스·화면 전환 시 재조회로 기본값 복귀 방지)
   const refetchUserProfile = useCallback(async () => {
     if (!userId || userId === 'user-demo-001') return
@@ -585,6 +693,15 @@ export function CompleteApp() {
     retry: 1,
     staleTime: 1000 * 60 * 10, // 10분간 고정 (탭 전환·스크롤에도 유지)
   })
+
+  const { data: friendPicksData } = useQuery({
+    queryKey: ['friendPicks', userId, userLocation.lat, userLocation.lng],
+    queryFn: () => getFriendPicks(userId, userLocation.lat, userLocation.lng, 5),
+    enabled: screen === 'home' && !!userId && userId !== 'user-demo-001',
+    retry: 1,
+    staleTime: 1000 * 60 * 5,
+  })
+  const friendPicks = friendPicksData?.friend_picks ?? []
 
   const { data: questsData, isLoading: questsLoading } = useQuery({
     queryKey: ['recommendations', userLocation.lat, userLocation.lng, selectedRole, selectedMood],
@@ -1143,6 +1260,38 @@ export function CompleteApp() {
     }
   }
 
+  const claimChallengeReward = async (challengeId: string, xpToAward: number) => {
+    if (claimingChallenge === challengeId) return
+    const alreadyClaimed = challengeClaims[challengeId]?.claimed
+    if (alreadyClaimed) {
+      toast('이미 수령한 보상이에요.')
+      return
+    }
+    setClaimingChallenge(challengeId)
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/challenges/claim-reward`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: userId, challenge_id: challengeId, xp_to_award: xpToAward }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (data.already_claimed) {
+        toast('이미 수령한 보상이에요.')
+      } else if (data.success) {
+        const newClaims = { ...challengeClaims, [challengeId]: { claimed: true, completed_at: data.completed_at } }
+        setChallengeClaims(newClaims)
+        try { localStorage.setItem(`wherehere_challenge_claims_${userId}`, JSON.stringify(newClaims)) } catch (_) {}
+        toast.success(`🎉 보상 수령 완료! +${xpToAward} XP`)
+      } else {
+        toast.error('보상 수령에 실패했어요.')
+      }
+    } catch (_) {
+      toast.error('네트워크 오류가 났어요.')
+    } finally {
+      setClaimingChallenge(null)
+    }
+  }
+
   const saveNickname = async () => {
     const name = nicknameInput.trim()
     if (!name || savingNickname || !isLoggedIn) return
@@ -1362,199 +1511,68 @@ export function CompleteApp() {
             </div>
           </div>
         )}
-        <div style={{ padding: '60px 20px 120px' }}>
-          {/* 레벨 바: 메인 상단 항상 노출 (게임화 강화) */}
-          {isLoggedIn && (() => {
-            const level = userStats?.level ?? 1
-            const totalXP = userStats?.total_xp ?? 0
-            const nextXP = userStats?.xp_to_next_level ?? 1000
-            const progress = nextXP > 0 ? Math.min(100, (totalXP / nextXP) * 100) : 0
-            return (
-              <div style={{ marginBottom: 20, padding: '12px 16px', background: isDarkMode ? 'rgba(255,255,255,0.06)' : accentRgba(0.08), borderRadius: 14, border: `1px solid ${isDarkMode ? accentRgba(0.2) : accentRgba(0.25)}` }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                  <span style={{ fontSize: 13, fontWeight: 700, color: accentColor }}>Lv.{level} 탐험가</span>
-                  <span style={{ fontSize: 11, color: isDarkMode ? 'rgba(255,255,255,0.5)' : '#78350F' }}>다음 레벨까지 {(nextXP - totalXP).toLocaleString()} XP</span>
-                </div>
-                <div style={{ height: 8, borderRadius: 4, background: isDarkMode ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.6)', overflow: 'hidden' }}>
-                  <div style={{ width: `${progress}%`, height: '100%', background: 'linear-gradient(90deg, #E8740C, #F59E0B)', borderRadius: 4, transition: 'width 0.3s ease' }} />
-                </div>
+        <HomeScreenContent
+          setScreen={setScreen}
+          setAcceptedQuest={setAcceptedQuest}
+          setHomeRefreshKey={setHomeRefreshKey}
+          homeData={homeData}
+          homeLoading={homeLoading}
+          friendPicks={friendPicks}
+          userStats={userStats}
+          isLoggedIn={isLoggedIn}
+          isDarkMode={isDarkMode}
+          cardBg={cardBg}
+          borderColor={borderColor}
+          textColor={textColor}
+          accentColor={accentColor}
+          accentRgba={accentRgba}
+          homeMapContainerRef={homeMapContainerRef}
+          kakaoMapLoaded={kakaoMapLoaded}
+          setKakaoMapLoaded={setKakaoMapLoaded}
+        />
+        {/* 레벨업 축하 모달 — position:fixed 오버레이, 어느 화면에서도 표시 */}
+        {showLevelUpModal && levelUpData && (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }} onClick={() => setShowLevelUpModal(false)}>
+            <div style={{ background: isDarkMode ? 'linear-gradient(135deg, #1a0e00, #2d1a00)' : 'linear-gradient(135deg, #FFF7ED, #FFFBEB)', border: `2px solid ${accentColor}`, borderRadius: 24, padding: 32, maxWidth: 360, width: '100%', textAlign: 'center', boxShadow: `0 0 60px ${accentColor}60`, position: 'relative', overflow: 'hidden' }} onClick={(e) => e.stopPropagation()}>
+              <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', overflow: 'hidden' }}>
+                {['✨', '🎉', '⭐', '🌟', '🎊'].map((emoji, i) => (
+                  <span key={i} style={{ position: 'absolute', fontSize: 20, top: `${10 + i * 18}%`, left: `${5 + i * 20}%`, opacity: 0.4, animation: `float${i} 3s ease-in-out infinite` }}>{emoji}</span>
+                ))}
               </div>
-            )
-          })()}
-
-          <div style={{ marginBottom: 24 }}>
-            <h1 style={{ fontSize: 24, fontWeight: 900, marginBottom: 6, background: 'linear-gradient(90deg, #E8740C, #F59E0B)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
-              WhereHere
-            </h1>
-            <p style={{ fontSize: 14, color: isDarkMode ? 'rgba(255,255,255,0.7)' : '#6B7280', marginBottom: 8 }}>오늘의 한 곳에서 동네 커뮤니티까지 한 번에.</p>
-            <div style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.5)' : '#9CA3AF' }}>
-              홈 · 기분 맞춤 탐험 · 동네 피드
-            </div>
-          </div>
-
-          {/* 동네 정복 지도 빠른 진입 (메인에서 접근 용이) */}
-          <button
-            type="button"
-            onClick={() => router.push('/my-map-real')}
-            style={{
-              width: '100%',
-              marginBottom: 20,
-              padding: 16,
-              borderRadius: 16,
-              border: `1px solid ${borderColor}`,
-              background: isDarkMode ? 'linear-gradient(135deg, rgba(232,116,12,0.12), rgba(232,116,12,0.04))' : 'linear-gradient(135deg, #FFF7ED, #FFEDD5)',
-              color: textColor,
-              textAlign: 'left',
-              cursor: 'pointer',
-              boxShadow: isDarkMode ? 'none' : '0 2px 12px rgba(232,116,12,0.08)',
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
-              <span style={{ fontSize: 24 }}>🗺️</span>
-              <span style={{ fontSize: 16, fontWeight: 800, color: accentColor }}>동네 정복 지도</span>
-            </div>
-            <div style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280' }}>
-              방문한 구역을 헥사곤으로 채워가며 탐험 완성도를 확인하세요
-            </div>
-          </button>
-
-          {/* 1) 오늘의 한 곳 + 지도 */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: isDarkMode ? 'rgba(255,255,255,0.8)' : '#374151' }}>오늘의 한 곳</div>
-            <button onClick={() => setHomeRefreshKey((k) => k + 1)} disabled={homeLoading} style={{ background: 'none', border: `1px solid ${borderColor}`, borderRadius: 8, padding: '4px 10px', fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280', cursor: homeLoading ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
-              <span style={{ display: 'inline-block', animation: homeLoading ? 'spin 1s linear infinite' : 'none' }}>🔄</span> 새로고침
-              <style>{`@keyframes spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }`}</style>
-            </button>
-          </div>
-          {homeLoading ? (
-            <div style={{ textAlign: 'center', padding: 60 }}>
-              <div style={{ fontSize: 40, marginBottom: 16 }}>🔮</div>
-              <div style={{ fontSize: 15, color: isDarkMode ? 'rgba(255,255,255,0.7)' : '#6B7280' }}>근처 장소를 찾고 있어요...</div>
-            </div>
-          ) : homeData?.recommendations?.[0] ? (
-            <>
-              {(() => {
-                const rec: any = homeData.recommendations[0]
-                return (
-                  <div style={{ marginBottom: 20 }}>
-                    <div style={{
-                      background: isDarkMode ? 'linear-gradient(135deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02))' : cardBg,
-                      border: `1px solid ${borderColor}`,
-                      borderRadius: 18,
-                      padding: 18,
-                      boxShadow: isDarkMode ? 'none' : '0 4px 16px rgba(0,0,0,0.06)',
-                    }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+              <style>{`
+                @keyframes float0{0%,100%{transform:translateY(0) rotate(0deg)}50%{transform:translateY(-8px) rotate(10deg)}}
+                @keyframes float1{0%,100%{transform:translateY(0) rotate(0deg)}50%{transform:translateY(-12px) rotate(-8deg)}}
+                @keyframes float2{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
+                @keyframes float3{0%,100%{transform:translateY(0) rotate(0deg)}50%{transform:translateY(-10px) rotate(12deg)}}
+                @keyframes float4{0%,100%{transform:translateY(0)}50%{transform:translateY(-14px)}}
+                @keyframes levelUpPop{0%{transform:scale(0.5);opacity:0}60%{transform:scale(1.15)}100%{transform:scale(1);opacity:1}}
+              `}</style>
+              <div style={{ fontSize: 64, marginBottom: 8, animation: 'levelUpPop 0.6s ease forwards' }}>🏆</div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: accentColor, letterSpacing: 2, marginBottom: 8 }}>LEVEL UP!</div>
+              <div style={{ fontSize: 56, fontWeight: 900, background: `linear-gradient(135deg, ${accentColor}, #F59E0B)`, WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', marginBottom: 4 }}>Lv.{levelUpData.newLevel}</div>
+              <div style={{ fontSize: 14, color: isDarkMode ? 'rgba(255,255,255,0.7)' : '#6B7280', marginBottom: 24 }}>레벨업을 축하해요! 🎊</div>
+              {levelUpData.benefits.length > 0 && (
+                <div style={{ marginBottom: 24 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: accentColor, marginBottom: 12 }}>🎁 이번 레벨 혜택</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {levelUpData.benefits.map((b, i) => (
+                      <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 12, background: isDarkMode ? 'rgba(255,255,255,0.06)' : 'rgba(232,116,12,0.08)', border: `1px solid ${accentColor}30`, textAlign: 'left' }}>
+                        <span style={{ fontSize: 22, flexShrink: 0 }}>{b.icon}</span>
                         <div>
-                          <div style={{ fontSize: 11, color: accentColor, fontWeight: 600, marginBottom: 4 }}>오늘의 한 곳</div>
-                          <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 4 }}>{rec.name}</div>
-                          <div style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280' }}>{rec.address}</div>
-                        </div>
-                        <div style={{ textAlign: 'right' }}>
-                          <div style={{ fontSize: 20, fontWeight: 800, color: accentColor }}>{rec.score}</div>
-                          <div style={{ fontSize: 9, color: isDarkMode ? 'rgba(255,255,255,0.4)' : '#9CA3AF' }}>점수</div>
-                          <div style={{ marginTop: 6, fontSize: 11 }}>
-                            <span>📍 {rec.distance_meters}m</span>
-                          </div>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: isDarkMode ? '#fff' : '#1F2937' }}>{b.title}</div>
+                          <div style={{ fontSize: 11, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280' }}>{b.desc}</div>
                         </div>
                       </div>
-                      {rec.reason && (
-                        <p style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.7)' : '#4B5563', marginBottom: 10 }}>{rec.reason}</p>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => { setAcceptedQuest(rec); setScreen('accepted') }}
-                        style={{
-                          width: '100%',
-                          padding: 12,
-                          borderRadius: 12,
-                          border: 'none',
-                          background: 'linear-gradient(135deg, #E8740C, #C65D00)',
-                          color: '#fff',
-                          fontSize: 14,
-                          fontWeight: 700,
-                          cursor: 'pointer',
-                          marginTop: 4,
-                        }}
-                      >
-                        경로 보기 →
-                      </button>
-                    </div>
+                    ))}
                   </div>
-                )
-              })()}
-
-              {/* 홈 지도: 카카오맵 스크립트는 홈에서도 로드 (accepted에만 있으면 홈에서 지도 안 나옴) */}
-              {!kakaoMapLoaded && (
-                <Script
-                  src={`https://dapi.kakao.com/v2/maps/sdk.js?appkey=${process.env.NEXT_PUBLIC_KAKAO_MAP_KEY || '160238a590f3d2957230d764fb745322'}&autoload=false`}
-                  strategy="afterInteractive"
-                  onLoad={() => {
-                    if (typeof window !== 'undefined' && window.kakao?.maps?.load) {
-                      window.kakao.maps.load(() => setKakaoMapLoaded(true))
-                    }
-                  }}
-                />
+                </div>
               )}
-              <div style={{ marginBottom: 24 }}>
-                <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>지도에서 오늘의 한 곳 보기</div>
-                <div ref={homeMapContainerRef} style={{ width: '100%', height: 220, borderRadius: 16, overflow: 'hidden', border: `1px solid ${borderColor}`, background: isDarkMode ? 'rgba(0,0,0,0.3)' : '#E5E7EB' }} />
-              </div>
-            </>
-          ) : (
-            <div style={{ textAlign: 'center', padding: 48, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280' }}>
-              <div style={{ fontSize: 40, marginBottom: 16 }}>🔍</div>
-              <p style={{ fontSize: 15, fontWeight: 600, marginBottom: 8 }}>근처에서 추천할 장소를 찾지 못했어요.</p>
-              <p style={{ fontSize: 13, marginBottom: 16 }}>위치 권한을 허용하거나, 아래에서 기분 맞춤 탐험을 시도해보세요.</p>
+              <button type="button" onClick={() => setShowLevelUpModal(false)} style={{ width: '100%', padding: '14px 0', borderRadius: 14, border: 'none', background: `linear-gradient(135deg, ${accentColor}, #F59E0B)`, color: '#fff', fontWeight: 800, fontSize: 16, cursor: 'pointer', boxShadow: `0 4px 16px ${accentColor}60` }}>
+                계속 탐험하기 →
+              </button>
             </div>
-          )}
-
-          {/* 2) 기분 맞춤 탐험 / 3) 동네 피드 — 3축 구조 */}
-          <div style={{ display: 'flex', gap: 12, marginTop: 24, flexWrap: 'wrap' }}>
-            <button
-              type="button"
-              onClick={() => setScreen('role')}
-              style={{
-                flex: 1,
-                minWidth: 140,
-                padding: 16,
-                borderRadius: 14,
-                border: `1px solid ${borderColor}`,
-                background: isDarkMode ? 'rgba(255,255,255,0.06)' : '#FFFFFF',
-                color: textColor,
-                fontSize: 14,
-                fontWeight: 700,
-                cursor: 'pointer',
-                textAlign: 'left',
-                boxShadow: isDarkMode ? 'none' : '0 2px 8px rgba(0,0,0,0.06)',
-              }}
-            >
-              <span style={{ display: 'block', fontSize: 22, marginBottom: 6 }}>🎯</span>
-              기분 맞춤 탐험
-            </button>
-            <button
-              type="button"
-              onClick={() => setScreen('social')}
-              style={{
-                flex: 1,
-                minWidth: 140,
-                padding: 16,
-                borderRadius: 14,
-                border: `1px solid ${borderColor}`,
-                background: isDarkMode ? 'rgba(255,255,255,0.06)' : '#FFFFFF',
-                color: textColor,
-                fontSize: 14,
-                fontWeight: 700,
-                cursor: 'pointer',
-                textAlign: 'left',
-                boxShadow: isDarkMode ? 'none' : '0 2px 8px rgba(0,0,0,0.06)',
-              }}
-            >
-              <span style={{ display: 'block', fontSize: 22, marginBottom: 6 }}>💬</span>
-              동네 피드
-            </button>
           </div>
-        </div>
+        )}
         <BottomNav />
       </div>
     )
@@ -2326,46 +2344,120 @@ export function CompleteApp() {
           <div style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280', marginBottom: 16 }}>
             오늘 완료: {(CHALLENGES_BY_CATEGORY.daily.filter((c) => { const p = (userStats?.total_visits ?? 0) > 0 && c.id === 'd1' ? 1 : 0; return p >= c.total }).length)}/3 | 이번 주: {CHALLENGES_BY_CATEGORY.weekly.filter((c) => Math.min(userStats?.current_streak ?? 0, userStats?.total_places_visited ?? 0) >= c.total).length}/4 | 총 업적: {CHALLENGES_BY_CATEGORY.achievement.filter((c) => (c.id === 'a1' && (userStats?.total_visits ?? 0) >= 1) || (c.id === 'a2' && (userStats?.total_places_visited ?? 0) >= 10) || (c.id === 'a3' && (userStats?.total_places_visited ?? 0) >= 50) || (c.id === 'a5' && (userStats?.current_streak ?? 0) >= 30) || (c.id === 'a6' && (userStats?.total_reviews ?? userStats?.total_visits ?? 0) >= 30)).length}/7
           </div>
-          <div style={{ display: 'grid', gap: 16 }}>
+          <div style={{ display: 'grid', gap: 14 }}>
             {CHALLENGES_BY_CATEGORY[challengeCategory].map((c) => {
               const progress = (() => {
                 const streak = userStats?.current_streak ?? 0
-                const places = userStats?.total_places_visited ?? userStats?.unique_places ?? 0
-                const visits = userStats?.total_visits ?? 0
-                const reviews = userStats?.total_reviews ?? userStats?.total_visits ?? 0
-                const following = (userStats?.following_count as number) ?? 0
+                const places = userStats?.total_places_visited ?? (userStats as any)?.unique_places ?? 0
+                const visits = (userStats as any)?.total_visits ?? 0
+                const reviews = (userStats as any)?.total_reviews ?? (userStats as any)?.total_visits ?? 0
+                const following = (userStats as any)?.following_count ?? 0
+                const photoMissions = (userStats as any)?.photo_missions ?? 0
                 if (c.id === 'd1') return visits > 0 ? 1 : 0
+                if (c.id === 'd2') return photoMissions > 0 ? 1 : 0
+                if (c.id === 'd3') return visits > 0 ? 1 : 0
                 if (c.id === 'w1') return Math.min(streak, c.total)
                 if (c.id === 'w2') return Math.min(places, c.total)
+                if (c.id === 'w3') return Math.min(visits, c.total)
+                if (c.id === 'w4') return Math.min((userStats as any)?.post_count ?? 0, c.total)
                 if (c.id === 'a1') return visits >= 1 ? 1 : 0
                 if (c.id === 'a2' || c.id === 'a3') return Math.min(places, c.total)
+                if (c.id === 'a4') return Math.min(photoMissions, c.total)
                 if (c.id === 'a5') return Math.min(streak, c.total)
                 if (c.id === 'a6') return Math.min(reviews, c.total)
+                if (c.id === 'a7') return Math.min((userStats as any)?.role_count ?? 0, c.total)
                 if (c.id === 's1') return Math.min(following, c.total)
+                if (c.id === 's2') return Math.min((userStats as any)?.share_count ?? 0, c.total)
+                if (c.id === 's3') return Math.min((userStats as any)?.comment_count ?? 0, c.total)
+                if (c.id === 'e1') return Math.min((userStats as any)?.cafe_count ?? 0, c.total)
+                if (c.id === 'e2') return Math.min((userStats as any)?.night_visits ?? 0, c.total)
+                if (c.id === 'e3') return Math.min((userStats as any)?.morning_visits ?? 0, c.total)
+                if (c.id === 'e4') return Math.min((userStats as any)?.culture_count ?? 0, c.total)
+                if (c.id === 'e5') return Math.min((userStats as any)?.bar_count ?? 0, c.total)
                 return 0
               })()
               const done = progress >= c.total
+              const claimed = challengeClaims[c.id]?.claimed ?? false
+              const isClaiming = claimingChallenge === c.id
               const tierColor = c.tier === 'gold' ? '#F59E0B' : c.tier === 'silver' ? '#9CA3AF' : c.tier === 'bronze' ? '#D97706' : undefined
+              const progressPct = c.total ? Math.min(100, (progress / c.total) * 100) : 0
+
               return (
-                <div key={c.id} style={{ background: done ? (isDarkMode ? accentRgba(0.15) : accentRgba(0.08)) : cardBg, border: `1px solid ${done ? accentColor : borderColor}`, borderRadius: 16, padding: 20, boxShadow: isDarkMode ? 'none' : '0 2px 8px rgba(0,0,0,0.05)', opacity: !done && c.tier ? 0.85 : 1 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 12 }}>
-                    <div style={{ fontSize: 32 }}>{c.icon}</div>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>{c.title}</div>
-                      <div style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280' }}>{c.desc}</div>
+                <div key={c.id} style={{
+                  background: claimed
+                    ? (isDarkMode ? 'rgba(16,185,129,0.08)' : 'rgba(16,185,129,0.05)')
+                    : done
+                      ? (isDarkMode ? accentRgba(0.15) : accentRgba(0.08))
+                      : cardBg,
+                  border: `1.5px solid ${claimed ? '#10B981' : done ? accentColor : borderColor}`,
+                  borderRadius: 16, padding: 18,
+                  boxShadow: done && !claimed ? `0 0 0 3px ${accentRgba(0.15)}` : (isDarkMode ? 'none' : '0 2px 8px rgba(0,0,0,0.04)'),
+                  transition: 'all 0.2s',
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14, marginBottom: 12 }}>
+                    <div style={{
+                      fontSize: 30, lineHeight: 1,
+                      filter: claimed ? 'none' : done ? 'none' : 'grayscale(0.2)',
+                    }}>{c.icon}</div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 3, color: textColor }}>{c.title}</div>
+                      <div style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280', lineHeight: 1.4 }}>{c.desc}</div>
                     </div>
-                    {done && <span style={{ fontSize: 11, color: accentColor, fontWeight: 700 }}>✅ 완료! +{c.rewardXP} XP</span>}
-                    {!done && c.tier && <span style={{ fontSize: 18 }} title="업적">🔒</span>}
+                    {/* 상태 뱃지 */}
+                    {claimed ? (
+                      <span style={{ fontSize: 11, color: '#10B981', fontWeight: 700, background: 'rgba(16,185,129,0.12)', padding: '3px 8px', borderRadius: 6, whiteSpace: 'nowrap' }}>✅ 수령 완료</span>
+                    ) : done ? (
+                      <span style={{ fontSize: 11, color: accentColor, fontWeight: 700, background: accentRgba(0.15), padding: '3px 8px', borderRadius: 6, whiteSpace: 'nowrap' }}>🎁 수령 가능</span>
+                    ) : c.tier ? (
+                      <span style={{ fontSize: 18 }} title="달성 전 잠금">🔒</span>
+                    ) : null}
                   </div>
-                  <div style={{ marginBottom: 0 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, marginBottom: 4 }}>
-                      <span>{progress}/{c.total}</span>
-                      <span style={{ color: accentColor, fontWeight: 600 }}>+{c.rewardXP} XP</span>
+
+                  {/* 진행 바 */}
+                  <div style={{ marginBottom: done && !claimed ? 12 : 0 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, marginBottom: 5 }}>
+                      <span style={{ color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280' }}>{progress} / {c.total}</span>
+                      <span style={{ color: accentColor, fontWeight: 700 }}>+{c.rewardXP} XP</span>
                     </div>
-                    <div style={{ height: 6, background: isDarkMode ? 'rgba(255,255,255,0.1)' : '#E5E7EB', borderRadius: 3, overflow: 'hidden' }}>
-                      <div style={{ width: `${c.total ? (progress / c.total) * 100 : 0}%`, height: '100%', background: tierColor ? `linear-gradient(90deg, ${tierColor}, #F59E0B)` : 'linear-gradient(90deg, #E8740C, #F59E0B)', transition: 'width 0.3s' }} />
+                    <div style={{ height: 8, background: isDarkMode ? 'rgba(255,255,255,0.1)' : '#E5E7EB', borderRadius: 4, overflow: 'hidden', position: 'relative' }}>
+                      <div style={{
+                        width: `${progressPct}%`, height: '100%',
+                        background: claimed
+                          ? 'linear-gradient(90deg, #10B981, #34D399)'
+                          : tierColor
+                            ? `linear-gradient(90deg, ${tierColor}, #F59E0B)`
+                            : `linear-gradient(90deg, ${accentColor}, #F59E0B)`,
+                        borderRadius: 4,
+                        transition: 'width 0.4s ease',
+                      }} />
                     </div>
+                    {done && progressPct === 100 && !claimed && (
+                      <div style={{ marginTop: 4, fontSize: 10, color: accentColor, fontWeight: 600, textAlign: 'right' }}>🎯 목표 달성!</div>
+                    )}
                   </div>
+
+                  {/* 완료 보상 받기 버튼 */}
+                  {done && !claimed && (
+                    <button
+                      type="button"
+                      disabled={isClaiming}
+                      onClick={() => claimChallengeReward(c.id, c.rewardXP)}
+                      style={{
+                        width: '100%', marginTop: 12, padding: '11px 0',
+                        borderRadius: 12, border: 'none',
+                        background: isClaiming
+                          ? (isDarkMode ? 'rgba(255,255,255,0.1)' : '#E5E7EB')
+                          : `linear-gradient(135deg, ${accentColor}, #F59E0B)`,
+                        color: isClaiming ? (isDarkMode ? 'rgba(255,255,255,0.5)' : '#9CA3AF') : '#fff',
+                        fontWeight: 800, fontSize: 14, cursor: isClaiming ? 'not-allowed' : 'pointer',
+                        boxShadow: isClaiming ? 'none' : `0 3px 12px ${accentRgba(0.45)}`,
+                        transition: 'all 0.15s',
+                        letterSpacing: 0.3,
+                      }}
+                    >
+                      {isClaiming ? '처리 중…' : `🎁 보상 받기 (+${c.rewardXP} XP)`}
+                    </button>
+                  )}
                 </div>
               )
             })}
@@ -2470,6 +2562,21 @@ export function CompleteApp() {
         BottomNav={<BottomNav />}
         userAvatarUrl={userProfile?.profile_image_url}
         kakaoAccessToken={kakaoAccessToken}
+        accentColor={accentColor}
+        onAcceptQuest={(post) => {
+          // 피드에서 "나도 도전" 클릭 → 해당 장소로 퀘스트 수락 화면 이동
+          const questFromFeed = {
+            name: post.place_name || post.title || '장소',
+            address: post.place_address || '',
+            place_id: `feed-${Date.now()}`,
+            category: '기타',
+            reason: `피드에서 도전! ${post.title || ''}`,
+            narrative: `피드에서 ${post.place_name || '이 장소'}에 도전을 시작했어요.`,
+          }
+          setAcceptedQuest(questFromFeed)
+          setScreen('accepted')
+          toast(`🚀 ${questFromFeed.name} 도전 시작!`)
+        }}
       />
       {instagramShareModalEl}
       </div>
@@ -2582,6 +2689,129 @@ export function CompleteApp() {
               </div>
             ) : null}
           </div>
+
+          {/* 레벨 혜택 패널 — 레벨업이 실질적으로 주는 것들 */}
+          {(() => {
+            const { current: currentBenefits, upcoming } = getLevelBenefits(level)
+            return (
+              <div style={{ background: isDarkMode ? 'rgba(255,255,255,0.04)' : '#F9FAFB', border: `1px solid ${borderColor}`, borderRadius: 16, padding: 20, marginBottom: 20 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+                  <div style={{ fontSize: 14, fontWeight: 700 }}>🎁 레벨 혜택</div>
+                  <span style={{ fontSize: 11, color: isDarkMode ? 'rgba(255,255,255,0.5)' : '#9CA3AF' }}>Lv.{level} 기준</span>
+                </div>
+                {/* 현재 획득한 혜택 */}
+                {currentBenefits.length > 0 && (
+                  <div style={{ marginBottom: 14 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: '#10B981', marginBottom: 8 }}>✅ 현재 활성화된 혜택</div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      {currentBenefits.slice(-4).map((b, i) => (
+                        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', background: isDarkMode ? 'rgba(16,185,129,0.08)' : 'rgba(16,185,129,0.06)', borderRadius: 10, border: '1px solid rgba(16,185,129,0.2)' }}>
+                          <span style={{ fontSize: 18 }}>{b.icon}</span>
+                          <div>
+                            <div style={{ fontSize: 12, fontWeight: 700, color: '#10B981' }}>{b.title}</div>
+                            <div style={{ fontSize: 11, color: isDarkMode ? 'rgba(255,255,255,0.5)' : '#6B7280' }}>{b.desc}</div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {/* 다음 레벨 예고 */}
+                {upcoming.length > 0 && (
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: accentColor, marginBottom: 8 }}>🔜 다음 레벨 미리보기</div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      {upcoming.map(({ level: lv, benefits }) => (
+                        benefits.slice(0, 2).map((b, i) => (
+                          <div key={`${lv}-${i}`} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', background: isDarkMode ? accentRgba(0.06) : accentRgba(0.05), borderRadius: 10, border: `1px solid ${accentRgba(0.2)}` }}>
+                            <span style={{ fontSize: 18, filter: 'grayscale(0.5)' }}>{b.icon}</span>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontSize: 12, fontWeight: 700, color: textColor }}>{b.title}</div>
+                              <div style={{ fontSize: 11, color: isDarkMode ? 'rgba(255,255,255,0.5)' : '#6B7280' }}>{b.desc}</div>
+                            </div>
+                            <span style={{ fontSize: 10, color: accentColor, fontWeight: 700, whiteSpace: 'nowrap', background: accentRgba(0.12), padding: '2px 6px', borderRadius: 6 }}>Lv.{lv}</span>
+                          </div>
+                        ))
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )
+          })()}
+
+          {/* 친구와 동네 정복률 비교 */}
+          <div style={{ background: isDarkMode ? 'rgba(255,255,255,0.04)' : '#F9FAFB', border: `1px solid ${borderColor}`, borderRadius: 16, padding: 20, marginBottom: 20 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+              <div style={{ fontSize: 14, fontWeight: 700 }}>👥 친구와 비교</div>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowFriendCompare((v) => {
+                    if (!v && friendCompareData.length === 0) loadFriendCompare()
+                    return !v
+                  })
+                }}
+                style={{ fontSize: 12, color: accentColor, background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}
+              >
+                {showFriendCompare ? '접기' : '펼치기'}
+              </button>
+            </div>
+            {!showFriendCompare ? (
+              <div style={{ fontSize: 13, color: isDarkMode ? 'rgba(255,255,255,0.5)' : '#9CA3AF' }}>
+                팔로우 친구와 방문지·레벨을 비교해보세요
+              </div>
+            ) : friendCompareLoading ? (
+              <div style={{ fontSize: 13, color: isDarkMode ? 'rgba(255,255,255,0.5)' : '#9CA3AF', textAlign: 'center', padding: '16px 0' }}>
+                친구 정보 불러오는 중…
+              </div>
+            ) : friendCompareData.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '16px 0' }}>
+                <div style={{ fontSize: 32, marginBottom: 8 }}>🤝</div>
+                <div style={{ fontSize: 13, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280', marginBottom: 12 }}>
+                  아직 팔로우하는 친구가 없어요
+                </div>
+                <button type="button" onClick={() => setScreen('social')} style={{ padding: '8px 16px', borderRadius: 10, border: 'none', background: accentColor, color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                  친구 찾기 →
+                </button>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {/* 나 */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', background: accentRgba(0.1), borderRadius: 12, border: `1px solid ${accentRgba(0.3)}` }}>
+                  <div style={{ width: 40, height: 40, borderRadius: '50%', background: `linear-gradient(135deg, ${accentColor}, #F59E0B)`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, color: '#fff', flexShrink: 0, fontWeight: 700 }}>
+                    {(displayName || 'N').slice(0, 1)}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700 }}>나 · Lv.{level}</div>
+                    <div style={{ fontSize: 11, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280' }}>📍 {placesVisited}곳 · 🔥 {streak}일 연속</div>
+                  </div>
+                  <span style={{ fontSize: 10, color: accentColor, fontWeight: 700, background: accentRgba(0.15), padding: '3px 8px', borderRadius: 6 }}>나</span>
+                </div>
+                {/* 친구들 */}
+                {friendCompareData
+                  .sort((a, b) => (b.total_places || 0) - (a.total_places || 0))
+                  .map((f, i) => {
+                    const isAhead = (f.total_places || 0) > placesVisited
+                    return (
+                      <div key={f.user_id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', background: isDarkMode ? 'rgba(255,255,255,0.04)' : '#fff', borderRadius: 12, border: `1px solid ${borderColor}` }}>
+                        <div style={{ width: 40, height: 40, borderRadius: '50%', overflow: 'hidden', background: 'linear-gradient(135deg, #6366F1, #8B5CF6)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, color: '#fff', flexShrink: 0, fontWeight: 700 }}>
+                          {f.avatar_url ? <img src={f.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : (f.display_name || '친').slice(0, 1)}
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 13, fontWeight: 700 }}>{f.display_name || '친구'} · Lv.{f.level || 1}</div>
+                          <div style={{ fontSize: 11, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280' }}>📍 {f.total_places || 0}곳 · 🔥 {f.current_streak || 0}일 연속</div>
+                        </div>
+                        <span style={{ fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 6, background: isAhead ? 'rgba(239,68,68,0.1)' : 'rgba(16,185,129,0.1)', color: isAhead ? '#EF4444' : '#10B981' }}>
+                          {isAhead ? `${(f.total_places||0)-placesVisited}곳 앞서요` : placesVisited === (f.total_places||0) ? '동점!' : `${placesVisited-(f.total_places||0)}곳 앞서요`}
+                        </span>
+                      </div>
+                    )
+                  })}
+              </div>
+            )}
+          </div>
+
           <PersonalityProfile userId={userId} />
 
           {/* 내 피드 (인스타 스타일 그리드) */}

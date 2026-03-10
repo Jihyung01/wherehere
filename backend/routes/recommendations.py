@@ -207,6 +207,43 @@ async def get_recommendations(request: RecommendationRequest):
         except Exception:
             completed_place_ids = set()
 
+        # ── 1단계: 개인 취향 점수 — 방문 이력 기반 카테고리 선호도 ──────────────────
+        # 사용자가 별점 4이상 준 카테고리에 추가 보너스 점수 부여
+        category_preferences: Dict[str, float] = {}
+        try:
+            if request.user_id and request.user_id not in ("anonymous", "user-demo-001"):
+                from db.rest_helpers import RestDatabaseHelpers as _RH
+                _helpers = _RH()
+                raw_visits = []
+                if hasattr(_helpers, "get_user_visits"):
+                    raw_visits = await _helpers.get_user_visits(request.user_id, limit=50) or []
+                elif hasattr(_helpers, "get_user_visit_history"):
+                    raw_visits = await _helpers.get_user_visit_history(request.user_id) or []
+                else:
+                    # Supabase REST 직접 조회
+                    from core.config import settings
+                    import httpx
+                    url = f"{settings.SUPABASE_URL}/rest/v1/visits"
+                    headers = {
+                        "apikey": settings.SUPABASE_ANON_KEY,
+                        "Authorization": f"Bearer {settings.SUPABASE_ANON_KEY}",
+                    }
+                    async with httpx.AsyncClient(timeout=5) as hc:
+                        resp = await hc.get(url, headers=headers,
+                            params={"user_id": f"eq.{request.user_id}", "select": "primary_category,rating", "limit": "50"})
+                        if resp.status_code == 200:
+                            raw_visits = resp.json()
+                cat_scores: Dict[str, list] = {}
+                for v in raw_visits:
+                    cat = (v.get("primary_category") or v.get("category") or "").strip()
+                    rating = float(v.get("rating") or 0)
+                    if cat and rating >= 1:
+                        cat_scores.setdefault(cat, []).append(rating)
+                for cat, ratings in cat_scores.items():
+                    category_preferences[cat] = sum(ratings) / len(ratings)
+        except Exception:
+            pass  # 취향 데이터 없으면 기본 점수로 진행
+
         # 1단계: Kakao Local API로 역할에 맞는 카테고리 주변 장소 조회
         kakao = KakaoPlacesService()
         radius = ROLE_RADIUS_MAP.get(request.role_type, 2000)
@@ -312,8 +349,14 @@ async def get_recommendations(request: RecommendationRequest):
             distance_score = max(0.0, 12.0 - distance_km * 2.0)
             hidden_bonus = 0.0
             explore_noise = random.uniform(0.0, 5.0)
+            # 개인 취향 보너스: 해당 카테고리를 자주 높은 별점으로 방문한 경우
+            preference_bonus = 0.0
+            if primary_cat in category_preferences:
+                pref_avg = category_preferences[primary_cat]
+                if pref_avg >= 3.5:
+                    preference_bonus = (pref_avg - 3.0) * 8.0  # 별점 4 → +8, 별점 5 → +16
 
-            score = base + rating_score + distance_score + role_score + mood_score + hidden_bonus + explore_noise
+            score = base + rating_score + distance_score + role_score + mood_score + hidden_bonus + preference_bonus + explore_noise
 
             candidates.append(
                 {
@@ -324,6 +367,7 @@ async def get_recommendations(request: RecommendationRequest):
                     "mood_score": mood_score,
                     "rating_score": rating_score,
                     "distance_score": distance_score,
+                    "preference_bonus": preference_bonus,
                 }
             )
 
@@ -390,9 +434,11 @@ async def get_recommendations(request: RecommendationRequest):
         role_label = ROLE_LABELS_KO.get(request.role_type, request.role_type)
         mood_text_for_reason = request.mood.mood_text if request.mood else ""
 
-        def build_reason(primary_cat: str, distance_m: float) -> str:
+        def build_reason(primary_cat: str, distance_m: float, pref_score: float = 0.0) -> str:
             pieces: list[str] = []
-            if mood_text_for_reason:
+            if pref_score >= 4.0:
+                pieces.append(f"당신이 자주 찾는 {primary_cat} — 취향 맞춤 추천")
+            elif mood_text_for_reason:
                 pieces.append(f"지금 기분 \"{mood_text_for_reason}\"인 {role_label}을 위한 {primary_cat}")
             else:
                 pieces.append(f"{role_label}에게 어울리는 {primary_cat}")
@@ -423,8 +469,9 @@ async def get_recommendations(request: RecommendationRequest):
                         "mood": round(wrapped["mood_score"], 1),
                         "rating": round(wrapped["rating_score"], 1),
                         "distance": round(wrapped["distance_score"], 1),
+                        "preference": round(wrapped.get("preference_bonus", 0), 1),
                     },
-                    reason=build_reason(primary_cat, distance),
+                    reason=build_reason(primary_cat, distance, category_preferences.get(primary_cat, 0.0)),
                     estimated_cost=place.get("average_price"),
                     vibe_tags=place.get("vibe_tags", []),
                     average_rating=place.get("average_rating", 0),
@@ -631,3 +678,149 @@ async def get_current_weather(
     """현재 날씨 조회"""
     weather = await get_weather(lat, lon)
     return {"weather": weather, "time_of_day": get_time_of_day()}
+
+
+# ── GET 간단 추천 (일일 푸시 / 홈 화면 간단 호출용) ─────────────────────────────
+@router.get("")
+@router.get("/")
+async def get_recommendations_simple(
+    lat: float = Query(37.5665, ge=-90, le=90),
+    lng: float = Query(126.9780, ge=-180, le=180),
+    role: str = Query("explorer"),
+    mood: str = Query(""),
+    user_id: str = Query(""),
+    limit: int = Query(3, ge=1, le=10),
+):
+    """GET 방식 간단 추천 — 일일 푸시·홈 화면 퀵 호출용"""
+    import logging
+    logger = logging.getLogger("uvicorn.error")
+    role_safe = role if role in ROLE_RADIUS_MAP else "explorer"
+    req = RecommendationRequest(
+        user_id=user_id or "anonymous",
+        role_type=role_safe,
+        user_level=1,
+        current_location=LocationInput(latitude=lat, longitude=lng),
+        mood=MoodInput(mood_text=mood, intensity=0.5) if mood else None,
+    )
+    try:
+        result = await get_recommendations(req)
+        result.recommendations = result.recommendations[:limit]
+        return result
+    except Exception as e:
+        logger.warning(f"GET recommendations failed: {e}")
+        mock = get_mock_recommendations(role_safe, lat, lng, 1, top_k=limit)
+        return RecommendationResponse(**mock)
+
+
+# ── 2단계: 친구 고평점 장소 추천 ────────────────────────────────────────────────
+def _mock_friend_picks() -> List[dict]:
+    """DB 미연결 / 팔로우 없을 때 보여줄 예시 친구 추천"""
+    return [
+        {"place_name": "블루보틀 커피 삼청동", "place_id": "kakao-demo-001", "category": "카페",
+         "rating": 4.8, "friend_name": "민지", "friend_id": "demo-friend-1",
+         "address": "서울 종로구 북촌로", "latitude": 37.5826, "longitude": 126.9830,
+         "label": "민지님이 ⭐4.8 준 곳"},
+        {"place_name": "성수동 할머니공장", "place_id": "kakao-demo-002", "category": "음식점",
+         "rating": 4.6, "friend_name": "준호", "friend_id": "demo-friend-2",
+         "address": "서울 성동구 성수동", "latitude": 37.5447, "longitude": 127.0557,
+         "label": "준호님이 ⭐4.6 준 곳"},
+        {"place_name": "국립현대미술관 서울관", "place_id": "kakao-demo-003", "category": "문화시설",
+         "rating": 4.5, "friend_name": "소연", "friend_id": "demo-friend-3",
+         "address": "서울 종로구 삼청로", "latitude": 37.5790, "longitude": 126.9803,
+         "label": "소연님이 ⭐4.5 준 곳"},
+    ]
+
+
+@router.get("/friend-picks")
+async def get_friend_picks(
+    user_id: str = Query(...),
+    lat: float = Query(37.5665, ge=-90, le=90),
+    lng: float = Query(126.9780, ge=-180, le=180),
+    limit: int = Query(5, ge=1, le=10),
+):
+    """
+    팔로우한 친구들이 별점 4 이상 준 장소 추천 (2단계 소셜 추천).
+    - DB 연결 시: follows + visits 테이블 실제 조회
+    - 미연결 시: mock 데이터 반환
+    """
+    import logging
+    logger = logging.getLogger("uvicorn.error")
+
+    try:
+        from db.rest_helpers import RestDatabaseHelpers
+        helpers = RestDatabaseHelpers()
+
+        # 팔로잉 목록 조회
+        following: List[dict] = []
+        if hasattr(helpers, "get_following_list"):
+            following = await helpers.get_following_list(user_id) or []
+        else:
+            # Supabase REST 직접 쿼리
+            from core.config import settings
+            import httpx
+            url = f"{settings.SUPABASE_URL}/rest/v1/follows"
+            headers = {"apikey": settings.SUPABASE_ANON_KEY, "Authorization": f"Bearer {settings.SUPABASE_ANON_KEY}"}
+            async with httpx.AsyncClient(timeout=5) as hc:
+                resp = await hc.get(url, headers=headers,
+                    params={"follower_id": f"eq.{user_id}", "select": "following_id,display_name", "limit": "20"})
+                if resp.status_code == 200:
+                    following = resp.json()
+
+        if not following:
+            return {"friend_picks": _mock_friend_picks()[:limit], "has_data": False, "source": "mock"}
+
+        # 친구별 고평점 방문 장소 수집
+        friend_places: List[dict] = []
+        for friend in following[:10]:
+            fid = friend.get("following_id") or friend.get("user_id") or ""
+            fname = friend.get("display_name") or friend.get("profile_nickname") or "친구"
+            if not fid:
+                continue
+
+            visits: List[dict] = []
+            if hasattr(helpers, "get_user_visits"):
+                visits = await helpers.get_user_visits(fid, limit=20) or []
+            else:
+                from core.config import settings
+                import httpx
+                url = f"{settings.SUPABASE_URL}/rest/v1/visits"
+                headers = {"apikey": settings.SUPABASE_ANON_KEY, "Authorization": f"Bearer {settings.SUPABASE_ANON_KEY}"}
+                async with httpx.AsyncClient(timeout=5) as hc:
+                    resp = await hc.get(url, headers=headers,
+                        params={"user_id": f"eq.{fid}", "rating": "gte.4", "select": "*", "limit": "10"})
+                    if resp.status_code == 200:
+                        visits = resp.json()
+
+            for v in visits:
+                rating = float(v.get("rating") or 0)
+                if rating < 4.0:
+                    continue
+                place_name = v.get("place_name") or v.get("name") or ""
+                if not place_name:
+                    continue
+                friend_places.append({
+                    "place_name": place_name,
+                    "place_id": v.get("place_id") or "",
+                    "category": v.get("primary_category") or v.get("category") or "기타",
+                    "rating": rating,
+                    "friend_name": fname,
+                    "friend_id": fid,
+                    "address": v.get("address") or "",
+                    "latitude": v.get("latitude"),
+                    "longitude": v.get("longitude"),
+                    "label": f"{fname}님이 ⭐{rating} 준 곳",
+                })
+
+        # 장소 중복 제거 (가장 높은 평점 유지)
+        seen: dict = {}
+        for p in friend_places:
+            pid = p["place_id"] or p["place_name"]
+            if pid not in seen or p["rating"] > seen[pid]["rating"]:
+                seen[pid] = p
+
+        picks = sorted(seen.values(), key=lambda x: x["rating"], reverse=True)
+        return {"friend_picks": picks[:limit], "has_data": bool(picks), "source": "real"}
+
+    except Exception as e:
+        logger.warning(f"friend-picks failed: {e}")
+        return {"friend_picks": _mock_friend_picks()[:limit], "has_data": True, "source": "mock"}
