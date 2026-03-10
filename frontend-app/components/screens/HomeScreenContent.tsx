@@ -76,9 +76,10 @@ export function HomeScreenContent({
   setKakaoMapLoaded,
 }: HomeScreenContentProps) {
   const router = useRouter()
+  const Root = 'div'
 
   const content = (
-    <div style={{ padding: '60px 20px 120px' }}>
+    <Root style={{ padding: '60px 20px 120px' }}>
       {/* 레벨 바 */}
       {isLoggedIn && (() => {
         const lvl = userStats?.level ?? 1
@@ -331,7 +332,7 @@ export function HomeScreenContent({
           동네 피드
         </button>
       </div>
-    </div>
+    </Root>
   )
   return content
 }
