@@ -77,7 +77,7 @@ export function HomeScreenContent({
 }: HomeScreenContentProps) {
   const router = useRouter()
 
-  return (
+  const content = (
     <div style={{ padding: '60px 20px 120px' }}>
       {/* 레벨 바 */}
       {isLoggedIn && (() => {
@@ -333,4 +333,5 @@ export function HomeScreenContent({
       </div>
     </div>
   )
+  return content
 }
