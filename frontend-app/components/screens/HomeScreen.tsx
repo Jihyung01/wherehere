@@ -171,7 +171,19 @@ export function HomeScreen() {
 
         {/* 오늘의 한 곳 */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: isDarkMode ? 'rgba(255,255,255,0.8)' : '#374151' }}>오늘의 한 곳</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: isDarkMode ? 'rgba(255,255,255,0.8)' : '#374151' }}>오늘의 한 곳</div>
+            {homeData?.has_personalization && (
+              <div style={{
+                fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 10,
+                background: isDarkMode ? accentRgba(0.2) : accentRgba(0.12),
+                color: accentColor, border: `1px solid ${accentRgba(0.3)}`,
+                display: 'flex', alignItems: 'center', gap: 3,
+              }}>
+                🎯 내 취향 반영
+              </div>
+            )}
+          </div>
           <button onClick={() => setHomeRefreshKey((k: number) => k + 1)} disabled={homeLoading} style={{ background: 'none', border: `1px solid ${borderColor}`, borderRadius: 8, padding: '4px 10px', fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280', cursor: homeLoading ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
             <span style={{ display: 'inline-block', animation: homeLoading ? 'spin 1s linear infinite' : 'none' }}>🔄</span> 새로고침
             <style>{`@keyframes spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }`}</style>
@@ -186,6 +198,7 @@ export function HomeScreen() {
           <>
             {(() => {
               const rec: any = homeData.recommendations[0]
+              const prefBonus = rec.score_breakdown?.preference ?? 0
               return (
                 <div style={{ marginBottom: 20 }}>
                   <div style={{
@@ -210,7 +223,12 @@ export function HomeScreen() {
                       </div>
                     </div>
                     {rec.reason && (
-                      <p style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.7)' : '#4B5563', marginBottom: 10 }}>{rec.reason}</p>
+                      <p style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.7)' : '#4B5563', marginBottom: prefBonus > 0 ? 6 : 10 }}>{rec.reason}</p>
+                    )}
+                    {prefBonus > 0 && (
+                      <div style={{ fontSize: 11, color: accentColor, marginBottom: 10, display: 'flex', alignItems: 'center', gap: 4 }}>
+                        ✨ 방문 기록 기반 +{prefBonus.toFixed(0)}점 보너스
+                      </div>
                     )}
                     <button
                       type="button"

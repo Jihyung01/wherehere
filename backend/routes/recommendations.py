@@ -75,6 +75,8 @@ class RecommendationResponse(BaseModel):
     weather: Optional[Dict] = None
     time_of_day: str = ""
     data_source: str = "mock"
+    has_personalization: bool = False  # 방문 기록 기반 취향 반영 여부
+    personalized_categories: List[str] = []  # 취향 반영된 카테고리 목록
 
 
 # ------------------------------------------------------------
@@ -484,6 +486,9 @@ async def get_recommendations(request: RecommendationRequest):
                 )
             )
 
+        # 개인화 여부: 별점 3.5 이상 카테고리가 1개 이상이면 개인화 추천 활성
+        personalized_cats = [cat for cat, avg in category_preferences.items() if avg >= 3.5]
+
         return RecommendationResponse(
             recommendations=recommendations,
             role_type=request.role_type,
@@ -492,7 +497,9 @@ async def get_recommendations(request: RecommendationRequest):
             generated_at=datetime.now().isoformat(),
             weather=weather_data,
             time_of_day=time_now,
-            data_source="kakao_hybrid",
+            data_source="kakao_hybrid_personalized" if personalized_cats else "kakao_hybrid",
+            has_personalization=bool(personalized_cats),
+            personalized_categories=personalized_cats[:3],
         )
     except Exception as e:
         import logging

@@ -186,12 +186,14 @@ export async function getRecommendations(
   latitude: number,
   longitude: number,
   roleType: string,
-  mood: string
+  mood: string,
+  userId?: string
 ) {
   const response = await fetch(`${API_BASE}/api/v1/recommendations`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
+      user_id: userId || 'anonymous',
       role_type: roleType,
       current_location: {
         latitude,

@@ -701,7 +701,7 @@ export function CompleteApp() {
   const [homeRefreshKey, setHomeRefreshKey] = useState(0)
   const { data: homeData, isLoading: homeLoading, refetch: refetchHome } = useQuery({
     queryKey: ['homeRecommendation', userLocation.lat, userLocation.lng, defaultRoleForHome, defaultMoodForHome, homeRefreshKey],
-    queryFn: () => getRecommendations(userLocation.lat, userLocation.lng, defaultRoleForHome, defaultMoodTextForHome),
+    queryFn: () => getRecommendations(userLocation.lat, userLocation.lng, defaultRoleForHome, defaultMoodTextForHome, userId),
     enabled: screen === 'home',
     retry: 1,
     staleTime: 1000 * 60 * 10, // 10분간 고정 (탭 전환·스크롤에도 유지)
@@ -718,7 +718,7 @@ export function CompleteApp() {
 
   const { data: questsData, isLoading: questsLoading } = useQuery({
     queryKey: ['recommendations', userLocation.lat, userLocation.lng, selectedRole, selectedMood],
-    queryFn: () => getRecommendations(userLocation.lat, userLocation.lng, selectedRole!, moodTextForApi || ''),
+    queryFn: () => getRecommendations(userLocation.lat, userLocation.lng, selectedRole!, moodTextForApi || '', userId),
     enabled: !!selectedRole && !!selectedMood && screen === 'quests',
     retry: 1,
   })
@@ -1361,10 +1361,28 @@ export function CompleteApp() {
   const allRequiredCompleted = requiredMissions.every((m) => missionStates[m.id]?.completed)
   const completedMissionCount = currentMissions.filter((m) => missionStates[m.id]?.completed).length
 
-  const bgColor = isDarkMode ? '#0A0E14' : '#FFFFFF'
+  // 강조색을 배경 톤에 미묘하게 반영
+  const _accentRGB = (() => {
+    try {
+      return {
+        r: parseInt(accentColor.slice(1, 3), 16),
+        g: parseInt(accentColor.slice(3, 5), 16),
+        b: parseInt(accentColor.slice(5, 7), 16),
+      }
+    } catch { return { r: 232, g: 116, b: 12 } }
+  })()
+  const _mix = (base: number, accent: number, t: number) => Math.round(base * (1 - t) + accent * t)
+  const { r: _ar, g: _ag, b: _ab } = _accentRGB
+  const bgColor = isDarkMode
+    ? `rgb(${_mix(10, _ar, 0.08)},${_mix(14, _ag, 0.08)},${_mix(20, _ab, 0.08)})`
+    : `rgb(${_mix(255, _ar, 0.04)},${_mix(255, _ag, 0.04)},${_mix(255, _ab, 0.04)})`
   const textColor = isDarkMode ? '#FFFFFF' : '#1F2937'
-  const cardBg = isDarkMode ? 'rgba(255,255,255,0.05)' : '#F9FAFB'
-  const borderColor = isDarkMode ? 'rgba(255,255,255,0.1)' : '#E5E7EB'
+  const cardBg = isDarkMode
+    ? `rgba(${_ar},${_ag},${_ab},0.08)`
+    : `rgb(${_mix(249, _ar, 0.06)},${_mix(250, _ag, 0.06)},${_mix(251, _ab, 0.06)})`
+  const borderColor = isDarkMode
+    ? `rgba(${_ar},${_ag},${_ab},0.18)`
+    : `rgba(${_ar},${_ag},${_ab},0.15)`
 
   // 하단 네비게이션
   const BottomNav = () => (
