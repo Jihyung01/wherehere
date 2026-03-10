@@ -258,7 +258,7 @@ export default function MyMapReal() {
   const [narrativeLoading, setNarrativeLoading] = useState(false);
   const [visits, setVisits] = useState<Visit[]>([]);
   const [pattern, setPattern] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
+  const [dataLoading, setDataLoading] = useState(true); // 방문 데이터 로딩 중 표시용
   const [kakaoLoaded, setKakaoLoaded] = useState(false);
   const [mapLoadError, setMapLoadError] = useState<string | null>(null);
   const [isDarkMode, setIsDarkMode] = useState(false);
@@ -343,9 +343,9 @@ export default function MyMapReal() {
   }, [kakaoLoaded, filteredVisits, tab, isDarkMode, hexagonStats]);
 
   const loadData = async () => {
-    setLoading(true);
-    // 최대 10초 안전 타임아웃: 네트워크 이슈로 setLoading(false)가 안 불리는 상황 방지
-    const safetyTimer = setTimeout(() => setLoading(false), 10000);
+    setDataLoading(true);
+    // 최대 10초 안전 타임아웃
+    const safetyTimer = setTimeout(() => setDataLoading(false), 10000);
     try {
       const [visitsData, patternData] = await Promise.all([
         fetchUserVisits(userId),
@@ -355,7 +355,7 @@ export default function MyMapReal() {
       setPattern(patternData);
     } finally {
       clearTimeout(safetyTimer);
-      setLoading(false);
+      setDataLoading(false);
     }
   };
 
@@ -445,17 +445,6 @@ export default function MyMapReal() {
   const textColor = isDarkMode ? '#FFFFFF' : '#1F2937';
   const cardBg = isDarkMode ? 'rgba(255,255,255,0.05)' : '#F9FAFB';
   const borderColor = isDarkMode ? 'rgba(255,255,255,0.1)' : '#E5E7EB';
-
-  if (loading) {
-    return (
-      <div style={{ maxWidth: 430, margin: "0 auto", minHeight: "100vh", background: bgColor, color: textColor, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: 'Pretendard, sans-serif' }}>
-        <div style={{ textAlign: "center" }}>
-          <div style={{ fontSize: 48, marginBottom: 16 }}>🗺️</div>
-          <div style={{ fontSize: 18, fontWeight: 700 }}>데이터를 불러오는 중...</div>
-        </div>
-      </div>
-    );
-  }
 
   const analysis = pattern?.analysis || {};
   const selectedData = filteredVisits.find((v) => v.id === selectedVisit);
@@ -667,6 +656,11 @@ export default function MyMapReal() {
                 {!kakaoLoaded && !mapLoadError && (
                   <div style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, display: "flex", alignItems: "center", justifyContent: "center", background: isDarkMode ? "rgba(0,0,0,0.3)" : "rgba(255,255,255,0.9)", borderRadius: 16, color: isDarkMode ? "rgba(255,255,255,0.7)" : "#6b7280", fontSize: 14, pointerEvents: "none" }}>
                     지도 로딩 중...
+                  </div>
+                )}
+                {kakaoLoaded && dataLoading && (
+                  <div style={{ position: "absolute", top: 10, right: 10, background: isDarkMode ? "rgba(0,0,0,0.75)" : "rgba(255,255,255,0.9)", borderRadius: 20, padding: "4px 12px", fontSize: 12, color: "#E8740C", fontWeight: 600, pointerEvents: "none", border: "1px solid rgba(232,116,12,0.3)", backdropFilter: "blur(4px)" }}>
+                    ⏳ 방문 데이터 로딩 중...
                   </div>
                 )}
                 {mapLoadError && (
