@@ -16,6 +16,8 @@ export function HomeScreen() {
     accentColor,
     accentRgba,
     isLoggedIn,
+    displayName,
+    setScreen,
     showNotificationPanel,
     setShowNotificationPanel,
     notifications,
@@ -62,21 +64,45 @@ export function HomeScreen() {
             <span style={{ position: 'absolute', top: -4, right: -4, minWidth: 18, height: 18, borderRadius: 9, background: '#EF4444', color: '#fff', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{unreadCount > 99 ? '99+' : unreadCount}</span>
           )}
         </button>
-        <button
-          onClick={() => router.push('/login')}
-          style={{
-            padding: '8px 14px',
-            background: isDarkMode ? 'rgba(255,255,255,0.1)' : accentRgba(0.15),
-            border: '1px solid #E8740C',
-            borderRadius: 10,
-            color: accentColor,
-            fontSize: 13,
-            fontWeight: 600,
-            cursor: 'pointer',
-          }}
-        >
-          로그인
-        </button>
+        {isLoggedIn ? (
+          <button
+            onClick={() => setScreen('profile')}
+            style={{
+              padding: '6px 12px',
+              background: isDarkMode ? 'rgba(255,255,255,0.1)' : accentRgba(0.1),
+              border: `1px solid ${borderColor}`,
+              borderRadius: 10,
+              color: textColor,
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 5,
+            }}
+          >
+            <span style={{ fontSize: 14 }}>👤</span>
+            <span style={{ maxWidth: 70, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {displayName || '프로필'}
+            </span>
+          </button>
+        ) : (
+          <button
+            onClick={() => router.push('/login')}
+            style={{
+              padding: '8px 14px',
+              background: isDarkMode ? 'rgba(255,255,255,0.1)' : accentRgba(0.15),
+              border: '1px solid #E8740C',
+              borderRadius: 10,
+              color: accentColor,
+              fontSize: 13,
+              fontWeight: 600,
+              cursor: 'pointer',
+            }}
+          >
+            로그인
+          </button>
+        )}
       </div>
       {showNotificationPanel && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.4)', zIndex: 200, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', paddingTop: 60 }} onClick={() => setShowNotificationPanel(false)}>
