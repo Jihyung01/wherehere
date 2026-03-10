@@ -212,17 +212,24 @@ class RestDatabaseHelpers:
         except Exception:
             return 0, 0
 
+    # 레벨 1~10 누적 XP 기준 (해당 레벨 도달에 필요한 최소 total_xp)
+    XP_FOR_LEVEL = (0, 150, 400, 750, 1200, 1750, 2400, 3150, 4000, 5000)  # Lv1~Lv10
+
     async def get_user_stats_full(self, user_id: str) -> Dict[str, Any]:
-        """레벨/XP/스트릭 등 상세 통계 (visits 기반 실데이터)"""
+        """레벨/XP/스트릭 등 상세 통계 (visits 기반 실데이터). 레벨 1~10 보상 체계."""
         visits = await self.get_user_visits(user_id, 365)
         total_xp = sum(v.get("xp_earned", 0) for v in visits)
         unique_places = len(set(v.get("place_id") for v in visits if v.get("place_id")))
-        # 레벨: 1레벨당 1000 XP 필요, 레벨 N = (N-1)*1000 ~ N*1000-1
-        xp_per_level = 1000
-        level = max(1, 1 + total_xp // xp_per_level)
-        xp_to_next_level = max(0, level * xp_per_level - total_xp)
-        if xp_to_next_level == 0:
-            xp_to_next_level = xp_per_level  # 다음 레벨까지
+        # 레벨: XP_FOR_LEVEL 기준 (1580 XP → Lv5, 다음 레벨까지 170 XP)
+        level = 1
+        for i in range(1, 10):
+            if total_xp >= self.XP_FOR_LEVEL[i]:
+                level = i + 1
+            else:
+                break
+        # 다음 레벨까지 필요한 XP (Lv10이면 0)
+        xp_to_next_level = max(0, self.XP_FOR_LEVEL[level] - total_xp) if level < 10 else 0
+        current_level_min_xp = self.XP_FOR_LEVEL[level - 1] if level >= 1 else 0
         # 스트릭: 방문일 기준
         visited_dates = []
         for v in visits:
@@ -245,6 +252,7 @@ class RestDatabaseHelpers:
             "level": level,
             "total_xp": total_xp,
             "xp_to_next_level": xp_to_next_level,
+            "current_level_min_xp": current_level_min_xp,
             "current_streak": current_streak,
             "longest_streak": longest_streak,
             "completed_quests": len(visits),

@@ -79,21 +79,18 @@ const CHALLENGES_BY_CATEGORY: Record<ChallengeCategory, { id: string; icon: stri
   ],
 }
 
-// 레벨별 혜택 (레벨업이 실질적으로 주는 것들)
+// 레벨 1~10 보상 체계 (백엔드 XP 곡선과 동기화: 0, 150, 400, 750, 1200, 1750, 2400, 3150, 4000, 5000)
 const LEVEL_BENEFITS: Record<number, { icon: string; title: string; desc: string; type: 'unlock' | 'bonus' | 'social' }[]> = {
   1:  [{ icon: '🗺️', title: '퀘스트 탐험', desc: '기본 역할 퀘스트 수락 가능', type: 'unlock' }],
   2:  [{ icon: '💬', title: '동네 피드 작성', desc: '리뷰·이야기 게시글 작성 개방', type: 'unlock' }],
-  3:  [{ icon: '🎯', title: '챌린지 도전', desc: '일일·주간 챌린지 전체 참가 가능', type: 'unlock' }, { icon: '⚡', title: 'XP 보너스 +10%', desc: '모든 퀘스트 보상 10% 추가', type: 'bonus' }],
-  5:  [{ icon: '📸', title: '포토 미션 강화', desc: '사진 미션 완료 시 추가 XP +15', type: 'bonus' }],
+  3:  [{ icon: '🎯', title: '챌린지 도전', desc: '일일·주간 챌린지 참가 가능', type: 'unlock' }, { icon: '⚡', title: 'XP 보너스 +10%', desc: '퀘스트 보상 10% 추가', type: 'bonus' }],
+  4:  [{ icon: '📊', title: '행동 패턴 분석', desc: 'AI 성격·행동 패턴 프로필 열람', type: 'unlock' }],
+  5:  [{ icon: '📸', title: '포토 미션 강화', desc: '사진 미션 완료 시 추가 XP +15', type: 'bonus' }, { icon: '🎁', title: 'Lv.5 달성 뱃지', desc: '프로필에 "활발한 탐험가" 표시', type: 'social' }],
   6:  [{ icon: '🔮', title: '히든 퀘스트 해금', desc: '숨겨진 특별 장소 퀘스트 등장', type: 'unlock' }],
+  7:  [{ icon: '🤝', title: '친구 비교 강화', desc: '친구와 방문지·레벨 상세 비교', type: 'social' }],
   8:  [{ icon: '🔥', title: '스트릭 보너스', desc: '5일 연속 방문 시 XP 2배', type: 'bonus' }],
-  10: [{ icon: '🗺️', title: '동네 정복 통계', desc: '구역별 정복률·히트맵 고급 분석 개방', type: 'unlock' }, { icon: '👑', title: '탐험가 칭호', desc: '프로필에 "베테랑 탐험가" 배지 표시', type: 'social' }],
-  12: [{ icon: '🤝', title: '함께 도전 기능', desc: '친구를 퀘스트에 초대하고 함께 완료 가능', type: 'social' }],
-  15: [{ icon: '✨', title: '프리미엄 AI 서사', desc: '더 깊고 개성 있는 장소 스토리 생성', type: 'unlock' }, { icon: '💰', title: 'XP 보너스 +25%', desc: '누적 보너스 적용, 레벨 3 포함', type: 'bonus' }],
-  20: [{ icon: '🏆', title: '동네 명예의 전당', desc: '동네 최다 방문자 랭킹 노출', type: 'social' }, { icon: '🎁', title: '파트너 혜택', desc: '제휴 카페·식당 첫 방문 할인 쿠폰', type: 'unlock' }],
-  25: [{ icon: '🌟', title: '크리에이터 뱃지', desc: '피드 게시글에 특별 아이콘 표시', type: 'social' }],
-  30: [{ icon: '🗝️', title: '비밀 지역 해금', desc: '앱 내 VIP 전용 숨겨진 지역 퀘스트', type: 'unlock' }, { icon: '⚡', title: 'XP 보너스 +50%', desc: '레벨 3·15 포함 누적 적용', type: 'bonus' }],
-  50: [{ icon: '👑', title: '레전드 탐험가', desc: '최고 등급 칭호 및 영구 프로필 뱃지', type: 'social' }],
+  9:  [{ icon: '✨', title: '프리미엄 AI 서사', desc: '더 깊은 장소 스토리 생성', type: 'unlock' }],
+  10: [{ icon: '🗺️', title: '동네 정복 통계', desc: '구역별 정복률·고급 분석 개방', type: 'unlock' }, { icon: '👑', title: '탐험가 칭호', desc: '프로필 "베테랑 탐험가" 배지', type: 'social' }],
 }
 
 // 현재 레벨에서 달성된 혜택 + 다음 레벨 혜택 가져오기
@@ -1530,9 +1527,12 @@ export function CompleteApp() {
           {isLoggedIn && (() => {
             const lvl = userStats?.level ?? 1
             const totalXP = userStats?.total_xp ?? 0
-            const nextXP = userStats?.xp_to_next_level ?? 1000
-            const progress = nextXP > 0 ? Math.min(100, (totalXP / nextXP) * 100) : 0
-            const xpLeft = Math.max(0, nextXP - totalXP)
+            const xpToNextLevel = userStats?.xp_to_next_level ?? 170
+            const currentLevelMinXP = (userStats as any)?.current_level_min_xp ?? 0
+            const nextLevelAt = totalXP + xpToNextLevel
+            const segmentSize = nextLevelAt - currentLevelMinXP
+            const progress = segmentSize > 0 ? Math.min(100, ((totalXP - currentLevelMinXP) / segmentSize) * 100) : 100
+            const xpLeft = Math.max(0, xpToNextLevel)
             const { upcoming } = getLevelBenefits(lvl)
             const nextBenefit = upcoming[0]?.benefits[0]
             const nextBenefitLevel = upcoming[0]?.level
@@ -1543,7 +1543,7 @@ export function CompleteApp() {
                     <div style={{ width: 28, height: 28, borderRadius: 8, background: `linear-gradient(135deg, ${accentColor}, #F59E0B)`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 900, color: '#fff' }}>{lvl}</div>
                     <span style={{ fontSize: 13, fontWeight: 700, color: accentColor }}>Lv.{lvl} 탐험가</span>
                   </div>
-                  <span style={{ fontSize: 11, color: isDarkMode ? 'rgba(255,255,255,0.5)' : '#78350F' }}>{xpLeft > 0 ? `다음 레벨까지 ${xpLeft.toLocaleString()} XP` : '레벨업 준비 완료!'}</span>
+                  <span style={{ fontSize: 11, color: isDarkMode ? 'rgba(255,255,255,0.5)' : '#78350F' }}>{xpLeft > 0 ? `다음 레벨까지 ${xpLeft.toLocaleString()} XP` : 'Lv.10 달성!'}</span>
                 </div>
                 <div style={{ height: 10, borderRadius: 5, background: isDarkMode ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.6)', overflow: 'hidden', marginBottom: nextBenefit ? 8 : 0 }}>
                   <div style={{ width: `${progress}%`, height: '100%', background: `linear-gradient(90deg, ${accentColor}, #F59E0B)`, borderRadius: 5, transition: 'width 0.4s ease' }} />
@@ -2676,8 +2676,11 @@ export function CompleteApp() {
   if (screen === 'profile') {
     const level = userStats?.level ?? 1
     const totalXP = userStats?.total_xp ?? 0
-    const nextXP = userStats?.xp_to_next_level ?? 1000
-    const xpProgress = nextXP > 0 ? Math.min(100, (totalXP / nextXP) * 100) : 0
+    const xpToNextLevel = userStats?.xp_to_next_level ?? 170
+    const currentLevelMinXP = (userStats as any)?.current_level_min_xp ?? 0
+    const nextLevelAt = totalXP + xpToNextLevel
+    const segmentSize = nextLevelAt - currentLevelMinXP
+    const xpProgress = segmentSize > 0 ? Math.min(100, ((totalXP - currentLevelMinXP) / segmentSize) * 100) : 100
     const streak = userStats?.current_streak ?? 0
     const longestStreak = userStats?.longest_streak ?? 0
     const completedQuests = userStats?.completed_quests ?? 0
@@ -2747,9 +2750,9 @@ export function CompleteApp() {
               }} />
             </div>
             <div style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.7)' : '#6B7280' }}>
-              {totalXP.toLocaleString()} / {nextXP.toLocaleString()} XP
-              {nextXP > totalXP && (
-                <span style={{ marginLeft: 8 }}>· 다음 레벨까지 {(nextXP - totalXP).toLocaleString()} XP</span>
+              {totalXP.toLocaleString()} XP
+              {xpToNextLevel > 0 && (
+                <span style={{ marginLeft: 8 }}>· 다음 레벨까지 {xpToNextLevel.toLocaleString()} XP</span>
               )}
             </div>
             <div style={{ display: 'flex', gap: 16, marginTop: 14, flexWrap: 'wrap' }}>

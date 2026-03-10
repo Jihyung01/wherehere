@@ -11,21 +11,32 @@ from core.dependencies import get_db
 
 router = APIRouter(prefix="/api/v1/users", tags=["users"])
 
-# In-memory user store for Phase 1
+# Mock: DB 미연결 시에만 사용. 레벨/XP는 실데이터와 동일 곡선(레벨 1~10).
+def _mock_user_stats(total_xp: int = 1580):
+    XP = (0, 150, 400, 750, 1200, 1750, 2400, 3150, 4000, 5000)
+    level = 1
+    for i in range(1, 10):
+        if total_xp >= XP[i]:
+            level = i + 1
+        else:
+            break
+    xp_to_next = max(0, XP[level] - total_xp) if level < 10 else 0
+    return level, total_xp, xp_to_next
+
 _mock_user = {
     "id": "user-001",
     "username": "explorer_lee",
     "display_name": "이지형",
     "bio": "도시 탐험가",
     "current_role": "explorer",
-    "level": 8,
-    "total_xp": 2450,
-    "xp_to_next_level": 3200,
-    "current_streak": 7,
-    "longest_streak": 14,
+    "level": 5,
+    "total_xp": 1580,
+    "xp_to_next_level": 170,
+    "current_streak": 0,
+    "longest_streak": 0,
     "is_onboarded": True,
-    "completed_quests": 23,
-    "total_places_visited": 31,
+    "completed_quests": 12,
+    "total_places_visited": 12,
 }
 
 
@@ -65,10 +76,11 @@ async def get_user_stats(user_id: Optional[str] = None, db=Depends(get_db)):
         except Exception as e:
             import logging
             logging.getLogger("uvicorn.error").exception("get_user_stats_full failed: %s", e)
+    lv, txp, nxt = _mock_user_stats(_mock_user["total_xp"])
     return {
-        "level": _mock_user["level"],
+        "level": lv,
         "total_xp": _mock_user["total_xp"],
-        "xp_to_next_level": _mock_user["xp_to_next_level"],
+        "xp_to_next_level": nxt,
         "current_streak": _mock_user["current_streak"],
         "longest_streak": _mock_user["longest_streak"],
         "completed_quests": _mock_user["completed_quests"],
