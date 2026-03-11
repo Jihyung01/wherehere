@@ -147,6 +147,7 @@ export function CompleteApp() {
   const isLoggedIn = !!user
   const [kakaoSdkLoaded, setKakaoSdkLoaded] = useState(false)
   const [screen, setScreen] = useState<Screen>('home')
+  const [sharedPostId, setSharedPostId] = useState<string | null>(null)
   const [selectedRole, setSelectedRole] = useState<RoleType | null>(null)
   const [selectedMood, setSelectedMood] = useState<MoodType | null>(null)
   const [acceptedQuest, setAcceptedQuest] = useState<any>(null)
@@ -332,6 +333,21 @@ export function CompleteApp() {
   useEffect(() => {
     if (typeof window === 'undefined') return
     const params = new URLSearchParams(window.location.search)
+    const screenParam = params.get('screen')
+    const postIdParam = params.get('post_id')
+    if (screenParam === 'social') setScreen('social')
+    if (postIdParam) setSharedPostId(postIdParam)
+    if (screenParam || postIdParam) {
+      const u = new URL(window.location.href)
+      u.searchParams.delete('screen')
+      u.searchParams.delete('post_id')
+      window.history.replaceState({}, '', u.pathname + (u.search || ''))
+    }
+  }, [])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const params = new URLSearchParams(window.location.search)
     const token = params.get('kakao_friends_token')
     const returnTo = params.get('return')
     const err = params.get('error')
@@ -347,6 +363,8 @@ export function CompleteApp() {
       u.searchParams.delete('kakao_error')
       u.searchParams.delete('kakao_desc')
       u.searchParams.delete('reason')
+      u.searchParams.delete('screen')
+      u.searchParams.delete('post_id')
       window.history.replaceState({}, '', u.pathname + (u.search || ''))
     }
 
@@ -2627,7 +2645,7 @@ export function CompleteApp() {
 
   // 소셜 탭: 동네(홈/작성/피드) + 친구(기존 체크인 피드)
   if (screen === 'social') {
-    return <SocialScreen BottomNav={<BottomNav />} />
+    return <SocialScreen BottomNav={<BottomNav />} sharedPostId={sharedPostId} />
   }
 
   // 프로필 화면

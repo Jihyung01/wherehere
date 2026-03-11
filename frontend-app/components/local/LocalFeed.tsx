@@ -48,6 +48,8 @@ type LocalFeedProps = {
   /** 피드 카드에서 "나도 도전" 버튼 클릭 시 콜백 */
   onAcceptQuest?: (post: Post) => void
   accentColor?: string
+  /** URL에서 ?post_id=xxx 로 들어왔을 때 해당 게시글로 스크롤 */
+  sharedPostId?: string | null
 }
 
 function relativeTime(iso?: string) {
@@ -66,8 +68,9 @@ export function LocalFeed({
   apiBase, userId, scope, areaName,
   isDarkMode, cardBg, borderColor, textColor,
   feedType = 'all',
-  onShareKakao, onShareKakaoFriendCard, onShareInstagram, onPlaceFilter, onAcceptQuest,
+  onShareKakao,   onShareKakaoFriendCard, onShareInstagram, onPlaceFilter, onAcceptQuest,
   accentColor = '#E8740C',
+  sharedPostId,
 }: LocalFeedProps) {
   const [posts, setPosts] = useState<Post[]>([])
   const [commentsByPostId, setCommentsByPostId] = useState<Record<string, Comment[]>>({})
@@ -80,6 +83,7 @@ export function LocalFeed({
   const [submittingComment, setSubmittingComment] = useState<string | null>(null)
   const [likingPost, setLikingPost] = useState<string | null>(null)
   const loaderRef = useRef<HTMLDivElement>(null)
+  const sharedPostRef = useRef<HTMLDivElement>(null)
 
   const fetchPosts = useCallback(async (pageNum: number, replace = false) => {
     const params = new URLSearchParams({
@@ -147,6 +151,15 @@ export function LocalFeed({
     observer.observe(loaderRef.current)
     return () => observer.disconnect()
   }, [hasMore, loadingMore, loading, page, fetchPosts])
+
+  // sharedPostId로 진입 시 해당 게시글로 스크롤
+  useEffect(() => {
+    if (!sharedPostId || posts.length === 0) return
+    const hasPost = posts.some((p) => p.id === sharedPostId)
+    if (hasPost && sharedPostRef.current) {
+      setTimeout(() => sharedPostRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 300)
+    }
+  }, [sharedPostId, posts])
 
   const addComment = async (postId: string) => {
     const body = (commentInputs[postId] || '').trim()
@@ -258,7 +271,11 @@ export function LocalFeed({
         const isCommentsOpen = openComments[post.id]
 
         return (
-          <div key={post.id} style={{ background: cardBg, border: `1px solid ${borderColor}`, borderRadius: 16, overflow: 'hidden' }}>
+          <div
+            key={post.id}
+            ref={post.id === sharedPostId ? sharedPostRef : undefined}
+            style={{ background: cardBg, border: `1px solid ${borderColor}`, borderRadius: 16, overflow: 'hidden', scrollMarginTop: 80 }}
+          >
             <div style={{ padding: 16 }}>
               {/* Header */}
               <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 12 }}>
@@ -298,7 +315,7 @@ export function LocalFeed({
                 </p>
               )}
 
-              {/* Photos */}
+              {/* Photos — 원본 비율 유지, 카드 높이 이미지·텍스트에 맞게 유동 */}
               {photos.length > 0 && (
                 <div style={{
                   display: 'grid',
@@ -306,8 +323,19 @@ export function LocalFeed({
                   gap: 4, marginBottom: 10, borderRadius: 10, overflow: 'hidden',
                 }}>
                   {photos.slice(0, 6).map((src, i) => (
-                    <div key={i} style={{ position: 'relative', paddingTop: photos.length === 1 ? '56%' : '100%', background: isDarkMode ? '#1a1a1a' : '#f3f4f6' }}>
-                      <img src={src} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+                    <div key={i} style={{ position: 'relative', background: isDarkMode ? '#1a1a1a' : '#f3f4f6', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <img
+                        src={src}
+                        alt=""
+                        style={{
+                          width: '100%',
+                          height: 'auto',
+                          maxHeight: photos.length === 1 ? '80vh' : '40vh',
+                          display: 'block',
+                          objectFit: 'contain',
+                          verticalAlign: 'middle',
+                        }}
+                      />
                       {photos.length > 6 && i === 5 && (
                         <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 18, fontWeight: 700 }}>
                           +{photos.length - 6}

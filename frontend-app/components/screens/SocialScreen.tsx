@@ -7,9 +7,9 @@ import { MOODS } from './constants'
 import { makeStoryCard, makeFeedCard, blobToFile, shareOrDownload } from '@/lib/instagram-cards'
 import { toast } from 'sonner'
 
-type SocialScreenProps = { BottomNav?: React.ReactNode }
+type SocialScreenProps = { BottomNav?: React.ReactNode; sharedPostId?: string | null }
 
-export function SocialScreen({ BottomNav }: SocialScreenProps = {}) {
+export function SocialScreen({ BottomNav, sharedPostId }: SocialScreenProps = {}) {
   const {
     isDarkMode,
     bgColor,
@@ -306,6 +306,7 @@ export function SocialScreen({ BottomNav }: SocialScreenProps = {}) {
         userAvatarUrl={userProfile?.profile_image_url}
         kakaoAccessToken={kakaoAccessToken}
         accentColor={accentColor}
+        sharedPostId={sharedPostId}
         onAcceptQuest={(post: any) => {
           // 피드에서 "나도 도전" 클릭 → 해당 장소로 퀘스트 수락 화면 이동
           const questFromFeed = {

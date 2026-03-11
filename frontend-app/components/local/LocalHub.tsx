@@ -46,6 +46,8 @@ type LocalHubProps = {
   /** 피드 "나도 도전" 버튼 클릭 시 콜백 — place_name이 있는 게시글에 표시됨 */
   onAcceptQuest?: (post: { place_name?: string; title?: string; place_address?: string }) => void
   accentColor?: string
+  /** URL에서 ?post_id=xxx 로 들어왔을 때 해당 게시글로 스크롤 */
+  sharedPostId?: string | null
 }
 
 export function LocalHub({
@@ -73,6 +75,7 @@ export function LocalHub({
   kakaoAccessToken,
   onAcceptQuest,
   accentColor = '#E8740C',
+  sharedPostId,
 }: LocalHubProps) {
   const [topTab, setTopTab] = useState<'neighborhood' | 'friend'>('neighborhood')
   const [subTab, setSubTab] = useState<'home' | 'compose' | 'feed'>('compose')
@@ -230,11 +233,11 @@ export function LocalHub({
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok || !data.success) {
-        throw new Error(data.detail || 'send failed')
+        throw new Error(typeof data.detail === 'string' ? data.detail : 'send failed')
       }
       onToast('카카오톡으로 초대 메시지를 바로 보냈어요.')
-    } catch {
-      onToast('바로 전송에 실패했어요. 복사 링크로 대체합니다.')
+    } catch (e) {
+      onToast(e instanceof Error ? e.message : '바로 전송에 실패했어요. 복사 링크로 대체합니다.')
       copyInviteAndToast()
     } finally {
       setKakaoSendingUuid(null)
@@ -252,12 +255,20 @@ export function LocalHub({
       return
     }
     const appUrl = typeof window !== 'undefined' ? window.location.origin + '/' : ''
-    const firstImage = (post.image_url || '').split(',').map((u) => u.trim()).filter(Boolean)[0] || ''
+    const firstImageRaw = (post.image_url || '').split(',').map((u) => u.trim()).filter(Boolean)[0] || ''
+    // 카카오는 긴 URL·data URL 시 400/414 발생 가능 → 길이 제한 및 data: 제외
+    const firstImage = firstImageRaw.startsWith('data:') || firstImageRaw.length > 1000 ? '' : firstImageRaw
+    // 이미지가 비었을 때 템플릿 400 방지: 기본 이미지 URL 사용 (env 또는 앱 og)
+    const imageUrlForTemplate = firstImage || process.env.NEXT_PUBLIC_KAKAO_INVITE_IMAGE_URL || appUrl + 'og.png'
     const desc = [
       post.body || '',
       post.place_name ? `📍 ${post.place_name}` : '',
       post.place_address ? `   ${post.place_address}` : '',
     ].filter(Boolean).join('\n')
+    const titleSafe = (post.title || '').slice(0, 200)
+    const descSafe = desc.slice(0, 500)
+    // 자세히 보기 → 해당 게시글이 보이는 소셜 탭으로 이동
+    const linkUrlForPost = `${appUrl.replace(/\/$/, '')}/?screen=social&post_id=${encodeURIComponent(post.id)}`
 
     setKakaoSendingUuid(friendUuid)
     try {
@@ -271,10 +282,10 @@ export function LocalHub({
       if (kakaoInviteTemplateId) {
         body.template_id = kakaoInviteTemplateId
         body.template_args = {
-          title: post.title,
-          desc,
-          link_url: appUrl,
-          image_url: firstImage,
+          title: titleSafe,
+          desc: descSafe,
+          link_url: linkUrlForPost,
+          image_url: imageUrlForTemplate,
           SC: '1',
         }
       }
@@ -285,13 +296,13 @@ export function LocalHub({
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok || !data.success) {
-        throw new Error(data.detail || 'send failed')
+        throw new Error(typeof data.detail === 'string' ? data.detail : 'send failed')
       }
       onToast('카카오톡으로 게시글을 보냈어요.')
       setSharePostForKakao(null)
       setKakaoFriendsOpen(false)
-    } catch {
-      onToast('전송에 실패했어요.')
+    } catch (e) {
+      onToast(e instanceof Error ? e.message : '전송에 실패했어요.')
     } finally {
       setKakaoSendingUuid(null)
     }
@@ -433,6 +444,7 @@ export function LocalHub({
                 onShareKakao={(p) => onShareKakao(p)}
                 onShareKakaoFriendCard={openKakaoFriendsWithPost}
                 onShareInstagram={(p) => onShareInstagramCard(p)}
+                sharedPostId={sharedPostId}
                 onAcceptQuest={onAcceptQuest}
               />
             )}
@@ -621,6 +633,9 @@ export function LocalHub({
                 <p style={{ textAlign: 'center', color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280', fontSize: 14 }}>친구 목록 불러오는 중...</p>
               ) : kakaoFriendsList.length > 0 ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <p style={{ fontSize: 11, color: isDarkMode ? 'rgba(255,255,255,0.5)' : '#9CA3AF', marginBottom: 0 }}>
+                    카카오톡 친구 중, WhereHere에 로그인하고 친구 목록·메시지 동의한 분만 보여요.
+                  </p>
                   {kakaoInviteTemplateId ? (
                     <p style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280', marginBottom: 4 }}>아래에서 친구를 골라 보내면 카드 형태로 전달돼요.</p>
                   ) : null}
