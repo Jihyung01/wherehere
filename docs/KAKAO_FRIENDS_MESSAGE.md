@@ -130,3 +130,47 @@
 ---
 
 *참고: [친구 API와 피커, 메시지 API 사용을 위한 체크 리스트](https://devtalk.kakao.com/t/api-api/116052)*
+
+---
+
+## 4단계. 사용자 정의 템플릿으로 공유 카드 사용 (선택)
+
+친구에게 보내는 초대 메시지를 **피드형 카드**로 보내면 노출이 좋아지고 공유·SNS 확산에 유리합니다. 카카오 콘솔에서 **메시지 템플릿**을 만들고, 앱에서는 해당 `template_id`만 넘기면 됩니다.
+
+### 4.1 카카오 콘솔에서 템플릿 만들기
+
+1. [Kakao Developers](https://developers.kakao.com) → **내 애플리케이션** → 해당 앱
+2. **도구** → **메시지 템플릿** → **템플릿 검색** 화면에서  
+   **「메시지 템플릿 추가」** 버튼(🅑)을 누릅니다.  
+   - 목록이 비어 있어도 상단(또는 목록 위)에 **메시지 템플릿 추가** 버튼이 있습니다.
+3. **피드형**(피드 A형 또는 B형) 등 원하는 형식 선택 후, **사용자 인자**를 아래 키로 맞춥니다 (앱에서 이 키로 값을 채워 넣음):
+   - `title` — 제목 (예: "WhereHere 초대")
+   - `desc` — 본문 (친구 코드·안내 문구)
+   - `link_url` — 링크 URL (앱 URL)
+   - `image_url` — (선택) 카드 이미지 URL
+4. 저장 후 **템플릿 ID**를 복사합니다. (템플릿 목록 또는 상세 설정 화면의 🅑·🅒 영역에서 확인 가능)
+
+### 4.2 앱 설정 (환경 변수)
+
+- **로컬 개발**  
+  - `.env.local`에 추가 (파일은 gitignore 되어 있으므로 저장소/배포에 포함되지 않음):
+    - `NEXT_PUBLIC_KAKAO_INVITE_TEMPLATE_ID` = 위에서 복사한 **템플릿 ID**
+    - (선택) `NEXT_PUBLIC_KAKAO_INVITE_IMAGE_URL` = 카드용 이미지 URL
+
+- **배포(운영)**  
+  - **코드 저장소가 아니라**, 사용 중인 **배포 플랫폼의 환경 변수**에 추가해야 합니다.  
+  - 예: **Vercel** → 프로젝트 → Settings → Environment Variables  
+  - 예: **Railway** → 프로젝트 → Variables  
+  - 같은 이름으로 설정:
+    - `NEXT_PUBLIC_KAKAO_INVITE_TEMPLATE_ID` = 발급받은 템플릿 ID
+    - (선택) `NEXT_PUBLIC_KAKAO_INVITE_IMAGE_URL` = 이미지 URL  
+  - `.env`는 gitignore 때문에 배포 시 서버에 없으므로, **반드시 호스팅 서비스의 환경 변수 설정**에 넣어야 배포된 앱에서 적용됩니다.
+
+- 동작: 위 값이 있으면 **소셜 탭 → 카카오 친구에게 초대하기** 시 **사용자 정의 템플릿**으로 전송되고, 모달에 "카카오톡에 예쁜 카드로 전송돼요" 문구가 노출됩니다.
+- **백엔드**  
+  - `/api/v1/social/kakao-friends/send-message` 는 이미 `template_id`·`template_args` 를 지원합니다. 프론트에서 위 env로 채워 보내면 됩니다.
+
+### 4.3 참고
+
+- [사용자 정의 템플릿 가이드](https://developers.kakao.com/docs/latest/ko/message-template/custom)
+- 친구에게 보낼 때는 **기본 텍스트**(`default/send`) 대신 **사용자 정의 템플릿** 엔드포인트(`/v1/api/talk/friends/message/send`)를 사용합니다. 백엔드에서 `template_id` 유무에 따라 자동 분기됩니다.

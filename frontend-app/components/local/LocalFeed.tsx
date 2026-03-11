@@ -41,6 +41,8 @@ type LocalFeedProps = {
   textColor: string
   feedType?: FeedType
   onShareKakao?: (post: Post) => void
+  /** 이 게시글을 카카오 친구에게 사용자 정의 템플릿(카드)으로 보내기 — 게시글 이미지가 카드에 들어감 */
+  onShareKakaoFriendCard?: (post: Post) => void
   onShareInstagram?: (post: Post) => void
   onPlaceFilter?: (placeName: string) => void
   /** 피드 카드에서 "나도 도전" 버튼 클릭 시 콜백 */
@@ -64,7 +66,7 @@ export function LocalFeed({
   apiBase, userId, scope, areaName,
   isDarkMode, cardBg, borderColor, textColor,
   feedType = 'all',
-  onShareKakao, onShareInstagram, onPlaceFilter, onAcceptQuest,
+  onShareKakao, onShareKakaoFriendCard, onShareInstagram, onPlaceFilter, onAcceptQuest,
   accentColor = '#E8740C',
 }: LocalFeedProps) {
   const [posts, setPosts] = useState<Post[]>([])
@@ -433,6 +435,11 @@ export function LocalFeed({
                 {onShareKakao && (
                   <button type="button" onClick={() => onShareKakao(post)} style={{ padding: '6px 10px', borderRadius: 8, border: `1px solid ${borderColor}`, background: 'transparent', color: textColor, fontSize: 11, cursor: 'pointer' }}>
                     카카오
+                  </button>
+                )}
+                {onShareKakaoFriendCard && (
+                  <button type="button" onClick={() => onShareKakaoFriendCard(post)} style={{ padding: '6px 10px', borderRadius: 8, border: `1px solid ${borderColor}`, background: 'transparent', color: textColor, fontSize: 11, cursor: 'pointer' }}>
+                    친구에게 카드로
                   </button>
                 )}
                 {onShareInstagram && (

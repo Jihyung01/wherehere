@@ -365,6 +365,11 @@ class KakaoSendMessageRequest(BaseModel):
     text: str
     title: Optional[str] = None
     link_url: Optional[str] = None
+    # 사용자 정의 템플릿 사용 시 (카카오 콘솔 [도구] > [메시지 템플릿]에서 생성한 template_id)
+    template_id: Optional[str] = None
+    # 템플릿의 사용자 인자 (${KEY} 형식). 값은 모두 문자열.
+    # 예: {"title": "장소명", "desc": "한 줄 설명", "image_url": "https://...", "link_url": "https://..."}
+    template_args: Optional[dict[str, str]] = None
 
 
 @router.post("/kakao-friends")
@@ -396,30 +401,46 @@ async def get_kakao_friends(req: KakaoFriendsRequest):
 async def send_kakao_friend_message(req: KakaoSendMessageRequest):
     if not req.receiver_uuid:
         raise HTTPException(status_code=400, detail="receiver_uuid is required")
-    if not req.text or not req.text.strip():
-        raise HTTPException(status_code=400, detail="text is required")
+    if not req.template_id:
+        if not req.text or not req.text.strip():
+            raise HTTPException(status_code=400, detail="text is required when not using template_id")
 
     target_url = req.link_url or "https://wherehere.app/"
-    template_object = {
-        "object_type": "text",
-        "text": req.text.strip(),
-        "link": {
-            "web_url": target_url,
-            "mobile_web_url": target_url,
-        },
-        "button_title": req.title or "WhereHere 열기",
-    }
 
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            r = await client.post(
-                "https://kapi.kakao.com/v1/api/talk/friends/message/default/send",
-                headers={"Authorization": f"Bearer {req.access_token}"},
-                data={
+            if req.template_id:
+                # 사용자 정의 템플릿: 콘솔에서 만든 피드/리스트 등 (이미지·버튼·레이아웃 적용)
+                payload = {
                     "receiver_uuids": json.dumps([req.receiver_uuid], ensure_ascii=False),
-                    "template_object": json.dumps(template_object, ensure_ascii=False),
-                },
-            )
+                    "template_id": req.template_id,
+                }
+                if req.template_args:
+                    payload["template_args"] = json.dumps(req.template_args, ensure_ascii=False)
+                r = await client.post(
+                    "https://kapi.kakao.com/v1/api/talk/friends/message/send",
+                    headers={"Authorization": f"Bearer {req.access_token}"},
+                    data=payload,
+                )
+            else:
+                # 기본 텍스트 템플릿 (기존 동작)
+                template_object = {
+                    "object_type": "text",
+                    "text": req.text.strip(),
+                    "link": {
+                        "web_url": target_url,
+                        "mobile_web_url": target_url,
+                    },
+                    "button_title": req.title or "WhereHere 열기",
+                }
+                r = await client.post(
+                    "https://kapi.kakao.com/v1/api/talk/friends/message/default/send",
+                    headers={"Authorization": f"Bearer {req.access_token}"},
+                    data={
+                        "receiver_uuids": json.dumps([req.receiver_uuid], ensure_ascii=False),
+                        "template_object": json.dumps(template_object, ensure_ascii=False),
+                    },
+                )
         if r.status_code != 200:
             detail = None
             try:
