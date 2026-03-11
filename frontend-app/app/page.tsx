@@ -1,6 +1,13 @@
-import { CompleteApp } from '@/components/complete-app'
 import { AppProvider } from '@/contexts/AppContext'
+import { ErrorBoundary } from '@/components/ErrorBoundary'
+import { CompleteApp } from '@/components/complete-app'
 
 export default function Home() {
-  return <AppProvider><CompleteApp /></AppProvider>
+  return (
+    <AppProvider>
+      <ErrorBoundary>
+        <CompleteApp />
+      </ErrorBoundary>
+    </AppProvider>
+  )
 }

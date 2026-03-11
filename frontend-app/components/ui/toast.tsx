@@ -8,6 +8,10 @@
 import { Toaster } from 'sonner'
 
 export function ToastProvider() {
+  // Guard: production bundle에서 Toaster가 undefined일 수 있음 (React #130 방지)
+  if (typeof Toaster === 'undefined') {
+    return null
+  }
   return (
     <Toaster
       position="top-center"
