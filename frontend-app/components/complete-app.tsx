@@ -2627,7 +2627,7 @@ export function CompleteApp() {
 
   // 소셜 탭: 동네(홈/작성/피드) + 친구(기존 체크인 피드)
   if (screen === 'social') {
-    return <SocialScreen />
+    return <SocialScreen BottomNav={<BottomNav />} />
   }
 
   // 프로필 화면
@@ -3304,7 +3304,7 @@ export function CompleteApp() {
 
   // 설정 화면
   if (screen === 'settings') {
-    return <SettingsScreen />
+    return <SettingsScreen BottomNav={<BottomNav />} />
   }
 
   return null

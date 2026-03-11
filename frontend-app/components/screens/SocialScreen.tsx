@@ -7,7 +7,9 @@ import { MOODS } from './constants'
 import { makeStoryCard, makeFeedCard, blobToFile, shareOrDownload } from '@/lib/instagram-cards'
 import { toast } from 'sonner'
 
-export function SocialScreen() {
+type SocialScreenProps = { BottomNav?: React.ReactNode }
+
+export function SocialScreen({ BottomNav }: SocialScreenProps = {}) {
   const {
     isDarkMode,
     bgColor,
@@ -42,7 +44,6 @@ export function SocialScreen() {
     acceptedQuest,
     selectedRole,
     selectedMood,
-    BottomNav,
   } = useAppContext() as any
 
   const kakaoJsKey = process.env.NEXT_PUBLIC_KAKAO_MAP_KEY || process.env.NEXT_PUBLIC_KAKAO_JS_KEY || '160238a590f3d2957230d764fb745322'
@@ -301,7 +302,7 @@ export function SocialScreen() {
         onShareKakao={sharePostText}
         onShareInstagramCard={sharePostInstagramCard}
         onToast={(msg: string) => toast(msg)}
-        BottomNav={<BottomNav />}
+        BottomNav={BottomNav}
         userAvatarUrl={userProfile?.profile_image_url}
         kakaoAccessToken={kakaoAccessToken}
         accentColor={accentColor}

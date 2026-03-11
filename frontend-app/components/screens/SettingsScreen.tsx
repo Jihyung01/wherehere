@@ -15,7 +15,9 @@ function formatAccountDate(iso?: string | null): string {
   }
 }
 
-export function SettingsScreen() {
+type SettingsScreenProps = { BottomNav?: React.ReactNode }
+
+export function SettingsScreen({ BottomNav }: SettingsScreenProps = {}) {
   const {
     isDarkMode,
     bgColor,
@@ -63,7 +65,6 @@ export function SettingsScreen() {
     router,
     refetchUserProfile,
     setScreen,
-    BottomNav,
   } = useAppContext() as any
 
   return (
@@ -642,7 +643,7 @@ export function SettingsScreen() {
           </div>
         </div>
       </div>
-      <BottomNav />
+      {BottomNav}
     </div>
   )
 }
