@@ -3094,10 +3094,9 @@ export function CompleteApp() {
     )
   }
 
-  // 카카오 API 테스트 (심사 제출용) — 4단계 한 화면에 모아서 한 장 캡처
+  // 카카오 API 테스트 (심사 제출용) — 친구 목록 확인 및 메시지 발송 구현 확인 화면
   if (screen === 'kakao-api-test') {
     const isKakaoLoggedIn = !!(user && (user as any).app_metadata?.provider === 'kakao')
-    // 친구 목록/메시지 API는 동의창에서 돌아온 토큰만 사용. 로그인 토큰 쓰면 403.
     const tokenForFriends = kakaoFriendsToken ?? null
     const step2Done = kakaoTestFriends.length > 0
     const step4Done = !!kakaoTestSentTo
@@ -3108,48 +3107,70 @@ export function CompleteApp() {
       <div style={{ maxWidth: 430, margin: '0 auto', minHeight: '100vh', background: bgColor, color: textColor, fontFamily: 'Pretendard, sans-serif' }}>
         <div style={{ padding: '50px 20px 100px' }}>
           <button type="button" onClick={() => setScreen('settings')} style={{ marginBottom: 16, background: 'none', border: 'none', color: accentColor, fontSize: 14, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>← 설정으로</button>
-          <h2 style={{ fontSize: 18, fontWeight: 800, marginBottom: 8 }}>카카오톡 친구 목록 / 메시지 API 테스트</h2>
-          <p style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280', marginBottom: 24 }}>아래 4단계를 순서대로 진행한 뒤, 이 화면 전체를 한 장 캡처해 심사에 제출하세요.</p>
+
+          {/* 심사 제출용 명확 표기: 친구 목록 확인 및 메시지 발송 */}
+          <div style={{ marginBottom: 24, padding: 20, background: isDarkMode ? 'rgba(254,229,0,0.15)' : '#FFFDE7', border: '2px solid #FEE500', borderRadius: 16 }}>
+            <div style={{ fontSize: 11, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280', marginBottom: 6 }}>카카오 개발자 콘솔 · 친구 목록/메시지 API 심사 제출용</div>
+            <h2 style={{ fontSize: 18, fontWeight: 800, marginBottom: 8, color: isDarkMode ? '#fff' : '#1F2937' }}>
+              카카오톡 친구 목록 확인 및 메시지 발송
+            </h2>
+            <p style={{ fontSize: 13, color: isDarkMode ? 'rgba(255,255,255,0.8)' : '#374151', lineHeight: 1.6, marginBottom: 12 }}>
+              본 화면은 <strong>친구 목록 조회</strong>와 <strong>친구에게 메시지 발송</strong> 기능의 구현 확인을 위한 테스트 화면입니다. 아래 4단계를 순서대로 진행한 뒤, 이 화면 전체를 캡처해 심사에 제출해 주세요.
+            </p>
+            <div style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.7)' : '#4B5563', lineHeight: 1.7 }}>
+              <strong>사용 시나리오:</strong><br />
+              ① 카카오 로그인 → ② 친구 목록 동의(동의창) → ③ 친구 목록 불러오기(API) → ④ 선택한 친구에게 초대 메시지 전송(API)
+            </div>
+            <a
+              href="https://devtalk.kakao.com/t/api-api/116052"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ display: 'inline-block', marginTop: 12, fontSize: 12, color: '#0066FF', textDecoration: 'underline' }}
+            >
+              카카오톡 친구 목록 / 메시지 API 사용 안내 (데브톡)
+            </a>
+          </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             {/* ① 카카오 로그인 */}
-            <div style={{ background: cardBg, border: `1px solid ${borderColor}`, borderRadius: 12, padding: 16 }}>
+            <div style={{ background: cardBg, border: `2px solid ${isKakaoLoggedIn ? '#16a34a' : borderColor}`, borderRadius: 12, padding: 16 }}>
               <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 6 }}>① 카카오 로그인</div>
               {isKakaoLoggedIn ? (
-                <div style={{ fontSize: 13, color: '#16a34a' }}>✓ 완료 (카카오 계정으로 로그인됨)</div>
+                <div style={{ fontSize: 13, color: '#16a34a', fontWeight: 600 }}>✓ 완료 — 카카오 계정으로 로그인됨 (친구 목록/메시지 API 사용 가능)</div>
               ) : (
                 <div style={{ fontSize: 13, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280' }}>로그인 필요 · 설정에서 카카오로 로그인 후 다시 이 화면으로 오세요.</div>
               )}
             </div>
 
             {/* ② 친구목록 동의 */}
-            <div style={{ background: cardBg, border: `1px solid ${borderColor}`, borderRadius: 12, padding: 16 }}>
+            <div style={{ background: cardBg, border: `2px solid ${step2Done ? '#16a34a' : borderColor}`, borderRadius: 12, padding: 16 }}>
               <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 6 }}>② 카카오톡 서비스 내 친구목록 동의</div>
               {step2Done ? (
-                <div style={{ fontSize: 13, color: '#16a34a' }}>✓ 완료 (친구 목록 조회로 동의 확인됨)</div>
+                <div style={{ fontSize: 13, color: '#16a34a', fontWeight: 600 }}>✓ 완료 — 친구 목록 동의 완료 (동의창에서 권한 허용 후 복귀)</div>
               ) : (
                 <div>
-                  <div style={{ fontSize: 13, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280', marginBottom: 10 }}>동의가 필요하면 아래 버튼을 누르면 카카오 동의창이 열립니다. 동의 후 돌아오면 ③ 친구 목록 불러오기를 누르세요.</div>
+                  <div style={{ fontSize: 13, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280', marginBottom: 10 }}>아래 버튼으로 카카오 동의창을 띄운 뒤, 「카카오톡 친구 목록」「카카오톡 메시지 전송」에 동의해 주세요. 동의 후 이 페이지로 돌아오면 ③번을 진행합니다.</div>
                   <a
                     href="/api/auth/kakao-consent?return=kakao-api-test"
                     style={{ display: 'inline-block', padding: '10px 16px', borderRadius: 10, background: '#FEE500', color: '#3C1E1E', fontWeight: 600, fontSize: 13, cursor: 'pointer', textDecoration: 'none' }}
                   >
-                    카카오 동의창 띄우기 (친구 목록 권한 허용)
+                    카카오 동의창 띄우기 (친구 목록 · 메시지 권한 허용)
                   </a>
                 </div>
               )}
             </div>
 
-            {/* ③ 친구 목록 가져오기 */}
-            <div style={{ background: cardBg, border: `1px solid ${borderColor}`, borderRadius: 12, padding: 16 }}>
-              <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 6 }}>③ 친구 목록 가져오기</div>
+            {/* ③ 친구 목록 가져오기 — "친구 목록 확인" 구현 */}
+            <div style={{ background: cardBg, border: `2px solid ${kakaoTestFriends.length > 0 ? '#16a34a' : borderColor}`, borderRadius: 12, padding: 16 }}>
+              <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 6 }}>③ 친구 목록 확인 (API: 친구 목록 조회)</div>
               {kakaoTestFriendsLoading ? (
                 <div style={{ fontSize: 13 }}>불러오는 중...</div>
               ) : kakaoTestFriends.length > 0 ? (
                 <div>
-                  <div style={{ fontSize: 13, color: '#16a34a', marginBottom: 8 }}>✓ 완료 — {kakaoTestFriends.length}명 조회됨</div>
-                  <div style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280' }}>
-                    {kakaoTestFriends.slice(0, 5).map((f, i) => (f.profile_nickname || f.uuid || f.id || '친구') + (i < kakaoTestFriends.length - 1 ? ', ' : '')).join('')}
+                  <div style={{ fontSize: 13, color: '#16a34a', fontWeight: 600, marginBottom: 8 }}>✓ 친구 목록 확인 완료 — {kakaoTestFriends.length}명 조회됨</div>
+                  <div style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.7)' : '#4B5563', marginBottom: 4 }}>조회된 친구 (닉네임):</div>
+                  <div style={{ fontSize: 13, padding: '8px 12px', background: isDarkMode ? 'rgba(0,0,0,0.2)' : '#F3F4F6', borderRadius: 8 }}>
+                    {kakaoTestFriends.slice(0, 5).map((f, i, arr) => (f.profile_nickname || f.uuid || f.id || '친구') + (i < arr.length - 1 ? ', ' : '')).join('')}
                     {kakaoTestFriends.length > 5 && ' 외 ' + (kakaoTestFriends.length - 5) + '명'}
                   </div>
                 </div>
@@ -3157,7 +3178,7 @@ export function CompleteApp() {
                 <>
                   {isKakaoLoggedIn && !tokenForFriends && (
                     <div style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.7)' : '#6B7280', marginBottom: 10 }}>
-                      ②에서 <b>카카오 동의창 띄우기</b>를 누르고, 카카오에서 동의한 뒤 이 페이지로 돌아오면 이 버튼을 누르세요.
+                      ②에서 <b>카카오 동의창 띄우기</b>를 누르고, 카카오에서 동의한 뒤 이 페이지로 돌아오면 아래 버튼을 누르세요.
                     </div>
                   )}
                   <button
@@ -3203,7 +3224,7 @@ export function CompleteApp() {
                       cursor: tokenForFriends && isKakaoLoggedIn ? 'pointer' : 'default',
                     }}
                   >
-                    친구 목록 불러오기
+                    친구 목록 불러오기 (API 호출)
                   </button>
                   {kakaoTestFriendsError === '403' && (
                     <div style={{ marginTop: 12, padding: 12, background: isDarkMode ? 'rgba(239,68,68,0.15)' : '#FEE2E2', borderRadius: 10, border: '1px solid #DC2626' }}>
@@ -3223,14 +3244,17 @@ export function CompleteApp() {
               )}
             </div>
 
-            {/* ④ 친구에게 메시지 전송 */}
-            <div style={{ background: cardBg, border: `1px solid ${borderColor}`, borderRadius: 12, padding: 16 }}>
-              <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 6 }}>④ 친구에게 메시지 전송</div>
+            {/* ④ 친구에게 메시지 전송 — "메시지 발송" 구현 */}
+            <div style={{ background: cardBg, border: `2px solid ${step4Done ? '#16a34a' : borderColor}`, borderRadius: 12, padding: 16 }}>
+              <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 6 }}>④ 메시지 발송 (API: 친구에게 메시지 전송)</div>
               {step4Done ? (
-                <div style={{ fontSize: 13, color: '#16a34a' }}>✓ 완료 — {kakaoTestSentTo}에게 초대 메시지 전송함</div>
+                <div>
+                  <div style={{ fontSize: 13, color: '#16a34a', fontWeight: 600, marginBottom: 4 }}>✓ 메시지 발송 완료</div>
+                  <div style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.7)' : '#4B5563' }}>전송 대상: {kakaoTestSentTo} · 초대 메시지(WhereHere 링크) 전송됨</div>
+                </div>
               ) : kakaoTestFriends.length > 0 ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  <div style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280', marginBottom: 4 }}>한 명 선택 후 바로 보내기를 누르세요.</div>
+                  <div style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280', marginBottom: 4 }}>한 명을 선택한 뒤 「바로 보내기」를 누르면 해당 친구에게 초대 메시지가 전송됩니다.</div>
                   {kakaoTestFriends.slice(0, 5).map((f) => {
                     const uid = f.uuid || f.id || ''
                     const name = f.profile_nickname || uid || '친구'
@@ -3286,17 +3310,23 @@ export function CompleteApp() {
                   })}
                 </div>
               ) : (
-                <div style={{ fontSize: 13, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280' }}>③에서 친구 목록을 먼저 불러온 뒤, 한 명에게 메시지를 보내세요.</div>
+                <div style={{ fontSize: 13, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280' }}>③에서 친구 목록을 먼저 불러온 뒤, 한 명을 선택해 메시지를 보내세요.</div>
               )}
             </div>
           </div>
 
-          {(isKakaoLoggedIn && step2Done && step4Done) && (
-            <div style={{ marginTop: 24, padding: 16, background: isDarkMode ? 'rgba(34,197,94,0.15)' : '#DCFCE7', borderRadius: 12, border: '1px solid #16a34a', textAlign: 'center' }}>
-              <div style={{ fontSize: 14, fontWeight: 700, color: '#16a34a', marginBottom: 4 }}>캡처 준비 완료</div>
-              <div style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.7)' : '#166534' }}>이 화면 전체를 한 장 스크린샷으로 찍어 카카오 개발자 콘솔 심사에 제출하세요.</div>
+          {/* 캡처 안내 — 4단계 완료 후 제출 */}
+          <div style={{ marginTop: 24, padding: 20, background: isDarkMode ? 'rgba(34,197,94,0.15)' : '#DCFCE7', borderRadius: 12, border: '2px solid #16a34a' }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: '#16a34a', marginBottom: 6 }}>📸 심사 제출용 캡처 안내</div>
+            <div style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.85)' : '#166534', lineHeight: 1.7 }}>
+              • 위에서 <strong>① 카카오 로그인</strong>, <strong>② 친구 목록 동의</strong>, <strong>③ 친구 목록 확인</strong>, <strong>④ 메시지 발송</strong>이 모두 완료된 상태로 이 화면 전체를 스크린샷으로 캡처해 주세요.<br />
+              • 캡처 시 「친구 목록 확인 완료 — N명 조회됨」과 「메시지 발송 완료 — 전송 대상: OOO」 문구가 보이도록 스크롤하여 포함해 주세요.<br />
+              • 카카오 개발자 콘솔 → 카카오톡 친구 목록/메시지 → 심사 신청 시 위 캡처를 첨부해 주세요.
             </div>
-          )}
+            {(isKakaoLoggedIn && step2Done && step4Done) && (
+              <div style={{ marginTop: 12, fontSize: 13, fontWeight: 600, color: '#16a34a' }}>✓ 이 화면 상태로 캡처 후 제출하시면 됩니다.</div>
+            )}
+          </div>
         </div>
       </div>
     )
@@ -3304,7 +3334,12 @@ export function CompleteApp() {
 
   // 설정 화면
   if (screen === 'settings') {
-    return <SettingsScreen BottomNav={<BottomNav />} />
+    return (
+      <SettingsScreen
+        BottomNav={<BottomNav />}
+        onOpenKakaoApiTest={() => setScreen('kakao-api-test')}
+      />
+    )
   }
 
   return null

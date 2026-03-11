@@ -15,9 +15,9 @@ function formatAccountDate(iso?: string | null): string {
   }
 }
 
-type SettingsScreenProps = { BottomNav?: React.ReactNode }
+type SettingsScreenProps = { BottomNav?: React.ReactNode; onOpenKakaoApiTest?: () => void }
 
-export function SettingsScreen({ BottomNav }: SettingsScreenProps = {}) {
+export function SettingsScreen({ BottomNav, onOpenKakaoApiTest }: SettingsScreenProps = {}) {
   const {
     isDarkMode,
     bgColor,
@@ -305,7 +305,7 @@ export function SettingsScreen({ BottomNav }: SettingsScreenProps = {}) {
 
           {/* 카카오 API 테스트 (심사 제출용) — 한 장 캡처용 */}
           <div
-            onClick={() => setScreen('kakao-api-test')}
+            onClick={() => (onOpenKakaoApiTest ? onOpenKakaoApiTest() : setScreen('kakao-api-test'))}
             style={{
               background: isDarkMode ? 'rgba(254,229,0,0.12)' : '#FFFDE7',
               border: `2px solid #FEE500`,
