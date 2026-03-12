@@ -627,23 +627,30 @@ export function CompleteApp() {
     if (!user || !userId || userId === 'user-demo-001') return
     const meta = user.user_metadata || {}
     const kakao = meta.kakao_account?.profile
-    const name = meta.display_name ?? meta.name ?? meta.full_name ?? meta.user_name ?? kakao?.nickname ?? null
+    const nameFromMeta = meta.display_name ?? meta.name ?? meta.full_name ?? meta.user_name ?? kakao?.nickname ?? meta.nickname ?? null
     const avatar = meta.avatar_url ?? meta.profile_image_url ?? meta.picture ?? kakao?.profile_image_url ?? kakao?.thumbnail_image_url ?? null
-    if (!name && !avatar) return
+    const emailPrefix = (user?.email ?? '').split('@')[0]
     ;(async () => {
       try {
         const res = await fetch(`${API_BASE}/api/v1/social/profile/${userId}`)
         const data = await res.json()
         const profile = data?.profile
-        const needSync = !profile || !profile.display_name || !(profile.profile_image_url ?? profile.avatar_url)
-        if (!needSync) return
+        const currentName = profile?.display_name ?? ''
+        const currentAvatar = profile?.profile_image_url ?? profile?.avatar_url ?? ''
+        // DB에 프로필 없음, 또는 이름이 비어있음/기본값 'Explorer', 또는 메타데이터에 더 나은 이름·사진이 있으면 동기화
+        const defaultName = 'Explorer'
+        const needNameSync = !profile || !currentName || currentName === defaultName || (nameFromMeta && nameFromMeta !== currentName)
+        const needAvatarSync = avatar && avatar !== currentAvatar
+        if (!needNameSync && !needAvatarSync) return
+        const nextName = nameFromMeta || (currentName !== defaultName ? currentName : null) || emailPrefix || userId.slice(0, 8)
+        const nextAvatar = avatar || currentAvatar
         await fetch(`${API_BASE}/api/v1/social/profile`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             user_id: userId,
-            display_name: name || profile?.display_name || userId.slice(0, 8),
-            avatar_url: avatar || profile?.profile_image_url || profile?.avatar_url,
+            display_name: nextName,
+            avatar_url: nextAvatar || undefined,
           }),
         })
         refetchUserProfile()
@@ -661,6 +668,33 @@ export function CompleteApp() {
   useEffect(() => {
     if ((screen === 'profile' || screen === 'social') && userId && userId !== 'user-demo-001') refetchUserProfile()
   }, [screen, userId, refetchUserProfile])
+
+  // 피드/소셜 화면 진입 시: 앱에서 보여주는 이름·아바타를 백엔드에 반영 (피드에 실제 프로필 노출)
+  useEffect(() => {
+    if (screen !== 'social' || !userId || userId === 'user-demo-001') return
+    const meta = user?.user_metadata || {}
+    const kakao = meta.kakao_account?.profile
+    const nameFromMeta = meta.display_name ?? meta.name ?? meta.full_name ?? meta.user_name ?? kakao?.nickname ?? meta.nickname ?? null
+    const avatarFromMeta = meta.avatar_url ?? meta.profile_image_url ?? meta.picture ?? kakao?.profile_image_url ?? kakao?.thumbnail_image_url ?? null
+    const backendName = userProfile?.display_name
+    const nameToSync = nameFromMeta || (backendName && backendName !== 'Explorer' ? backendName : null) || (user?.email ?? '').split('@')[0] || null
+    const avatarToSync = avatarFromMeta || userProfile?.profile_image_url || null
+    if (!nameToSync && !avatarToSync) return
+    ;(async () => {
+      try {
+        await fetch(`${API_BASE}/api/v1/social/profile`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            user_id: userId,
+            display_name: nameToSync || undefined,
+            avatar_url: avatarToSync || undefined,
+          }),
+        })
+        refetchUserProfile()
+      } catch (_) {}
+    })()
+  }, [screen, userId, user?.user_metadata, user?.email, userProfile?.display_name, userProfile?.profile_image_url])
 
   useEffect(() => {
     if (navigator.geolocation) {
