@@ -11,6 +11,8 @@ import { MOODS, type RoleType, type MoodType } from '@/components/screens'
 import { selectMissions } from '@/components/missions'
 import type { Mission } from '@/components/missions'
 import { toast } from 'sonner'
+import { useLocationSharing, type GhostLevel, type MovementStatus, type FriendLocation } from '@/hooks/useLocationSharing'
+export type { GhostLevel, MovementStatus, FriendLocation }
 
 // ─────────────────────────────────────────────
 // Types
@@ -149,6 +151,15 @@ export interface AppContextValue {
   // Location
   userLocation: { lat: number; lng: number }
   setUserLocation: (loc: { lat: number; lng: number }) => void
+  // Zenly: Real-time location sharing
+  ghostLevel: GhostLevel
+  setGhostLevel: (level: GhostLevel) => void
+  locationSharingEnabled: boolean
+  setLocationSharingEnabled: (v: boolean) => void
+  movementStatus: MovementStatus
+  speedKmh: number | null
+  friendLocations: FriendLocation[]
+  locationIsConnected: boolean
   // CheckIn / Review
   checkInTime: Date | null
   setCheckInTime: (t: Date | null) => void
@@ -441,6 +452,21 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [showFriendCompare, setShowFriendCompare] = useState(false)
   const [showNotificationPanel, setShowNotificationPanel] = useState(false)
   const [homeRefreshKey, setHomeRefreshKey] = useState(0)
+  // ── Zenly: Ghost mode & location sharing ──
+  const [ghostLevel, setGhostLevelState] = useState<GhostLevel>(() => {
+    try { return (localStorage.getItem('wherehere_ghost_level') as GhostLevel) || 'visible' } catch { return 'visible' }
+  })
+  const [locationSharingEnabled, setLocationSharingEnabledState] = useState<boolean>(() => {
+    try { return localStorage.getItem('wherehere_location_sharing') !== 'false' } catch { return true }
+  })
+  const setGhostLevel = (level: GhostLevel) => {
+    setGhostLevelState(level)
+    try { localStorage.setItem('wherehere_ghost_level', level) } catch (_) {}
+  }
+  const setLocationSharingEnabled = (v: boolean) => {
+    setLocationSharingEnabledState(v)
+    try { localStorage.setItem('wherehere_location_sharing', String(v)) } catch (_) {}
+  }
 
   // ── Computed colors ──
   const accentRgba = (alpha: number): string => {
@@ -476,6 +502,28 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   // ── Display name ──
   const displayName = user?.user_metadata?.display_name ?? userProfile?.display_name ?? user?.user_metadata?.name ?? user?.user_metadata?.full_name ?? user?.user_metadata?.user_name ?? user?.user_metadata?.kakao_account?.profile?.nickname ?? user?.email ?? (user ? '로그인한 사용자' : null)
+
+  // ── Zenly: Real-time location sharing via Supabase Presence ──
+  const {
+    myLocation: liveLocation,
+    movementStatus,
+    speedKmh,
+    friendLocations,
+    isConnected: locationIsConnected,
+  } = useLocationSharing({
+    userId,
+    displayName: displayName || undefined,
+    avatarUrl: userProfile?.profile_image_url || user?.user_metadata?.avatar_url,
+    ghostLevel,
+    enabled: locationSharingEnabled && isLoggedIn,
+    proximityAlertMeters: 500,
+    apiBase: API_BASE,
+  })
+
+  // Sync live GPS into userLocation when available
+  useEffect(() => {
+    if (liveLocation) setUserLocation(liveLocation)
+  }, [liveLocation])
 
   // ── Derived ──
   const myFriendCode = userId.slice(0, 8)
@@ -1417,6 +1465,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setAcceptedQuest,
     userLocation,
     setUserLocation,
+    ghostLevel,
+    setGhostLevel,
+    locationSharingEnabled,
+    setLocationSharingEnabled,
+    movementStatus,
+    speedKmh,
+    friendLocations,
+    locationIsConnected,
     checkInTime,
     setCheckInTime,
     reviewData,

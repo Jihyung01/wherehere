@@ -1,18 +1,51 @@
 'use client'
 
-import React from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { useAppContext, API_BASE } from '@/contexts/AppContext'
 import { LocalHub } from '@/components/local/LocalHub'
 import { MOODS } from './constants'
+import { MOVEMENT_LABELS, GHOST_LABELS } from '@/hooks/useLocationSharing'
 import { makeStoryCard, makeFeedCard, blobToFile, shareOrDownload } from '@/lib/instagram-cards'
 import { toast } from 'sonner'
 
+type SocialTab = 'feed' | 'friends'
 type SocialScreenProps = { BottomNav?: React.ReactNode; sharedPostId?: string | null }
 
+interface FriendActivity {
+  user_id: string
+  display_name?: string
+  avatar_url?: string
+  place_name?: string
+  place_id?: string
+  action_type?: string
+  created_at?: string
+  activity_data?: Record<string, unknown>
+}
+
+function timeAgoFriend(iso?: string): string {
+  if (!iso) return ''
+  const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 1000)
+  if (diff < 60) return '방금'
+  if (diff < 3600) return `${Math.floor(diff / 60)}분 전`
+  if (diff < 86400) return `${Math.floor(diff / 3600)}시간 전`
+  return `${Math.floor(diff / 86400)}일 전`
+}
+
 export function SocialScreen({ BottomNav, sharedPostId }: SocialScreenProps = {}) {
+  const [socialTab, setSocialTab] = useState<SocialTab>('feed')
+  const [friendActivities, setFriendActivities] = useState<FriendActivity[]>([])
+  const [friendActLoading, setFriendActLoading] = useState(false)
+
   const {
     isDarkMode,
     bgColor,
+    // Zenly realtime
+    friendLocations,
+    locationIsConnected,
+    movementStatus,
+    speedKmh,
+    ghostLevel,
+    locationSharingEnabled,
     textColor,
     cardBg,
     borderColor,
@@ -47,6 +80,27 @@ export function SocialScreen({ BottomNav, sharedPostId }: SocialScreenProps = {}
   } = useAppContext() as any
 
   const kakaoJsKey = process.env.NEXT_PUBLIC_KAKAO_MAP_KEY || process.env.NEXT_PUBLIC_KAKAO_JS_KEY || '160238a590f3d2957230d764fb745322'
+
+  // 친구 최근 활동(체크인) 조회
+  const loadFriendActivities = useCallback(async () => {
+    if (!userId || userId === 'user-demo-001') return
+    setFriendActLoading(true)
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/local/posts?area=all&limit=50&user_id=${userId}`)
+      if (!res.ok) return
+      const data = await res.json()
+      const posts: any[] = data.posts || data || []
+      // checkin 타입만 필터링
+      const checkins = posts.filter((p: any) => p.type === 'checkin' || p.action_type === 'checkin')
+      setFriendActivities(checkins.slice(0, 30))
+    } catch { /* silent */ } finally {
+      setFriendActLoading(false)
+    }
+  }, [userId])
+
+  useEffect(() => {
+    if (socialTab === 'friends') loadFriendActivities()
+  }, [socialTab, loadFriendActivities])
 
   const sharePostText = (post: { title: string; body?: string; place_name?: string; image_url?: string; place_address?: string } | null) => {
     if (!post) return
@@ -280,8 +334,209 @@ export function SocialScreen({ BottomNav, sharedPostId }: SocialScreenProps = {}
     </div>
   )
 
+  // 친구 위치 탭 UI (Supabase Realtime Presence + 폴백 체크인 피드)
+  const FriendLocationsTab = () => {
+    // Realtime 연결된 친구들
+    const realtimeFriends: any[] = friendLocations || []
+    // 폴백: 최근 체크인 피드 (Realtime 친구 없을 때만)
+    const fallbackList = realtimeFriends.length === 0 ? friendActivities : []
+
+    return (
+      <div style={{ padding: '16px 16px 120px', minHeight: '100vh', background: bgColor }}>
+        {/* 헤더 */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+          <div>
+            <div style={{ fontSize: 18, fontWeight: 800, color: textColor, marginBottom: 2 }}>친구 위치</div>
+            <div style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.45)' : '#9CA3AF' }}>
+              {locationIsConnected ? '실시간 연결됨' : '연결 중...'}
+            </div>
+          </div>
+          {/* 내 상태 뱃지 */}
+          {locationSharingEnabled && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: 999, background: isDarkMode ? 'rgba(255,255,255,0.06)' : '#F3F4F6', border: `1px solid ${borderColor}` }}>
+              <div style={{ width: 7, height: 7, borderRadius: '50%', background: locationIsConnected ? '#10B981' : '#F59E0B' }} />
+              <span style={{ fontSize: 11, fontWeight: 700, color: textColor }}>
+                {(MOVEMENT_LABELS as any)[movementStatus] || '🟢 정지'}
+              </span>
+              {speedKmh !== null && speedKmh > 0 && (
+                <span style={{ fontSize: 10, color: accentColor, fontWeight: 600 }}>{speedKmh}km/h</span>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* 연결 상태 배너 */}
+        {!locationIsConnected && (
+          <div style={{ padding: '10px 14px', marginBottom: 14, background: isDarkMode ? 'rgba(245,158,11,0.1)' : '#FFFBEB', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 10, fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.7)' : '#92400E' }}>
+            🔄 Supabase Realtime 연결 중... 앱을 새로고침하거나 잠시 기다려주세요
+          </div>
+        )}
+
+        {/* Realtime 친구 목록 */}
+        {realtimeFriends.length > 0 && (
+          <>
+            <div style={{ fontSize: 12, fontWeight: 700, color: isDarkMode ? 'rgba(255,255,255,0.5)' : '#9CA3AF', marginBottom: 10, letterSpacing: 0.5, textTransform: 'uppercase' }}>
+              지금 온라인 · {realtimeFriends.length}명
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 20 }}>
+              {realtimeFriends.map((f) => {
+                const ghostInfo = (GHOST_LABELS as any)[f.ghost_level] || GHOST_LABELS.visible
+                const movLabel = (MOVEMENT_LABELS as any)[f.movement_status] || '🟢 정지'
+                const isBlurred = f.ghost_level === 'blur'
+                const isFrozen = f.ghost_level === 'frozen'
+                const minsAgo = Math.floor((Date.now() - new Date(f.online_at).getTime()) / 60000)
+
+                return (
+                  <div
+                    key={f.user_id}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 12,
+                      padding: '14px 14px', borderRadius: 16,
+                      background: isDarkMode ? 'rgba(255,255,255,0.04)' : '#fff',
+                      border: `1.5px solid ${isDarkMode ? 'rgba(99,102,241,0.25)' : 'rgba(99,102,241,0.15)'}`,
+                      boxShadow: isDarkMode ? 'none' : '0 2px 8px rgba(0,0,0,0.06)',
+                      position: 'relative',
+                    }}
+                  >
+                    {/* 아바타 */}
+                    <div style={{ width: 46, height: 46, borderRadius: '50%', overflow: 'hidden', background: 'linear-gradient(135deg, #6366F1, #8B5CF6)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, color: '#fff', fontWeight: 700, flexShrink: 0, filter: isBlurred ? 'blur(3px)' : 'none' }}>
+                      {f.avatar_url
+                        ? <img src={f.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        : (f.display_name || '?').slice(0, 1).toUpperCase()}
+                    </div>
+
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
+                        <span style={{ fontSize: 14, fontWeight: 700, color: textColor }}>
+                          @{f.display_name}
+                        </span>
+                        {isFrozen && <span style={{ fontSize: 10, color: '#6366F1', background: 'rgba(99,102,241,0.12)', padding: '1px 6px', borderRadius: 999 }}>🧊 고정됨</span>}
+                        {isBlurred && <span style={{ fontSize: 10, color: '#8B5CF6', background: 'rgba(139,92,246,0.12)', padding: '1px 6px', borderRadius: 999 }}>🌫️ 흐림</span>}
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280' }}>
+                          {movLabel}
+                        </span>
+                        {f.speed_kmh != null && f.speed_kmh > 0 && (
+                          <span style={{ fontSize: 11, color: accentColor, fontWeight: 600 }}>{f.speed_kmh}km/h</span>
+                        )}
+                        <span style={{ fontSize: 11, color: isDarkMode ? 'rgba(255,255,255,0.35)' : '#9CA3AF' }}>
+                          {minsAgo < 1 ? '방금' : `${minsAgo}분 전`}
+                        </span>
+                      </div>
+
+                      {/* 위치 표시 (흐림이면 대략적으로) */}
+                      {!isBlurred && (
+                        <div style={{ fontSize: 11, color: isDarkMode ? 'rgba(255,255,255,0.4)' : '#9CA3AF', marginTop: 2 }}>
+                          📍 {f.lat.toFixed(3)}, {f.lng.toFixed(3)}
+                        </div>
+                      )}
+                      {isBlurred && (
+                        <div style={{ fontSize: 11, color: isDarkMode ? 'rgba(255,255,255,0.4)' : '#9CA3AF', marginTop: 2 }}>
+                          📍 위치 흐림 처리됨
+                        </div>
+                      )}
+                    </div>
+
+                    {/* 라이브 닷 */}
+                    <div style={{ flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
+                      <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#10B981', boxShadow: '0 0 0 3px rgba(16,185,129,0.22)' }} />
+                      <span style={{ fontSize: 8, fontWeight: 700, color: '#10B981' }}>LIVE</span>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </>
+        )}
+
+        {/* 폴백: 최근 체크인 피드 */}
+        {fallbackList.length > 0 && (
+          <>
+            <div style={{ fontSize: 12, fontWeight: 700, color: isDarkMode ? 'rgba(255,255,255,0.5)' : '#9CA3AF', marginBottom: 10, letterSpacing: 0.5, textTransform: 'uppercase' }}>
+              최근 체크인
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {fallbackList.map((act, i) => (
+                <div
+                  key={(act.user_id || '') + i}
+                  style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 14, borderRadius: 14, background: isDarkMode ? 'rgba(255,255,255,0.04)' : '#fff', border: `1px solid ${borderColor}` }}
+                >
+                  <div style={{ width: 42, height: 42, borderRadius: '50%', overflow: 'hidden', background: 'linear-gradient(135deg, #6366F1, #8B5CF6)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, color: '#fff', fontWeight: 700, flexShrink: 0 }}>
+                    {act.avatar_url
+                      ? <img src={act.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      : (act.display_name || '?').slice(0, 1).toUpperCase()}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: textColor, marginBottom: 2 }}>@{act.display_name || act.user_id?.slice(0, 8) || '사용자'}</div>
+                    {act.place_name && <div style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.65)' : '#374151', marginBottom: 1 }}>📍 {act.place_name}</div>}
+                    <div style={{ fontSize: 11, color: isDarkMode ? 'rgba(255,255,255,0.35)' : '#9CA3AF' }}>{timeAgoFriend(act.created_at)}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+
+        {/* 빈 상태 */}
+        {realtimeFriends.length === 0 && fallbackList.length === 0 && !friendActLoading && (
+          <div style={{ textAlign: 'center', padding: '48px 20px', background: isDarkMode ? 'rgba(255,255,255,0.03)' : '#F9FAFB', borderRadius: 16, border: `1px solid ${borderColor}` }}>
+            <div style={{ fontSize: 44, marginBottom: 14 }}>👻</div>
+            <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 8 }}>온라인 친구가 없어요</div>
+            <div style={{ fontSize: 13, color: isDarkMode ? 'rgba(255,255,255,0.45)' : '#9CA3AF', lineHeight: 1.7 }}>
+              친구도 WhereHere 앱을 켜서 위치 공유를 활성화하면<br />여기서 실시간으로 보여요
+            </div>
+          </div>
+        )}
+
+        {/* 내 고스트 상태 힌트 */}
+        <div style={{ marginTop: 20, padding: '10px 14px', background: isDarkMode ? 'rgba(255,255,255,0.04)' : '#F9FAFB', borderRadius: 10, border: `1px solid ${borderColor}`, fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.5)' : '#9CA3AF', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span>{(GHOST_LABELS as any)[ghostLevel]?.icon || '👁️'}</span>
+          <span>내 상태: {(GHOST_LABELS as any)[ghostLevel]?.label || '위치 공유 중'} · 설정에서 변경하세요</span>
+        </div>
+
+        {BottomNav}
+      </div>
+    )
+  }
+
   return (
     <div>
+      {/* 상단 탭 */}
+      <div style={{
+        position: 'sticky', top: 0, zIndex: 50,
+        background: isDarkMode ? 'rgba(10,14,20,0.96)' : 'rgba(255,255,255,0.96)',
+        backdropFilter: 'blur(16px)',
+        borderBottom: `1px solid ${borderColor}`,
+        display: 'flex', padding: '0 16px',
+      }}>
+        {([
+          { id: 'feed' as SocialTab, label: '동네 피드', icon: '💬' },
+          { id: 'friends' as SocialTab, label: '친구 위치', icon: '📍' },
+        ]).map((t) => (
+          <button
+            key={t.id}
+            onClick={() => setSocialTab(t.id)}
+            style={{
+              flex: 1, padding: '14px 0', background: 'none', border: 'none',
+              fontSize: 14, fontWeight: socialTab === t.id ? 700 : 500,
+              color: socialTab === t.id ? accentColor : (isDarkMode ? 'rgba(255,255,255,0.5)' : '#9CA3AF'),
+              cursor: 'pointer',
+              borderBottom: socialTab === t.id ? `2px solid ${accentColor}` : '2px solid transparent',
+              transition: 'all 0.15s',
+            }}
+          >
+            {t.icon} {t.label}
+          </button>
+        ))}
+      </div>
+
+      {/* 탭 컨텐츠 */}
+      {socialTab === 'friends' ? (
+        <FriendLocationsTab />
+      ) : (
+        <div>
       <LocalHub
         apiBase={API_BASE}
         userId={userId}
@@ -323,6 +578,8 @@ export function SocialScreen({ BottomNav, sharedPostId }: SocialScreenProps = {}
         }}
       />
       {instagramShareModalEl}
+        </div>
+      )}
     </div>
   )
 }

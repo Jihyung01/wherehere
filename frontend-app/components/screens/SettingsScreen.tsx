@@ -1,9 +1,10 @@
 'use client'
 
-import React from 'react'
+import React, { useState } from 'react'
 import { useAppContext, API_BASE } from '@/contexts/AppContext'
 import { toast } from 'sonner'
 import { compressImageFile } from '@/lib/image-compress'
+import { GHOST_LABELS, MOVEMENT_LABELS, type GhostLevel } from '@/hooks/useLocationSharing'
 
 function formatAccountDate(iso?: string | null): string {
   if (!iso) return '—'
@@ -65,7 +66,16 @@ export function SettingsScreen({ BottomNav, onOpenKakaoApiTest }: SettingsScreen
     router,
     refetchUserProfile,
     setScreen,
+    ghostLevel,
+    setGhostLevel,
+    locationSharingEnabled,
+    setLocationSharingEnabled,
+    movementStatus,
+    speedKmh,
+    locationIsConnected,
   } = useAppContext() as any
+
+  const [showGhostSettings, setShowGhostSettings] = useState(false)
 
   return (
     <div style={{ maxWidth: 430, margin: '0 auto', minHeight: '100vh', background: bgColor, color: textColor, fontFamily: 'Pretendard, sans-serif' }}>
@@ -270,6 +280,108 @@ export function SettingsScreen({ BottomNav, onOpenKakaoApiTest }: SettingsScreen
                 }}>
                   위치 새로고침
                 </button>
+              </div>
+            )}
+          </div>
+
+          {/* 고스트 모드 & 실시간 위치 공유 */}
+          <div
+            onClick={() => setShowGhostSettings(!showGhostSettings)}
+            style={{ background: cardBg, border: `1.5px solid ${showGhostSettings ? accentColor : borderColor}`, borderRadius: 16, padding: 20, cursor: 'pointer', transition: 'all 0.2s' }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+              <div style={{ fontSize: 26 }}>{GHOST_LABELS[ghostLevel as GhostLevel]?.icon || '👁️'}</div>
+              <div style={{ flex: 1 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 2 }}>
+                  <div style={{ fontSize: 15, fontWeight: 700 }}>위치 공유 설정</div>
+                  {locationIsConnected && (
+                    <span style={{ fontSize: 10, fontWeight: 700, color: '#10B981', background: 'rgba(16,185,129,0.12)', padding: '2px 7px', borderRadius: 999 }}>LIVE</span>
+                  )}
+                </div>
+                <div style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.55)' : '#9CA3AF' }}>
+                  {GHOST_LABELS[ghostLevel as GhostLevel]?.desc || '위치 공유 설정'}
+                </div>
+              </div>
+              <div style={{ fontSize: 14, color: accentColor }}>{showGhostSettings ? '▼' : '→'}</div>
+            </div>
+
+            {showGhostSettings && (
+              <div
+                style={{ marginTop: 18, paddingTop: 16, borderTop: `1px solid ${borderColor}` }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                {/* 위치 공유 ON/OFF */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
+                  <div>
+                    <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 2 }}>실시간 위치 공유</div>
+                    <div style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.5)' : '#9CA3AF' }}>
+                      꺼도 체크인은 계속 작동해요
+                    </div>
+                  </div>
+                  <div
+                    onClick={() => setLocationSharingEnabled(!locationSharingEnabled)}
+                    style={{
+                      width: 48, height: 26, borderRadius: 13,
+                      background: locationSharingEnabled ? accentColor : (isDarkMode ? '#374151' : '#D1D5DB'),
+                      position: 'relative', cursor: 'pointer', transition: 'background 0.2s', flexShrink: 0,
+                    }}
+                  >
+                    <div style={{
+                      position: 'absolute', top: 3, left: locationSharingEnabled ? 25 : 3,
+                      width: 20, height: 20, borderRadius: '50%', background: '#fff',
+                      transition: 'left 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
+                    }} />
+                  </div>
+                </div>
+
+                {/* 이동 상태 표시 */}
+                {locationSharingEnabled && (
+                  <div style={{ background: isDarkMode ? 'rgba(255,255,255,0.05)' : '#F3F4F6', borderRadius: 10, padding: '10px 14px', marginBottom: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <span style={{ fontSize: 13, color: isDarkMode ? 'rgba(255,255,255,0.7)' : '#374151' }}>현재 상태</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ fontSize: 13, fontWeight: 700 }}>{MOVEMENT_LABELS[movementStatus as keyof typeof MOVEMENT_LABELS] || '🟢 정지'}</span>
+                      {speedKmh !== null && speedKmh > 0 && (
+                        <span style={{ fontSize: 11, color: accentColor, fontWeight: 600 }}>{speedKmh} km/h</span>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* 고스트 레벨 선택 */}
+                <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 10 }}>공개 범위</div>
+                <div style={{ display: 'grid', gap: 8 }}>
+                  {(Object.entries(GHOST_LABELS) as [GhostLevel, typeof GHOST_LABELS[GhostLevel]][]).map(([level, info]) => (
+                    <div
+                      key={level}
+                      onClick={() => setGhostLevel(level)}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 12,
+                        padding: '12px 14px', borderRadius: 12, cursor: 'pointer',
+                        border: `2px solid ${ghostLevel === level ? accentColor : borderColor}`,
+                        background: ghostLevel === level ? (isDarkMode ? 'rgba(232,116,12,0.12)' : 'rgba(232,116,12,0.06)') : 'transparent',
+                        transition: 'all 0.15s',
+                      }}
+                    >
+                      <span style={{ fontSize: 20 }}>{info.icon}</span>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 13, fontWeight: ghostLevel === level ? 700 : 600, color: ghostLevel === level ? accentColor : (isDarkMode ? '#fff' : '#374151') }}>
+                          {info.label}
+                        </div>
+                        <div style={{ fontSize: 11, color: isDarkMode ? 'rgba(255,255,255,0.45)' : '#9CA3AF', marginTop: 1 }}>
+                          {info.desc}
+                        </div>
+                      </div>
+                      {ghostLevel === level && (
+                        <div style={{ width: 18, height: 18, borderRadius: '50%', background: accentColor, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, color: '#fff', fontWeight: 900, flexShrink: 0 }}>✓</div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                {/* 근접 알림 안내 */}
+                <div style={{ marginTop: 14, padding: '10px 14px', background: isDarkMode ? 'rgba(99,102,241,0.1)' : '#EEF2FF', borderRadius: 10, fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.65)' : '#4338CA', lineHeight: 1.6 }}>
+                  📍 친구가 500m 이내로 가까워지면 알림을 받아요
+                </div>
               </div>
             )}
           </div>

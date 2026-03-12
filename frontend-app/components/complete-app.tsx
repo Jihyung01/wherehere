@@ -238,6 +238,11 @@ export function CompleteApp() {
   const [friendCompareData, setFriendCompareData] = useState<Array<{ user_id: string; display_name?: string; avatar_url?: string; total_places?: number; current_streak?: number; level?: number }>>([])
   const [friendCompareLoading, setFriendCompareLoading] = useState(false)
   const [showFriendCompare, setShowFriendCompare] = useState(false)
+  // 프로필 상단 탭 (프로필 | 지도 | 챌린지)
+  const [profileTab, setProfileTab] = useState<'profile' | 'map' | 'challenges'>('profile')
+  // 체크인 장소 동행자 감지
+  const [checkinPresence, setCheckinPresence] = useState<Array<{ user_id: string; display_name: string; avatar_url?: string; checked_in_at: string }>>([])
+  const [checkinPresenceLoading, setCheckinPresenceLoading] = useState(false)
 
   // accentColor rgba 헬퍼
   const accentRgba = (alpha: number): string => {
@@ -510,7 +515,7 @@ export function CompleteApp() {
       if (!res.ok) return null
       return res.json()
     },
-    enabled: (screen === 'profile' || screen === 'challenges' || screen === 'home') && !!userId,
+    enabled: (screen === 'profile' || screen === 'home') && !!userId,
   })
 
   // 레벨업 감지: userStats.level 변화 시 축하 모달 표시
@@ -668,7 +673,30 @@ export function CompleteApp() {
 
   useEffect(() => {
     if ((screen === 'profile' || screen === 'social') && userId && userId !== 'user-demo-001') refetchUserProfile()
+    // 챌린지 화면 직접 접근 → 프로필 챌린지 탭으로 리다이렉트
+    if (screen === 'challenges') {
+      setScreen('profile')
+      setProfileTab('challenges')
+    }
+    // 체크인 화면 진입 시 동행자 초기화
+    if (screen === 'checkin') {
+      setCheckinPresence([])
+      setCheckinPresenceLoading(false)
+    }
   }, [screen, userId, refetchUserProfile])
+
+  // 체크인 화면 진입 시 동행자 조회 (별도 effect)
+  useEffect(() => {
+    if (screen !== 'checkin') return
+    const placeId = acceptedQuest?.place_id
+    if (!placeId) return
+    setCheckinPresenceLoading(true)
+    fetch(`${API_BASE}/api/v1/visits/presence/${encodeURIComponent(placeId)}?requester_id=${userId}&hours=3`)
+      .then(r => r.json())
+      .then(d => setCheckinPresence(d.users || []))
+      .catch(() => {})
+      .finally(() => setCheckinPresenceLoading(false))
+  }, [screen, acceptedQuest?.place_id])
 
   // 피드/소셜 화면 진입 시: 이름만 필요 시 백엔드에 반영. 프로필 사진은 사용자가 설정한 값이 있으면 카카오로 덮어쓰지 않음
   useEffect(() => {
@@ -1471,36 +1499,37 @@ export function CompleteApp() {
     ? `rgba(${_ar},${_ag},${_ab},0.18)`
     : `rgba(${_ar},${_ag},${_ab},0.15)`
 
-  // 하단 네비게이션
-  const BottomNav = () => (
-    <div style={{
-      position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)',
-      width: '100%', maxWidth: 430,
-      background: isDarkMode ? 'rgba(10,14,20,0.95)' : 'rgba(255,255,255,0.95)',
-      backdropFilter: 'blur(20px)',
-      borderTop: `1px solid ${borderColor}`,
-      display: 'flex', padding: '8px 0 24px', zIndex: 100,
-      boxShadow: '0 -2px 10px rgba(0,0,0,0.1)',
-    }}>
-      {[
-        { icon: '🏠', label: '홈', onClick: () => { setScreen('home'); setAcceptedQuest(null); } },
-        { icon: '🗺️', label: '지도', onClick: () => router.push('/my-map-real') },
-        { icon: '💬', label: '동네 피드', onClick: () => setScreen('social') },
-        { icon: '🎯', label: '챌린지', onClick: () => setScreen('challenges') },
-        { icon: '👤', label: '프로필', onClick: () => setScreen('profile') },
-        { icon: '⚙️', label: '설정', onClick: () => setScreen('settings') },
-      ].map((n, i) => (
-        <div key={i} onClick={n.onClick} style={{
-          flex: 1, textAlign: 'center', cursor: 'pointer',
-          opacity: 0.7, transition: 'opacity 0.2s',
-        }} onMouseEnter={(e) => e.currentTarget.style.opacity = '1'}
-           onMouseLeave={(e) => e.currentTarget.style.opacity = '0.7'}>
-          <div style={{ fontSize: 20 }}>{n.icon}</div>
-          <div style={{ fontSize: 9, marginTop: 2, color: accentColor, fontWeight: 600 }}>{n.label}</div>
-        </div>
-      ))}
-    </div>
-  )
+  // 하단 네비게이션 (4탭: 홈 | 소셜 | 프로필 | 설정)
+  const BottomNav = () => {
+    const tabs = [
+      { icon: '🏠', label: '홈', active: screen === 'home' || screen === 'role' || screen === 'mood' || screen === 'quests' || screen === 'accepted' || screen === 'checkin' || screen === 'review', onClick: () => { setScreen('home'); setAcceptedQuest(null); } },
+      { icon: '💬', label: '소셜', active: screen === 'social', onClick: () => setScreen('social') },
+      { icon: '👤', label: '프로필', active: screen === 'profile', onClick: () => { setScreen('profile'); setProfileTab('profile'); } },
+      { icon: '⚙️', label: '설정', active: screen === 'settings', onClick: () => setScreen('settings') },
+    ]
+    return (
+      <div style={{
+        position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)',
+        width: '100%', maxWidth: 430,
+        background: isDarkMode ? 'rgba(10,14,20,0.96)' : 'rgba(255,255,255,0.97)',
+        backdropFilter: 'blur(20px)',
+        borderTop: `1px solid ${borderColor}`,
+        display: 'flex', padding: '8px 0 max(24px, env(safe-area-inset-bottom))', zIndex: 100,
+        boxShadow: '0 -2px 12px rgba(0,0,0,0.1)',
+      }}>
+        {tabs.map((n, i) => (
+          <div key={i} onClick={n.onClick} style={{
+            flex: 1, textAlign: 'center', cursor: 'pointer',
+            transition: 'opacity 0.15s',
+          }}>
+            <div style={{ fontSize: 22, lineHeight: 1 }}>{n.icon}</div>
+            <div style={{ fontSize: 10, marginTop: 3, fontWeight: 700, color: n.active ? accentColor : (isDarkMode ? 'rgba(255,255,255,0.4)' : '#9CA3AF') }}>{n.label}</div>
+            {n.active && <div style={{ width: 4, height: 4, borderRadius: '50%', background: accentColor, margin: '3px auto 0' }} />}
+          </div>
+        ))}
+      </div>
+    )
+  }
 
   // 마운트 전: 서버·클라이언트 동일한 플레이스홀더로 하이드레이션/초기화 오류 방지
   if (!mounted) {
@@ -2445,13 +2474,61 @@ export function CompleteApp() {
 
   // 체크인 완료 화면
   if (screen === 'checkin') {
+    const checkinPlaceId = acceptedQuest?.place_id
+    const checkinPlaceName = acceptedQuest?.name
+
     return (
-      <div style={{ maxWidth: 430, margin: '0 auto', minHeight: '100vh', background: bgColor, color: textColor, fontFamily: 'Pretendard, sans-serif', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <div style={{ textAlign: 'center' }}>
+      <div style={{ maxWidth: 430, margin: '0 auto', minHeight: '100vh', background: bgColor, color: textColor, fontFamily: 'Pretendard, sans-serif', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+        <div style={{ textAlign: 'center', marginBottom: 32 }}>
           <div style={{ fontSize: 80, marginBottom: 24, animation: 'bounce 1s ease infinite' }}>🎉</div>
           <h2 style={{ fontSize: 28, fontWeight: 900, marginBottom: 12 }}>체크인 완료!</h2>
           <p style={{ fontSize: 14, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280' }}>잠시 후 리뷰 작성 화면으로 이동합니다...</p>
         </div>
+
+        {/* 동행자 감지 */}
+        {(checkinPresence.length > 0 || checkinPresenceLoading) && (
+          <div style={{
+            width: '100%', maxWidth: 360,
+            background: isDarkMode ? 'linear-gradient(135deg, rgba(99,102,241,0.15), rgba(139,92,246,0.1))' : 'linear-gradient(135deg, #EEF2FF, #F5F3FF)',
+            border: `1px solid ${isDarkMode ? 'rgba(99,102,241,0.3)' : 'rgba(99,102,241,0.25)'}`,
+            borderRadius: 18, padding: 18, marginTop: 8,
+          }}>
+            {checkinPresenceLoading ? (
+              <div style={{ textAlign: 'center', fontSize: 13, color: isDarkMode ? 'rgba(255,255,255,0.5)' : '#9CA3AF' }}>
+                주변 사람 확인 중…
+              </div>
+            ) : (
+              <>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                  <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#10B981', boxShadow: '0 0 0 3px rgba(16,185,129,0.25)', flexShrink: 0 }} />
+                  <span style={{ fontSize: 14, fontWeight: 700 }}>
+                    {checkinPlaceName ? `${checkinPlaceName}에` : '여기에'} 함께 있는 사람
+                  </span>
+                  <span style={{ fontSize: 12, fontWeight: 700, background: 'rgba(99,102,241,0.15)', color: '#6366F1', padding: '2px 8px', borderRadius: 999 }}>
+                    {checkinPresence.length}명
+                  </span>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {checkinPresence.slice(0, 3).map((u) => (
+                    <div key={u.user_id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', background: isDarkMode ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.9)', borderRadius: 10 }}>
+                      <div style={{ width: 32, height: 32, borderRadius: '50%', overflow: 'hidden', background: 'linear-gradient(135deg, #6366F1, #8B5CF6)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, color: '#fff', fontWeight: 700, flexShrink: 0 }}>
+                        {u.avatar_url ? <img src={u.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : (u.display_name || '?').slice(0, 1)}
+                      </div>
+                      <div style={{ flex: 1, fontSize: 13, fontWeight: 600 }}>@{u.display_name}</div>
+                      <span style={{ fontSize: 9, fontWeight: 700, color: '#10B981', background: 'rgba(16,185,129,0.12)', padding: '2px 7px', borderRadius: 999 }}>LIVE</span>
+                    </div>
+                  ))}
+                  {checkinPresence.length > 3 && (
+                    <div style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.5)' : '#9CA3AF', textAlign: 'center' }}>
+                      외 {checkinPresence.length - 3}명 더 있어요
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
         <style jsx>{`@keyframes bounce { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-20px); } }`}</style>
       </div>
     )
@@ -2591,8 +2668,9 @@ export function CompleteApp() {
     )
   }
 
-  // 챌린지 화면
-  if (screen === 'challenges') {
+  // 챌린지 화면 → 프로필의 챌린지 탭으로 리다이렉트 (렌더 중 상태 업데이트 방지)
+  // [MERGED - 프로필 탭 내 챌린지로 통합됨]
+  if (false && screen === 'challenges') {
     return (
       <div style={{ maxWidth: 430, margin: '0 auto', minHeight: '100vh', background: bgColor, color: textColor, fontFamily: 'Pretendard, sans-serif' }}>
         <div style={{ padding: '60px 20px 120px' }}>
@@ -2732,9 +2810,9 @@ export function CompleteApp() {
         <BottomNav />
       </div>
     )
-  }
+  } // end if(false && challenges)
 
-  // 소셜 탭: 동네(홈/작성/피드) + 친구(기존 체크인 피드)
+  // 소셜 탭
   if (screen === 'social') {
     return <SocialScreen BottomNav={<BottomNav />} sharedPostId={sharedPostId} />
   }
@@ -2770,9 +2848,180 @@ export function CompleteApp() {
       }
     }
 
+    // ── 챌린지 탭 내부 콘텐츠 (프로필 화면 안에서 렌더링)
+    const ChallengesTabContent = () => (
+      <div style={{ padding: '16px 0 40px' }}>
+        <div style={{ display: 'flex', gap: 6, marginBottom: 16, flexWrap: 'wrap' }}>
+          {CHALLENGE_CATEGORIES.map((cat) => (
+            <button key={cat.id} type="button" onClick={() => setChallengeCategory(cat.id)} style={{ padding: '8px 14px', borderRadius: 10, border: `1px solid ${challengeCategory === cat.id ? accentColor : borderColor}`, background: challengeCategory === cat.id ? accentRgba(0.15) : cardBg, color: textColor, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>{cat.label}</button>
+          ))}
+        </div>
+        <div style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280', marginBottom: 16 }}>
+          오늘 완료: {(CHALLENGES_BY_CATEGORY.daily.filter((c) => { const p = (userStats?.total_visits ?? 0) > 0 && c.id === 'd1' ? 1 : 0; return p >= c.total }).length)}/3 | 이번 주: {CHALLENGES_BY_CATEGORY.weekly.filter((c) => Math.min(userStats?.current_streak ?? 0, userStats?.total_places_visited ?? 0) >= c.total).length}/4 | 총 업적: {CHALLENGES_BY_CATEGORY.achievement.filter((c) => (c.id === 'a1' && (userStats?.total_visits ?? 0) >= 1) || (c.id === 'a2' && (userStats?.total_places_visited ?? 0) >= 10) || (c.id === 'a3' && (userStats?.total_places_visited ?? 0) >= 50) || (c.id === 'a5' && (userStats?.current_streak ?? 0) >= 30) || (c.id === 'a6' && (userStats?.total_reviews ?? userStats?.total_visits ?? 0) >= 30)).length}/7
+        </div>
+        <div style={{ display: 'grid', gap: 14 }}>
+          {CHALLENGES_BY_CATEGORY[challengeCategory].map((c) => {
+            const progress = (() => {
+              const streak = userStats?.current_streak ?? 0
+              const places = userStats?.total_places_visited ?? (userStats as any)?.unique_places ?? 0
+              const visits = (userStats as any)?.total_visits ?? 0
+              const reviews = (userStats as any)?.total_reviews ?? (userStats as any)?.total_visits ?? 0
+              const following = (userStats as any)?.following_count ?? 0
+              const photoMissions = (userStats as any)?.photo_missions ?? 0
+              if (c.id === 'd1') return visits > 0 ? 1 : 0
+              if (c.id === 'd2') return photoMissions > 0 ? 1 : 0
+              if (c.id === 'd3') return visits > 0 ? 1 : 0
+              if (c.id === 'w1') return Math.min(streak, c.total)
+              if (c.id === 'w2') return Math.min(places, c.total)
+              if (c.id === 'w3') return Math.min(visits, c.total)
+              if (c.id === 'w4') return Math.min((userStats as any)?.post_count ?? 0, c.total)
+              if (c.id === 'a1') return visits >= 1 ? 1 : 0
+              if (c.id === 'a2' || c.id === 'a3') return Math.min(places, c.total)
+              if (c.id === 'a4') return Math.min(photoMissions, c.total)
+              if (c.id === 'a5') return Math.min(streak, c.total)
+              if (c.id === 'a6') return Math.min(reviews, c.total)
+              if (c.id === 'a7') return Math.min((userStats as any)?.role_count ?? 0, c.total)
+              if (c.id === 's1') return Math.min(following, c.total)
+              if (c.id === 's2') return Math.min((userStats as any)?.share_count ?? 0, c.total)
+              if (c.id === 's3') return Math.min((userStats as any)?.comment_count ?? 0, c.total)
+              if (c.id === 'e1') return Math.min((userStats as any)?.cafe_count ?? 0, c.total)
+              if (c.id === 'e2') return Math.min((userStats as any)?.night_visits ?? 0, c.total)
+              if (c.id === 'e3') return Math.min((userStats as any)?.morning_visits ?? 0, c.total)
+              if (c.id === 'e4') return Math.min((userStats as any)?.culture_count ?? 0, c.total)
+              if (c.id === 'e5') return Math.min((userStats as any)?.bar_count ?? 0, c.total)
+              return 0
+            })()
+            const done = progress >= c.total
+            const claimed = challengeClaims[c.id]?.claimed ?? false
+            const isClaiming = claimingChallenge === c.id
+            const progressPct = c.total ? Math.min(100, (progress / c.total) * 100) : 0
+            return (
+              <div key={c.id} style={{ background: claimed ? (isDarkMode ? 'rgba(16,185,129,0.08)' : 'rgba(16,185,129,0.05)') : done ? (isDarkMode ? accentRgba(0.15) : accentRgba(0.08)) : cardBg, border: `1.5px solid ${claimed ? '#10B981' : done ? accentColor : borderColor}`, borderRadius: 16, padding: 18 }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14, marginBottom: 12 }}>
+                  <div style={{ fontSize: 28, lineHeight: 1 }}>{c.icon}</div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 2 }}>{c.title}</div>
+                    <div style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280' }}>{c.desc}</div>
+                  </div>
+                  {claimed ? (
+                    <span style={{ fontSize: 10, padding: '3px 8px', borderRadius: 999, background: 'rgba(16,185,129,0.15)', color: '#10B981', fontWeight: 700, flexShrink: 0 }}>완료 ✓</span>
+                  ) : done ? (
+                    <span style={{ fontSize: 10, padding: '3px 8px', borderRadius: 999, background: accentRgba(0.15), color: accentColor, fontWeight: 700, flexShrink: 0 }}>보상 대기</span>
+                  ) : (
+                    <span style={{ fontSize: 10, color: isDarkMode ? 'rgba(255,255,255,0.4)' : '#9CA3AF', flexShrink: 0 }}>{progress}/{c.total}</span>
+                  )}
+                </div>
+                <div style={{ height: 6, borderRadius: 3, background: isDarkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)', overflow: 'hidden', marginBottom: 10 }}>
+                  <div style={{ width: `${progressPct}%`, height: '100%', background: claimed ? '#10B981' : 'linear-gradient(90deg, #E8740C, #F59E0B)', borderRadius: 3, transition: 'width 0.3s' }} />
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: 11, color: isDarkMode ? 'rgba(255,255,255,0.5)' : '#9CA3AF' }}>+{c.rewardXP} XP</span>
+                  {done && !claimed && (
+                    <button type="button" disabled={isClaiming} onClick={async () => {
+                      setClaimingChallenge(c.id)
+                      try {
+                        const res = await fetch(`${API_BASE}/api/v1/challenges/claim`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user_id: userId, challenge_id: c.id, xp_reward: c.rewardXP }) })
+                        const data = await res.json().catch(() => ({}))
+                        if (res.ok || data.success !== false) {
+                          setChallengeClaims((prev) => ({ ...prev, [c.id]: { claimed: true, completed_at: new Date().toISOString() } }))
+                          toast.success(`🎉 +${c.rewardXP} XP 획득!`)
+                        } else toast.error(data.detail || '보상 수령 실패')
+                      } catch { toast.error('네트워크 오류') } finally { setClaimingChallenge(null) }
+                    }} style={{ padding: '6px 14px', borderRadius: 10, border: 'none', background: isClaiming ? '#9CA3AF' : accentColor, color: '#fff', fontSize: 12, fontWeight: 700, cursor: isClaiming ? 'not-allowed' : 'pointer' }}>
+                      {isClaiming ? '처리 중…' : `🎁 보상 받기`}
+                    </button>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    )
+
+    // ── 지도 탭
+    const MapTabContent = () => (
+      <div style={{ padding: '16px 0 40px' }}>
+        {/* 내 위치 카드 */}
+        <div style={{ background: isDarkMode ? 'rgba(255,255,255,0.04)' : '#F9FAFB', border: `1px solid ${borderColor}`, borderRadius: 16, padding: 20, marginBottom: 16 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>📍 현재 위치</div>
+          <div style={{ fontSize: 13, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280', marginBottom: 16 }}>
+            위도 {userLocation.lat.toFixed(4)} · 경도 {userLocation.lng.toFixed(4)}
+          </div>
+          <button
+            type="button"
+            onClick={() => router.push('/my-map-real')}
+            style={{ width: '100%', padding: '13px 0', borderRadius: 12, border: 'none', background: `linear-gradient(135deg, ${accentColor}, #F59E0B)`, color: '#fff', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}
+          >
+            🗺️ 나의 지도 전체 보기
+          </button>
+        </div>
+
+        {/* 방문 통계 미리보기 */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
+          <div style={{ background: isDarkMode ? 'rgba(255,255,255,0.04)' : '#fff', border: `1px solid ${borderColor}`, borderRadius: 14, padding: 16, textAlign: 'center' }}>
+            <div style={{ fontSize: 28, fontWeight: 800, color: accentColor }}>{placesVisited}</div>
+            <div style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.5)' : '#9CA3AF', marginTop: 4 }}>방문한 장소</div>
+          </div>
+          <div style={{ background: isDarkMode ? 'rgba(255,255,255,0.04)' : '#fff', border: `1px solid ${borderColor}`, borderRadius: 14, padding: 16, textAlign: 'center' }}>
+            <div style={{ fontSize: 28, fontWeight: 800, color: '#10B981' }}>{streak}</div>
+            <div style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.5)' : '#9CA3AF', marginTop: 4 }}>연속 방문일</div>
+          </div>
+        </div>
+
+        {/* 소셜 지도 힌트 */}
+        <div style={{ background: isDarkMode ? 'linear-gradient(135deg, rgba(99,102,241,0.12), rgba(139,92,246,0.08))' : 'linear-gradient(135deg, #EEF2FF, #F5F3FF)', border: `1px solid ${isDarkMode ? 'rgba(99,102,241,0.3)' : 'rgba(99,102,241,0.2)'}`, borderRadius: 16, padding: 18 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 8 }}>👥 친구 위치 보기</div>
+          <div style={{ fontSize: 13, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280', lineHeight: 1.6, marginBottom: 12 }}>
+            소셜 탭 → 친구 위치에서 친구들의 실시간 체크인을 확인하세요
+          </div>
+          <button
+            type="button"
+            onClick={() => { setScreen('social') }}
+            style={{ padding: '9px 18px', borderRadius: 10, border: 'none', background: 'rgba(99,102,241,0.15)', color: '#6366F1', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}
+          >
+            친구 위치 보기 →
+          </button>
+        </div>
+      </div>
+    )
+
     return (
       <div style={{ maxWidth: 430, margin: '0 auto', minHeight: '100vh', background: bgColor, color: textColor, fontFamily: 'Pretendard, sans-serif' }}>
-        <div style={{ padding: '60px 20px 120px' }}>
+        {/* 상단 탭 바 */}
+        <div style={{
+          position: 'sticky', top: 0, zIndex: 50,
+          background: isDarkMode ? 'rgba(10,14,20,0.96)' : 'rgba(255,255,255,0.96)',
+          backdropFilter: 'blur(16px)',
+          borderBottom: `1px solid ${borderColor}`,
+          display: 'flex', padding: '0 20px',
+        }}>
+          {([
+            { id: 'profile' as const, label: '프로필', icon: '👤' },
+            { id: 'map' as const, label: '지도', icon: '🗺️' },
+            { id: 'challenges' as const, label: '챌린지', icon: '🎯' },
+          ]).map((t) => (
+            <button
+              key={t.id}
+              onClick={() => setProfileTab(t.id)}
+              style={{
+                flex: 1, padding: '14px 0', background: 'none', border: 'none',
+                fontSize: 13, fontWeight: profileTab === t.id ? 700 : 500,
+                color: profileTab === t.id ? accentColor : (isDarkMode ? 'rgba(255,255,255,0.45)' : '#9CA3AF'),
+                cursor: 'pointer',
+                borderBottom: profileTab === t.id ? `2px solid ${accentColor}` : '2px solid transparent',
+                transition: 'all 0.15s',
+              }}
+            >
+              {t.icon} {t.label}
+            </button>
+          ))}
+        </div>
+
+        <div style={{ padding: '20px 20px 120px' }}>
+          {/* 프로필 탭: 기존 프로필 콘텐츠 */}
+          {profileTab === 'profile' && (
+            <>
           {/* 프로필 헤더: 아바타, 닉네임, 아이디(친구코드) */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 20 }}>
             <div style={{ width: 72, height: 72, borderRadius: '50%', overflow: 'hidden', background: 'linear-gradient(135deg, #E8740C, #F59E0B)', flexShrink: 0 }}>
@@ -3044,6 +3293,14 @@ export function CompleteApp() {
               </div>
             </div>
           )}
+            </>
+          )}
+
+          {/* 지도 탭 */}
+          {profileTab === 'map' && <MapTabContent />}
+
+          {/* 챌린지 탭 */}
+          {profileTab === 'challenges' && <ChallengesTabContent />}
         </div>
         <BottomNav />
       </div>

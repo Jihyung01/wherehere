@@ -336,3 +336,111 @@ async def create_visit(
         logger = logging.getLogger("uvicorn.error")
         logger.error(f"Error creating visit: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/presence/{place_id}")
+async def get_place_presence(
+    place_id: str,
+    hours: int = 3,
+    requester_id: Optional[str] = None,
+    db = Depends(get_db)
+):
+    """현재 장소에 함께 있는 사람 조회 (최근 N시간 내 체크인한 사용자)"""
+    try:
+        if db is None:
+            return {"users": [], "count": 0}
+
+        cutoff = (datetime.now() - timedelta(hours=hours)).isoformat()
+
+        # activity_logs 또는 visits 테이블에서 최근 체크인 조회
+        import httpx
+        headers = {**db.headers, "Accept": "application/json"}
+
+        # visits 테이블: 최근 N시간 내 같은 place_id 방문자
+        url = f"{db.base_url}/rest/v1/visits"
+        params = {
+            "place_id": f"eq.{place_id}",
+            "visited_at": f"gte.{cutoff}",
+            "select": "user_id,visited_at",
+            "order": "visited_at.desc",
+            "limit": "50",
+        }
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(url, headers=headers, params=params)
+
+        if resp.status_code != 200:
+            return {"users": [], "count": 0}
+
+        visits_raw = resp.json() or []
+        # 중복 user_id 제거 (가장 최근 체크인만 유지)
+        seen: dict = {}
+        for v in visits_raw:
+            uid = v.get("user_id")
+            if uid and uid != requester_id and uid not in seen:
+                seen[uid] = v.get("visited_at")
+
+        if not seen:
+            return {"users": [], "count": 0}
+
+        # 사용자 프로필 조회
+        user_ids = list(seen.keys())[:20]
+        in_filter = "(" + ",".join(f'"{uid}"' for uid in user_ids) + ")"
+        profile_url = f"{db.base_url}/rest/v1/users"
+        profile_params = {
+            "user_id": f"in.{in_filter}",
+            "select": "user_id,username,profile_image_url",
+        }
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            presp = await client.get(profile_url, headers=headers, params=profile_params)
+
+        profiles: dict = {}
+        if presp.status_code == 200:
+            for p in (presp.json() or []):
+                profiles[p["user_id"]] = p
+
+        users = []
+        for uid, checked_in_at in seen.items():
+            p = profiles.get(uid, {})
+            users.append({
+                "user_id": uid,
+                "display_name": p.get("username") or uid[:8],
+                "avatar_url": p.get("profile_image_url"),
+                "checked_in_at": checked_in_at,
+            })
+
+        return {"users": users, "count": len(users)}
+
+    except Exception as e:
+        import logging
+        logging.getLogger("uvicorn.error").error(f"Presence error: {e}")
+        return {"users": [], "count": 0}
+
+
+@router.post("/location")
+async def update_user_location(
+    user_id: str,
+    latitude: float,
+    longitude: float,
+    db = Depends(get_db)
+):
+    """사용자 마지막 위치 업데이트 (소셜 지도용)"""
+    try:
+        if db is None:
+            return {"success": False}
+
+        import httpx
+        headers = {**db.headers, "Content-Type": "application/json", "Prefer": "resolution=merge-duplicates"}
+        url = f"{db.base_url}/rest/v1/users"
+        params = {"user_id": f"eq.{user_id}"}
+        body = {
+            "last_location": f"POINT({longitude} {latitude})",
+            "last_active_date": datetime.now().isoformat(),
+        }
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.patch(url, headers=headers, json=body, params=params)
+
+        return {"success": resp.status_code in [200, 204]}
+    except Exception as e:
+        import logging
+        logging.getLogger("uvicorn.error").error(f"Location update error: {e}")
+        return {"success": False}

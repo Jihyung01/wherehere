@@ -121,6 +121,23 @@ async def send_daily_notification(req: SendDailyRequest, background_tasks: Backg
     return {"success": True, "sent": sent, "errors": errors, "title": title, "body": body}
 
 
+class ProximityNotifyRequest(BaseModel):
+    user_id: str          # 알림을 받을 사용자 (근처에 있는 사람)
+    friend_id: str        # 친구 (이 사람이 접근해온 것)
+    friend_name: str = "친구"
+    distance_m: int = 0
+
+
+@router.post("/notify-proximity")
+async def notify_proximity(req: ProximityNotifyRequest, bg: BackgroundTasks, db=Depends(get_db)):
+    """친구가 proximity_alert_meters 이내로 가까워졌을 때 해당 사용자에게 푸시 알림 전송."""
+    dist_label = f"{req.distance_m}m" if req.distance_m < 100 else f"약 {round(req.distance_m / 100) * 100}m"
+    title = f"📍 {req.friend_name}님이 근처에 있어요!"
+    body = f"{dist_label} 거리에서 WhereHere 중이에요 👋"
+    bg.add_task(send_push_for_user, db, req.user_id, title, body)
+    return {"queued": True, "to": req.user_id, "friend": req.friend_name}
+
+
 @router.get("/subscribers/count")
 async def get_subscriber_count(db=Depends(get_db)):
     """구독자 수 조회 (관리용)."""
