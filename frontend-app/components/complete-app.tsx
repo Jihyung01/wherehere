@@ -249,8 +249,8 @@ export function CompleteApp() {
     } catch { return `rgba(232,116,12,${alpha})` }
   }
 
-  // displayName 계산: user_metadata 우선 (auth.updateUser로 저장된 값) → userProfile(백엔드) fallback
-  const displayName = user?.user_metadata?.display_name ?? userProfile?.display_name ?? user?.user_metadata?.name ?? user?.user_metadata?.full_name ?? user?.user_metadata?.user_name ?? user?.user_metadata?.kakao_account?.profile?.nickname ?? user?.email ?? (user ? '로그인한 사용자' : null)
+  // displayName: 백엔드(사용자가 설정한 이름) 우선 → 카카오/메타데이터 fallback (이름 변경이 403이어도 백엔드만 반영하면 됨)
+  const displayName = userProfile?.display_name ?? user?.user_metadata?.display_name ?? user?.user_metadata?.name ?? user?.user_metadata?.full_name ?? user?.user_metadata?.user_name ?? user?.user_metadata?.kakao_account?.profile?.nickname ?? user?.email ?? (user ? '로그인한 사용자' : null)
 
   useEffect(() => {
     setNicknameInput(displayName || '')
@@ -636,21 +636,22 @@ export function CompleteApp() {
         const data = await res.json()
         const profile = data?.profile
         const currentName = profile?.display_name ?? ''
-        const currentAvatar = profile?.profile_image_url ?? profile?.avatar_url ?? ''
-        // DB에 프로필 없음, 또는 이름이 비어있음/기본값 'Explorer', 또는 메타데이터에 더 나은 이름·사진이 있으면 동기화
+        const currentAvatar = (profile?.profile_image_url ?? profile?.avatar_url ?? '').trim()
+        // 이름: DB 비었거나 Explorer일 때만 메타데이터로 채움
         const defaultName = 'Explorer'
         const needNameSync = !profile || !currentName || currentName === defaultName || (nameFromMeta && nameFromMeta !== currentName)
-        const needAvatarSync = avatar && avatar !== currentAvatar
+        // 프로필 사진: 백엔드에 이미 사용자가 설정한 값이 있으면 카카오로 덮어쓰지 않음
+        const needAvatarSync = avatar && !currentAvatar
         if (!needNameSync && !needAvatarSync) return
         const nextName = nameFromMeta || (currentName !== defaultName ? currentName : null) || emailPrefix || userId.slice(0, 8)
-        const nextAvatar = avatar || currentAvatar
+        const nextAvatar = needAvatarSync ? avatar : currentAvatar || undefined
         await fetch(`${API_BASE}/api/v1/social/profile`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             user_id: userId,
             display_name: nextName,
-            avatar_url: nextAvatar || undefined,
+            ...(nextAvatar && { avatar_url: nextAvatar }),
           }),
         })
         refetchUserProfile()
@@ -669,26 +670,28 @@ export function CompleteApp() {
     if ((screen === 'profile' || screen === 'social') && userId && userId !== 'user-demo-001') refetchUserProfile()
   }, [screen, userId, refetchUserProfile])
 
-  // 피드/소셜 화면 진입 시: 앱에서 보여주는 이름·아바타를 백엔드에 반영 (피드에 실제 프로필 노출)
+  // 피드/소셜 화면 진입 시: 이름만 필요 시 백엔드에 반영. 프로필 사진은 사용자가 설정한 값이 있으면 카카오로 덮어쓰지 않음
   useEffect(() => {
     if (screen !== 'social' || !userId || userId === 'user-demo-001') return
     const meta = user?.user_metadata || {}
     const kakao = meta.kakao_account?.profile
     const nameFromMeta = meta.display_name ?? meta.name ?? meta.full_name ?? meta.user_name ?? kakao?.nickname ?? meta.nickname ?? null
-    const avatarFromMeta = meta.avatar_url ?? meta.profile_image_url ?? meta.picture ?? kakao?.profile_image_url ?? kakao?.thumbnail_image_url ?? null
     const backendName = userProfile?.display_name
+    const backendAvatar = (userProfile?.profile_image_url ?? '').trim()
     const nameToSync = nameFromMeta || (backendName && backendName !== 'Explorer' ? backendName : null) || (user?.email ?? '').split('@')[0] || null
-    const avatarToSync = avatarFromMeta || userProfile?.profile_image_url || null
-    if (!nameToSync && !avatarToSync) return
+    if (!nameToSync) return
     ;(async () => {
       try {
+        const avatarFromMeta = meta.avatar_url ?? meta.profile_image_url ?? meta.picture ?? kakao?.profile_image_url ?? kakao?.thumbnail_image_url ?? null
+        // 사용자가 이미 프로필 사진을 설정했으면(백엔드에 값 있음) 카카오 URL로 덮어쓰지 않음
+        const avatarToSync = backendAvatar ? undefined : (avatarFromMeta || undefined)
         await fetch(`${API_BASE}/api/v1/social/profile`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             user_id: userId,
-            display_name: nameToSync || undefined,
-            avatar_url: avatarToSync || undefined,
+            display_name: nameToSync,
+            ...(avatarToSync && { avatar_url: avatarToSync }),
           }),
         })
         refetchUserProfile()
@@ -1384,17 +1387,18 @@ export function CompleteApp() {
     setSavingNickname(true)
     setUserProfile(prev => ({ ...prev, display_name: name, profile_image_url: prev?.profile_image_url }))
     try {
-      // 항상 auth.updateUser 먼저 저장 (user_metadata → displayName 계산에서 우선 사용됨)
-      const supabase = createClient()
-      const { error } = await supabase.auth.updateUser({ data: { display_name: name, name } })
-      if (error) throw new Error(error.message)
-      // 백엔드에도 저장 시도 (실패해도 무시 — auth.updateUser가 primary)
-      fetch(`${API_BASE}/api/v1/social/profile`, {
+      // 백엔드에 먼저 저장 (카카오 로그인 시 auth.updateUser는 403 나올 수 있음 — 무시하고 백엔드만 사용)
+      const res = await fetch(`${API_BASE}/api/v1/social/profile`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user_id: userId, display_name: name }),
-      }).catch(() => {})
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || !data.success) throw new Error(data.message || '저장 실패')
+      refetchUserProfile()
       toast.success('이름이 변경되었어요.')
+      // Auth는 가능하면 갱신 (403이어도 무시)
+      createClient().auth.updateUser({ data: { display_name: name, name } }).catch(() => {})
     } catch (_) {
       toast.error('이름 변경에 실패했어요. 다시 시도해주세요.')
       setUserProfile(prev => ({ ...prev, display_name: displayName || undefined }))
