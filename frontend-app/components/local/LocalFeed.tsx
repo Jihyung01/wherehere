@@ -33,13 +33,15 @@ type FeedType = 'all' | 'hot' | 'gathering' | 'review'
 type LocalFeedProps = {
   apiBase: string
   userId: string
-  scope: 'neighborhood' | 'following'
+  scope: 'neighborhood' | 'following' | 'user'
   areaName: string
   isDarkMode: boolean
   cardBg: string
   borderColor: string
   textColor: string
   feedType?: FeedType
+  /** scope='user'일 때 해당 사용자 작성 글만 조회 */
+  authorId?: string
   onShareKakao?: (post: Post) => void
   /** 이 게시글을 카카오 친구에게 사용자 정의 템플릿(카드)으로 보내기 — 게시글 이미지가 카드에 들어감 */
   onShareKakaoFriendCard?: (post: Post) => void
@@ -47,6 +49,8 @@ type LocalFeedProps = {
   onPlaceFilter?: (placeName: string) => void
   /** 피드 카드에서 "나도 도전" 버튼 클릭 시 콜백 */
   onAcceptQuest?: (post: Post) => void
+  /** 작성자(아바타·이름) 클릭 시 — 해당 사용자 프로필/피드 보기 */
+  onAuthorClick?: (authorId: string, displayName?: string, avatarUrl?: string) => void
   accentColor?: string
   /** URL에서 ?post_id=xxx 로 들어왔을 때 해당 게시글로 스크롤 */
   sharedPostId?: string | null
@@ -68,7 +72,9 @@ export function LocalFeed({
   apiBase, userId, scope, areaName,
   isDarkMode, cardBg, borderColor, textColor,
   feedType = 'all',
+  authorId,
   onShareKakao,   onShareKakaoFriendCard, onShareInstagram, onPlaceFilter, onAcceptQuest,
+  onAuthorClick,
   accentColor = '#E8740C',
   sharedPostId,
 }: LocalFeedProps) {
@@ -86,13 +92,15 @@ export function LocalFeed({
   const sharedPostRef = useRef<HTMLDivElement>(null)
 
   const fetchPosts = useCallback(async (pageNum: number, replace = false) => {
+    const effectiveScope = scope === 'user' && authorId ? 'user' : scope
     const params = new URLSearchParams({
-      scope,
+      scope: effectiveScope,
       limit: String(PAGE_SIZE),
       offset: String(pageNum * PAGE_SIZE),
     })
-    if (scope === 'neighborhood' && areaName) params.set('area_name', areaName)
-    if (scope === 'following') params.set('user_id', userId)
+    if (effectiveScope === 'neighborhood' && areaName) params.set('area_name', areaName)
+    if (effectiveScope === 'following') params.set('user_id', userId)
+    if (effectiveScope === 'user' && authorId) params.set('author_id', authorId)
     if (userId) params.set('user_id', userId)
     if (feedType === 'gathering') params.set('type', 'gathering')
     if (feedType === 'review') params.set('type', 'review')
@@ -113,7 +121,7 @@ export function LocalFeed({
     }
     setHasMore(list.length === PAGE_SIZE)
     return list
-  }, [apiBase, scope, areaName, userId, feedType])
+  }, [apiBase, scope, areaName, userId, feedType, authorId])
 
   const fetchComments = async (postId: string) => {
     const res = await fetch(`${apiBase}/api/v1/local/posts/${postId}/comments`)
@@ -132,7 +140,7 @@ export function LocalFeed({
       setLoading(false)
     })
     return () => { cancelled = true }
-  }, [scope, areaName, userId, apiBase, feedType])
+  }, [scope, areaName, userId, apiBase, feedType, authorId])
 
   // 무한스크롤 Intersection Observer
   useEffect(() => {
@@ -277,31 +285,39 @@ export function LocalFeed({
             style={{ background: cardBg, border: `1px solid ${borderColor}`, borderRadius: 16, overflow: 'hidden', scrollMarginTop: 80 }}
           >
             <div style={{ padding: 16 }}>
-              {/* Header */}
+              {/* Header — 작성자 클릭 시 프로필 보기 */}
               <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 12 }}>
-                <div style={{
-                  width: 42, height: 42, borderRadius: '50%', overflow: 'hidden', flexShrink: 0,
-                  background: 'linear-gradient(135deg, #E8740C, #F59E0B)',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 17, color: '#fff',
-                }}>
-                  {(post as any).author_avatar_url
-                    ? <img src={(post as any).author_avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                    : ((post as any).author_display_name || (post.author_id === userId ? '나' : post.author_id?.slice(0, 1) || '?')).slice(0, 1)
-                  }
-                </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: textColor }}>
-                    {(post as any).author_display_name || (post.author_id === userId ? '나' : post.author_id?.slice(0, 8) + '…')}
+                <button
+                  type="button"
+                  onClick={() => post.author_id !== userId && onAuthorClick?.(post.author_id, (post as any).author_display_name, (post as any).author_avatar_url)}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 10, flex: 1, minWidth: 0, padding: 0, border: 'none', background: 'none', cursor: post.author_id !== userId && onAuthorClick ? 'pointer' : 'default', textAlign: 'left',
+                  }}
+                >
+                  <div style={{
+                    width: 42, height: 42, borderRadius: '50%', overflow: 'hidden', flexShrink: 0,
+                    background: 'linear-gradient(135deg, #E8740C, #F59E0B)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 17, color: '#fff',
+                  }}>
+                    {(post as any).author_avatar_url
+                      ? <img src={(post as any).author_avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      : ((post as any).author_display_name || (post.author_id === userId ? '나' : post.author_id?.slice(0, 1) || '?')).slice(0, 1)
+                    }
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
-                    <span style={{ fontSize: 11, color: typeColor(post.type), fontWeight: 600, background: `${typeColor(post.type)}18`, padding: '2px 8px', borderRadius: 20 }}>
-                      {typeLabel(post.type)}
-                    </span>
-                    {post.area_name && (
-                      <span style={{ fontSize: 11, color: isDarkMode ? 'rgba(255,255,255,0.4)' : '#9CA3AF' }}>· {post.area_name}</span>
-                    )}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: textColor }}>
+                      {(post as any).author_display_name || (post.author_id === userId ? '나' : post.author_id?.slice(0, 8) + '…')}
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
+                      <span style={{ fontSize: 11, color: typeColor(post.type), fontWeight: 600, background: `${typeColor(post.type)}18`, padding: '2px 8px', borderRadius: 20 }}>
+                        {typeLabel(post.type)}
+                      </span>
+                      {post.area_name && (
+                        <span style={{ fontSize: 11, color: isDarkMode ? 'rgba(255,255,255,0.4)' : '#9CA3AF' }}>· {post.area_name}</span>
+                      )}
+                    </div>
                   </div>
-                </div>
+                </button>
                 <div style={{ fontSize: 11, color: isDarkMode ? 'rgba(255,255,255,0.35)' : '#9CA3AF', whiteSpace: 'nowrap' }}>
                   {relativeTime(post.created_at)}
                 </div>

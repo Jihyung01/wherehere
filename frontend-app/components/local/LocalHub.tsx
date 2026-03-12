@@ -86,6 +86,8 @@ export function LocalHub({
   const [kakaoFriendsList, setKakaoFriendsList] = useState<Array<{ id?: string; uuid?: string; profile_nickname?: string; profile_thumbnail_image?: string }>>([])
   const [kakaoFriendsLoading, setKakaoFriendsLoading] = useState(false)
   const [kakaoSendingUuid, setKakaoSendingUuid] = useState<string | null>(null)
+  /** 피드에서 작성자 클릭 시 해당 사용자 프로필·피드 보기 */
+  const [selectedProfileUser, setSelectedProfileUser] = useState<{ id: string; display_name?: string; avatar_url?: string } | null>(null)
 
   /** 사용자 정의 템플릿 ID (카카오 콘솔 [도구] > [메시지 템플릿]에서 생성). 있으면 피드형 카드로 전송 */
   const kakaoInviteTemplateId = typeof window !== 'undefined' ? (process.env.NEXT_PUBLIC_KAKAO_INVITE_TEMPLATE_ID || '') : ''
@@ -446,6 +448,7 @@ export function LocalHub({
                 onShareInstagram={(p) => onShareInstagramCard(p)}
                 sharedPostId={sharedPostId}
                 onAcceptQuest={onAcceptQuest}
+                onAuthorClick={(authorId, displayName, avatarUrl) => setSelectedProfileUser({ id: authorId, display_name: displayName, avatar_url: avatarUrl })}
               />
             )}
           </>
@@ -665,6 +668,42 @@ export function LocalHub({
                 </div>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* 사용자 프로필 모달 — 피드에서 작성자 클릭 시 */}
+      {selectedProfileUser && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 9999, background: isDarkMode ? '#0D1117' : '#F9FAFB', display: 'flex', flexDirection: 'column', fontFamily: 'Pretendard, sans-serif' }}>
+          <div style={{ flexShrink: 0, padding: '12px 16px', borderBottom: `1px solid ${borderColor}`, display: 'flex', alignItems: 'center', gap: 12, background: cardBg }}>
+            <button type="button" onClick={() => setSelectedProfileUser(null)} style={{ padding: 8, border: 'none', background: 'none', cursor: 'pointer', fontSize: 20 }}>←</button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1, minWidth: 0 }}>
+              <div style={{ width: 44, height: 44, borderRadius: '50%', overflow: 'hidden', background: 'linear-gradient(135deg, #E8740C, #F59E0B)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, color: '#fff', flexShrink: 0 }}>
+                {selectedProfileUser.avatar_url ? <img src={selectedProfileUser.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : (selectedProfileUser.display_name || selectedProfileUser.id?.slice(0, 1) || '?').slice(0, 1)}
+              </div>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 16, fontWeight: 700, color: textColor }}>{selectedProfileUser.display_name || selectedProfileUser.id?.slice(0, 8) + '…'}</div>
+                <div style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.5)' : '#6B7280' }}>피드 ID · {selectedProfileUser.id?.slice(0, 8)}</div>
+              </div>
+            </div>
+          </div>
+          <div style={{ flex: 1, overflow: 'auto' }}>
+            <LocalFeed
+              apiBase={apiBase}
+              userId={userId}
+              scope="user"
+              authorId={selectedProfileUser.id}
+              areaName={areaName}
+              isDarkMode={isDarkMode}
+              cardBg={cardBg}
+              borderColor={borderColor}
+              textColor={textColor}
+              accentColor={accentColor}
+              onShareKakao={(p) => onShareKakao(p)}
+              onShareKakaoFriendCard={openKakaoFriendsWithPost}
+              onShareInstagram={(p) => onShareInstagramCard(p)}
+              onAcceptQuest={onAcceptQuest}
+            />
           </div>
         </div>
       )}

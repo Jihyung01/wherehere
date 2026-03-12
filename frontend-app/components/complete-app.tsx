@@ -622,6 +622,35 @@ export function CompleteApp() {
     refetchUserProfile()
   }, [refetchUserProfile])
 
+  // 로그인 시 카카오/ auth 메타데이터를 백엔드 users 테이블에 동기화 → 피드에 실제 이름·프로필 사진 반영
+  useEffect(() => {
+    if (!user || !userId || userId === 'user-demo-001') return
+    const meta = user.user_metadata || {}
+    const kakao = meta.kakao_account?.profile
+    const name = meta.display_name ?? meta.name ?? meta.full_name ?? meta.user_name ?? kakao?.nickname ?? null
+    const avatar = meta.avatar_url ?? meta.profile_image_url ?? meta.picture ?? kakao?.profile_image_url ?? kakao?.thumbnail_image_url ?? null
+    if (!name && !avatar) return
+    ;(async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/v1/social/profile/${userId}`)
+        const data = await res.json()
+        const profile = data?.profile
+        const needSync = !profile || !profile.display_name || !(profile.profile_image_url ?? profile.avatar_url)
+        if (!needSync) return
+        await fetch(`${API_BASE}/api/v1/social/profile`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            user_id: userId,
+            display_name: name || profile?.display_name || userId.slice(0, 8),
+            avatar_url: avatar || profile?.profile_image_url || profile?.avatar_url,
+          }),
+        })
+        refetchUserProfile()
+      } catch (_) {}
+    })()
+  }, [user?.id, userId, refetchUserProfile])
+
   useEffect(() => {
     if (!userId || userId === 'user-demo-001') return
     const onFocus = () => refetchUserProfile()
@@ -1723,6 +1752,30 @@ export function CompleteApp() {
               </button>
             </div>
           </div>
+        )}
+        {/* 퀘스트 완료 시 동네 피드 올리기 물어보는 오버레이 */}
+        {questCompleteData && (
+          <QuestCompleteScreen
+            isOpen={true}
+            placeName={questCompleteData.placeName}
+            xpEarned={questCompleteData.xpEarned}
+            locationVerified={questCompleteData.locationVerified}
+            onViewMap={() => {
+              setQuestCompleteData(null)
+              setPendingFeedPost(null)
+              router.push('/my-map-real')
+            }}
+            onPostFeed={async () => {
+              const fn = pendingFeedPost
+              setQuestCompleteData(null)
+              setPendingFeedPost(null)
+              if (fn) await fn()
+            }}
+            onHome={() => {
+              setQuestCompleteData(null)
+              setPendingFeedPost(null)
+            }}
+          />
         )}
         <BottomNav />
       </div>
