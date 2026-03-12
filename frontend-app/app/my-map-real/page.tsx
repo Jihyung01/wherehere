@@ -697,13 +697,33 @@ export default function MyMapReal() {
                   주황색 헥사곤·마커·선은 내 방문 기록입니다. 진할수록 자주 방문한 구역이에요.
                 </div>
                 {/* 친구 지도와 비교 — 동네 정복 % 비교 */}
-                <div style={{ marginTop: 12, padding: 14, background: isDarkMode ? "rgba(255,255,255,0.05)" : "#F9FAFB", borderRadius: 14, border: `1px solid ${borderColor}` }}>
+                <div style={{ marginTop: 12, padding: 14, background: isDarkMode ? "rgba(15,23,42,0.9)" : "#F9FAFB", borderRadius: 14, border: `1px solid ${borderColor}`, boxShadow: isDarkMode ? "0 6px 18px rgba(15,23,42,0.8)" : "0 6px 18px rgba(15,23,42,0.08)" }}>
                   <div style={{ fontSize: 11, color: "#8B5CF6", fontWeight: 700, letterSpacing: 1, marginBottom: 8 }}>친구와 비교</div>
-                  <div style={{ fontSize: 13, color: isDarkMode ? "rgba(255,255,255,0.85)" : "#374151", lineHeight: 1.6 }}>
+                  <div style={{ fontSize: 13, color: isDarkMode ? "rgba(255,255,255,0.9)" : "#374151", lineHeight: 1.6, marginBottom: 8 }}>
                     나는 이 동네 <strong style={{ color: "#E8740C" }}>{hexagonStats.explorationPercent}%</strong> 정복했어요.
                   </div>
-                  <div style={{ fontSize: 12, color: isDarkMode ? "rgba(255,255,255,0.5)" : "#9CA3AF", marginTop: 6 }}>
-                    친구 랭킹은 소셜 탭에서 만나요. (준비 중)
+                  {/* 동네 정복률 진행 바 — 주황색 진하게 표현 */}
+                  <div style={{ marginBottom: 6 }}>
+                    <div style={{ height: 8, borderRadius: 999, background: isDarkMode ? "rgba(15,23,42,0.9)" : "#E5E7EB", overflow: "hidden", boxShadow: isDarkMode ? "inset 0 0 0 1px rgba(15,23,42,0.7)" : "inset 0 0 0 1px rgba(255,255,255,0.6)" }}>
+                      <div
+                        style={{
+                          width: `${Math.min(100, Math.max(0, hexagonStats.explorationPercent))}%`,
+                          height: "100%",
+                          borderRadius: 999,
+                          background: "linear-gradient(90deg, #FB923C, #EA580C, #B45309)",
+                          boxShadow: "0 0 0 1px rgba(248,250,252,0.2)",
+                          transition: "width 0.4s ease-out",
+                        }}
+                      />
+                    </div>
+                    <div style={{ marginTop: 4, display: "flex", justifyContent: "space-between", fontSize: 10, color: isDarkMode ? "rgba(248,250,252,0.7)" : "#6B7280" }}>
+                      <span>0%</span>
+                      <span>동네 정복</span>
+                      <span>100%</span>
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 12, color: isDarkMode ? "rgba(248,250,252,0.7)" : "#9CA3AF", marginTop: 2 }}>
+                    친구 랭킹은 앱 안 <strong style={{ color: "#F97316" }}>동네 피드 · 프로필</strong>에서 곧 만날 수 있어요.
                   </div>
                 </div>
                 {/* 누적거리 / 탐험반경 / 탐험 완성도(동네 정복 %) */}
