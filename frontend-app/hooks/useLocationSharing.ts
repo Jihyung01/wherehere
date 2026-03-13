@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { createClient } from '@/lib/supabase'
 import { toast } from 'sonner'
+import { Capacitor } from '@capacitor/core'
 
 // ────────────────────────────────────────────────────────────
 // Types
@@ -99,6 +100,7 @@ export function useLocationSharing({
 
   const channelRef = useRef<any>(null)
   const watchIdRef = useRef<number | null>(null)
+  const backgroundWatcherIdRef = useRef<string | null>(null)
   const frozenPositionRef = useRef<{ lat: number; lng: number } | null>(null)
   const notifiedRef = useRef<Set<string>>(new Set())
   const myLocationRef = useRef<{ lat: number; lng: number } | null>(null)
@@ -238,27 +240,89 @@ export function useLocationSharing({
     [userId, displayName, avatarUrl, ghostLevel, enabled]
   )
 
-  // ── watchPosition ────────────────────────────────────────
+  // ── watchPosition (웹) / BackgroundGeolocation (Capacitor 앱) ───
   useEffect(() => {
-    if (typeof navigator === 'undefined' || !navigator.geolocation) return
     if (!enabled || !userId || userId === 'user-demo-001') {
       if (watchIdRef.current !== null) {
-        navigator.geolocation.clearWatch(watchIdRef.current)
+        try { navigator.geolocation?.clearWatch(watchIdRef.current) } catch (_) {}
         watchIdRef.current = null
       }
       return
     }
 
+    const isNative = Capacitor.isNativePlatform()
+
+    if (isNative) {
+      // Capacitor 앱: 백그라운드에서도 위치 갱신 가능 (Android 알림 표시)
+      let cancelled = false
+      const removeWatcherById = (id: string) => {
+        import('@capacitor/core').then(({ registerPlugin }) => {
+          const BG = registerPlugin('BackgroundGeolocation')
+          return (BG as any).removeWatcher({ id })
+        }).catch(() => {})
+      }
+      const addPromise = import('@capacitor/core').then(({ registerPlugin }) => {
+        const BackgroundGeolocation = registerPlugin<{
+          addWatcher: (opts: { backgroundMessage?: string; backgroundTitle?: string; requestPermissions?: boolean }, cb: (loc?: { latitude: number; longitude: number; speed?: number | null }, err?: { code?: string }) => void) => Promise<string>
+          removeWatcher: (opts: { id: string }) => Promise<void>
+        }>('BackgroundGeolocation')
+        return BackgroundGeolocation.addWatcher(
+          {
+            backgroundMessage: 'WhereHere가 친구들과 위치를 공유하는 중입니다.',
+            backgroundTitle: 'WhereHere',
+            requestPermissions: true,
+            distanceFilter: 10,
+          },
+          (location, error) => {
+            if (cancelled) return
+            if (error) {
+              if (error.code === 'NOT_AUTHORIZED') toast.error('위치 권한이 필요해요. 설정에서 허용해 주세요.')
+              return
+            }
+            if (!location) return
+            const lat = location.latitude
+            const lng = location.longitude
+            const speedMs = location.speed ?? null
+            setMyLocation({ lat, lng })
+            const status = classifySpeed(speedMs)
+            setMovementStatus(status)
+            if (ghostLevel === 'frozen') {
+              if (!frozenPositionRef.current) {
+                frozenPositionRef.current = { lat, lng }
+                broadcastLocation(lat, lng, speedMs)
+              }
+            } else {
+              frozenPositionRef.current = null
+              broadcastLocation(lat, lng, speedMs)
+            }
+          }
+        )
+      })
+      addPromise.then((watcherId) => {
+        if (!cancelled) backgroundWatcherIdRef.current = watcherId
+      }).catch((e) => console.warn('[LocationSharing] BackgroundGeolocation addWatcher error:', e))
+
+      return () => {
+        cancelled = true
+        const id = backgroundWatcherIdRef.current
+        if (id) {
+          backgroundWatcherIdRef.current = null
+          removeWatcherById(id)
+        } else {
+          addPromise.then((watcherId) => removeWatcherById(watcherId)).catch(() => {})
+        }
+      }
+    }
+
+    // 웹 / TWA: 브라우저 Geolocation API (앱 켜 둔 상태에서만)
+    if (typeof navigator === 'undefined' || !navigator.geolocation) return
     watchIdRef.current = navigator.geolocation.watchPosition(
       (pos) => {
         const { latitude: lat, longitude: lng, speed } = pos.coords
         setMyLocation({ lat, lng })
-
         const status = classifySpeed(speed)
         setMovementStatus(status)
-
         if (ghostLevel === 'frozen') {
-          // Save frozen position once then stop broadcasting new ones
           if (!frozenPositionRef.current) {
             frozenPositionRef.current = { lat, lng }
             broadcastLocation(lat, lng, speed)
@@ -268,17 +332,9 @@ export function useLocationSharing({
           broadcastLocation(lat, lng, speed)
         }
       },
-      (err) => {
-        // Non-critical; watchPosition continues
-        console.warn('[LocationSharing] watchPosition error:', err.message)
-      },
-      {
-        enableHighAccuracy: true,
-        maximumAge: 15_000,
-        timeout: 30_000,
-      }
+      (err) => console.warn('[LocationSharing] watchPosition error:', err.message),
+      { enableHighAccuracy: true, maximumAge: 15_000, timeout: 30_000 }
     )
-
     return () => {
       if (watchIdRef.current !== null) {
         navigator.geolocation.clearWatch(watchIdRef.current)

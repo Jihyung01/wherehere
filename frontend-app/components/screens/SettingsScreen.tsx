@@ -317,6 +317,9 @@ export function SettingsScreen({ BottomNav, onOpenKakaoApiTest }: SettingsScreen
                     <div style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.5)' : '#9CA3AF' }}>
                       꺼도 체크인은 계속 작동해요
                     </div>
+                    <div style={{ fontSize: 11, color: isDarkMode ? 'rgba(255,255,255,0.4)' : '#9CA3AF', marginTop: 4 }}>
+                      앱을 켜 둔 상태에서만 공유돼요. 앱을 완전히 끄면 공유가 멈춥니다.
+                    </div>
                   </div>
                   <div
                     onClick={() => setLocationSharingEnabled(!locationSharingEnabled)}

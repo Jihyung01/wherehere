@@ -1,12 +1,20 @@
 'use client'
 
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
+import Script from 'next/script'
 import { useAppContext, API_BASE } from '@/contexts/AppContext'
 import { LocalHub } from '@/components/local/LocalHub'
+import { LocalFeed } from '@/components/local/LocalFeed'
 import { MOODS } from './constants'
 import { MOVEMENT_LABELS, GHOST_LABELS } from '@/hooks/useLocationSharing'
 import { makeStoryCard, makeFeedCard, blobToFile, shareOrDownload } from '@/lib/instagram-cards'
 import { toast } from 'sonner'
+
+declare global {
+  interface Window {
+    kakao?: { maps: { load: (cb: () => void) => void; Map: any; LatLng: any; Marker: any; InfoWindow: any; event: { addListener: (target: any, type: string, fn: () => void) => void } } }
+  }
+}
 
 type SocialTab = 'feed' | 'friends'
 export type PlaceToRecommend = { place_name: string; description?: string; image_url?: string; link_url: string }
@@ -42,11 +50,14 @@ export function SocialScreen({ BottomNav, sharedPostId, placeToRecommendForKakao
   const [socialTab, setSocialTab] = useState<SocialTab>('feed')
   const [friendActivities, setFriendActivities] = useState<FriendActivity[]>([])
   const [friendActLoading, setFriendActLoading] = useState(false)
+  /** 친구 위치/피드에서 프로필 클릭 시 → 해당 친구 프로필 피드 모달 */
+  const [selectedFriendProfile, setSelectedFriendProfile] = useState<{ user_id: string; display_name?: string; avatar_url?: string } | null>(null)
 
   const {
     isDarkMode,
     bgColor,
     // Zenly realtime
+    userLocation,
     friendLocations,
     locationIsConnected,
     movementStatus,
@@ -87,6 +98,46 @@ export function SocialScreen({ BottomNav, sharedPostId, placeToRecommendForKakao
   } = useAppContext() as any
 
   const kakaoJsKey = process.env.NEXT_PUBLIC_KAKAO_MAP_KEY || process.env.NEXT_PUBLIC_KAKAO_JS_KEY || '160238a590f3d2957230d764fb745322'
+  const friendsMapContainerRef = useRef<HTMLDivElement>(null)
+  const [kakaoFriendsMapLoaded, setKakaoFriendsMapLoaded] = useState(false)
+
+  // 친구 위치 지도: 내 위치 + 친구들 마커
+  useEffect(() => {
+    if (socialTab !== 'friends' || !kakaoFriendsMapLoaded || !friendsMapContainerRef.current || !window.kakao?.maps) return
+    const el = friendsMapContainerRef.current
+    const me = userLocation || { lat: 37.5665, lng: 126.978 }
+    const friends = friendLocations || []
+    const hasAny = friends.length > 0
+    const centerLat = hasAny ? (me.lat + friends.reduce((s, f) => s + f.lat, 0)) / (1 + friends.length) : me.lat
+    const centerLng = hasAny ? (me.lng + friends.reduce((s, f) => s + f.lng, 0)) / (1 + friends.length) : me.lng
+    while (el.firstChild) el.removeChild(el.firstChild)
+    try {
+      const map = new window.kakao.maps.Map(el, {
+        center: new window.kakao.maps.LatLng(centerLat, centerLng),
+        level: hasAny ? 5 : 7,
+      })
+      const kakao = window.kakao.maps
+      new kakao.Marker({
+        position: new kakao.LatLng(me.lat, me.lng),
+        map,
+        title: '나',
+      })
+      friends.forEach((f) => {
+        const pos = new kakao.LatLng(f.lat, f.lng)
+        const marker = new kakao.Marker({
+          position: pos,
+          map,
+          title: f.display_name || f.user_id?.slice(0, 8) || '친구',
+        })
+        const content = `<div style="padding:8px 10px;min-width:100px;background:#fff;color:#1f2937;border-radius:8px;border:1px solid #E8740C;font-size:12px;font-weight:600;">${(f.display_name || '친구').replace(/</g, '&lt;')}</div>`
+        const infowindow = new kakao.InfoWindow({ content })
+        window.kakao.maps.event.addListener(marker, 'click', () => { infowindow.open(map, marker) })
+      })
+      if (map.relayout) setTimeout(() => map.relayout(), 300)
+    } catch (err) {
+      console.warn('[친구 위치 지도] init error:', err)
+    }
+  }, [socialTab, kakaoFriendsMapLoaded, userLocation?.lat, userLocation?.lng, friendLocations])
 
   // 친구 최근 활동(체크인) 조회
   const loadFriendActivities = useCallback(async () => {
@@ -341,15 +392,49 @@ export function SocialScreen({ BottomNav, sharedPostId, placeToRecommendForKakao
     </div>
   )
 
-  // 친구 위치 탭 UI (Supabase Realtime Presence + 폴백 체크인 피드)
+  // 친구 위치 탭 UI (Supabase Realtime Presence + 지도 마커 + 폴백 체크인 피드)
   const FriendLocationsTab = () => {
-    // Realtime 연결된 친구들
+    // Realtime 연결된 사용자 (채널에 있는 모든 사용자)
     const realtimeFriends: any[] = friendLocations || []
     // 폴백: 최근 체크인 피드 (Realtime 친구 없을 때만)
     const fallbackList = realtimeFriends.length === 0 ? friendActivities : []
 
     return (
       <div style={{ padding: '16px 16px 120px', minHeight: '100vh', background: bgColor }}>
+        {/* 카카오맵: 내 위치 + 친구 위치 마커 */}
+        {socialTab === 'friends' && (
+          <Script
+            src={`https://dapi.kakao.com/v2/maps/sdk.js?appkey=${kakaoJsKey}&autoload=false`}
+            strategy="afterInteractive"
+            onLoad={() => {
+              if (typeof window !== 'undefined' && window.kakao?.maps?.load) {
+                window.kakao.maps.load(() => setKakaoFriendsMapLoaded(true))
+              } else if (window.kakao?.maps) {
+                setKakaoFriendsMapLoaded(true)
+              }
+            }}
+          />
+        )}
+        {/* 지도 영역: 내 위치 + 친구 마커 */}
+        <div style={{ position: 'relative', width: '100%', height: 280, marginBottom: 16 }}>
+          <div
+            ref={friendsMapContainerRef}
+            style={{
+              width: '100%',
+              height: 280,
+              borderRadius: 16,
+              overflow: 'hidden',
+              border: `1px solid ${borderColor}`,
+              background: isDarkMode ? '#1a1d24' : '#e5e7eb',
+            }}
+          />
+          {!kakaoFriendsMapLoaded && (
+            <div style={{ position: 'absolute', inset: 0, borderRadius: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', background: isDarkMode ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.9)', color: isDarkMode ? 'rgba(255,255,255,0.8)' : '#6b7280', fontSize: 14 }}>
+              지도 로딩 중...
+            </div>
+          )}
+        </div>
+
         {/* 헤더 */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
           <div>
@@ -396,6 +481,10 @@ export function SocialScreen({ BottomNav, sharedPostId, placeToRecommendForKakao
                 return (
                   <div
                     key={f.user_id}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => setSelectedFriendProfile({ user_id: f.user_id, display_name: f.display_name, avatar_url: f.avatar_url })}
+                    onKeyDown={(e) => e.key === 'Enter' && setSelectedFriendProfile({ user_id: f.user_id, display_name: f.display_name, avatar_url: f.avatar_url })}
                     style={{
                       display: 'flex', alignItems: 'center', gap: 12,
                       padding: '14px 14px', borderRadius: 16,
@@ -403,6 +492,7 @@ export function SocialScreen({ BottomNav, sharedPostId, placeToRecommendForKakao
                       border: `1.5px solid ${isDarkMode ? 'rgba(99,102,241,0.25)' : 'rgba(99,102,241,0.15)'}`,
                       boxShadow: isDarkMode ? 'none' : '0 2px 8px rgba(0,0,0,0.06)',
                       position: 'relative',
+                      cursor: 'pointer',
                     }}
                   >
                     {/* 아바타 */}
@@ -468,7 +558,11 @@ export function SocialScreen({ BottomNav, sharedPostId, placeToRecommendForKakao
               {fallbackList.map((act, i) => (
                 <div
                   key={(act.user_id || '') + i}
-                  style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 14, borderRadius: 14, background: isDarkMode ? 'rgba(255,255,255,0.04)' : '#fff', border: `1px solid ${borderColor}` }}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => setSelectedFriendProfile({ user_id: act.user_id || '', display_name: act.display_name, avatar_url: act.avatar_url })}
+                  onKeyDown={(e) => e.key === 'Enter' && setSelectedFriendProfile({ user_id: act.user_id || '', display_name: act.display_name, avatar_url: act.avatar_url })}
+                  style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 14, borderRadius: 14, background: isDarkMode ? 'rgba(255,255,255,0.04)' : '#fff', border: `1px solid ${borderColor}`, cursor: 'pointer' }}
                 >
                   <div style={{ width: 42, height: 42, borderRadius: '50%', overflow: 'hidden', background: 'linear-gradient(135deg, #6366F1, #8B5CF6)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, color: '#fff', fontWeight: 700, flexShrink: 0 }}>
                     {act.avatar_url
@@ -491,8 +585,11 @@ export function SocialScreen({ BottomNav, sharedPostId, placeToRecommendForKakao
           <div style={{ textAlign: 'center', padding: '48px 20px', background: isDarkMode ? 'rgba(255,255,255,0.03)' : '#F9FAFB', borderRadius: 16, border: `1px solid ${borderColor}` }}>
             <div style={{ fontSize: 44, marginBottom: 14 }}>👻</div>
             <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 8 }}>온라인 친구가 없어요</div>
-            <div style={{ fontSize: 13, color: isDarkMode ? 'rgba(255,255,255,0.45)' : '#9CA3AF', lineHeight: 1.7 }}>
-              친구도 WhereHere 앱을 켜서 위치 공유를 활성화하면<br />여기서 실시간으로 보여요
+            <div style={{ fontSize: 13, color: isDarkMode ? 'rgba(255,255,255,0.45)' : '#9CA3AF', lineHeight: 1.7, marginBottom: 12 }}>
+              친구도 WhereHere 앱을 켜서 위치 공유를 활성화하면 여기서 실시간으로 보여요.
+            </div>
+            <div style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.35)' : '#9CA3AF', lineHeight: 1.6 }}>
+              현재는 앱을 켜 둔 상태에서만 위치가 공유돼요.
             </div>
           </div>
         )}
@@ -587,6 +684,49 @@ export function SocialScreen({ BottomNav, sharedPostId, placeToRecommendForKakao
         onCloseRecommendPlace={onCloseRecommendPlace}
       />
       {instagramShareModalEl}
+        </div>
+      )}
+
+      {/* 친구 프로필 피드 모달 — 친구 위치/폴백에서 프로필 클릭 시 */}
+      {selectedFriendProfile && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 9999, background: isDarkMode ? '#0D1117' : '#F9FAFB', display: 'flex', flexDirection: 'column', fontFamily: 'Pretendard, sans-serif' }}>
+          <div style={{ flexShrink: 0, padding: '12px 16px', borderBottom: `1px solid ${borderColor}`, display: 'flex', alignItems: 'center', gap: 12, background: cardBg }}>
+            <button type="button" onClick={() => setSelectedFriendProfile(null)} style={{ padding: 8, border: 'none', background: 'none', cursor: 'pointer', fontSize: 20 }}>←</button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1, minWidth: 0 }}>
+              <div style={{ width: 44, height: 44, borderRadius: '50%', overflow: 'hidden', background: 'linear-gradient(135deg, #E8740C, #F59E0B)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, color: '#fff', flexShrink: 0 }}>
+                {selectedFriendProfile.avatar_url ? <img src={selectedFriendProfile.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : (selectedFriendProfile.display_name || selectedFriendProfile.user_id?.slice(0, 1) || '?').slice(0, 1)}
+              </div>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 16, fontWeight: 700, color: textColor }}>{selectedFriendProfile.display_name || selectedFriendProfile.user_id?.slice(0, 8) + '…'}</div>
+                <div style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.5)' : '#6B7280' }}>프로필 피드</div>
+              </div>
+            </div>
+          </div>
+          <div style={{ flex: 1, overflow: 'auto' }}>
+            <LocalFeed
+              apiBase={API_BASE}
+              userId={userId}
+              scope="user"
+              authorId={selectedFriendProfile.user_id}
+              areaName=""
+              isDarkMode={isDarkMode}
+              cardBg={cardBg}
+              borderColor={borderColor}
+              textColor={textColor}
+              accentColor={accentColor}
+              onShareKakao={sharePostText}
+              onShareInstagram={sharePostInstagramCard}
+              onAcceptQuest={(post: any) => {
+                const q = { name: post.place_name || post.title || '장소', address: post.place_address || '', place_id: `feed-${Date.now()}`, category: '기타', reason: post.body || '', narrative: post.body || '' }
+                setAcceptedQuest(q)
+                setScreen('accepted')
+                toast(`🚀 ${q.name} 도전 시작!`)
+              }}
+              onAuthorClick={(authorId, displayName, avatarUrl) => {
+                if (authorId !== selectedFriendProfile.user_id) setSelectedFriendProfile({ user_id: authorId, display_name: displayName, avatar_url: avatarUrl })
+              }}
+            />
+          </div>
         </div>
       )}
     </div>

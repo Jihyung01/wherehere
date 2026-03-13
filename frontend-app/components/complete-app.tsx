@@ -23,6 +23,7 @@ import { Onboarding, shouldShowOnboarding } from './Onboarding'
 import { QuestCompleteScreen } from './QuestCompleteScreen'
 import { SettingsScreen } from './screens/SettingsScreen'
 import { SocialScreen } from './screens/SocialScreen'
+import { MyMapScreen } from './screens/MyMapScreen'
 
 declare global {
   interface Window {
@@ -552,33 +553,43 @@ export function CompleteApp() {
       .catch(() => {})
   }, [userId])
 
-  // 친구 비교 데이터 로드
+  // 친구 비교 데이터 로드 (API는 following_ids만 반환 → ID로 프로필·통계 병렬 조회)
   const loadFriendCompare = async () => {
     if (!userId || userId === 'user-demo-001') return
     setFriendCompareLoading(true)
     try {
-      const res = await fetch(`${API_BASE}/api/v1/social/following?user_id=${encodeURIComponent(userId)}&limit=5`)
-      const data = await res.json().catch(() => ({ following: [] }))
-      const following = data.following || []
-      // 각 친구의 stats 조회
-      const statsPromises = following.slice(0, 5).map(async (f: any) => {
-        try {
-          const sr = await fetch(`${API_BASE}/api/v1/users/me/stats?user_id=${encodeURIComponent(f.user_id || f.id)}`)
-          const sd = await sr.json().catch(() => ({}))
-          return {
-            user_id: f.user_id || f.id,
-            display_name: f.display_name || f.username || '친구',
-            avatar_url: f.avatar_url,
-            total_places: sd.total_places_visited ?? 0,
-            current_streak: sd.current_streak ?? 0,
-            level: sd.level ?? 1,
+      const res = await fetch(`${API_BASE}/api/v1/social/following?user_id=${encodeURIComponent(userId)}`)
+      const data = await res.json().catch(() => ({ following_ids: [] }))
+      const followingIds: string[] = Array.isArray(data.following_ids) ? data.following_ids : []
+      if (followingIds.length === 0) {
+        setFriendCompareData([])
+        return
+      }
+      const idsToLoad = followingIds.slice(0, 10)
+      const results = await Promise.all(
+        idsToLoad.map(async (uid) => {
+          try {
+            const [profileRes, statsRes] = await Promise.all([
+              fetch(`${API_BASE}/api/v1/social/profile/${encodeURIComponent(uid)}`),
+              fetch(`${API_BASE}/api/v1/users/me/stats?user_id=${encodeURIComponent(uid)}`),
+            ])
+            const profileData = await profileRes.json().catch(() => ({}))
+            const sd = await statsRes.json().catch(() => ({}))
+            const profile = profileData.profile || profileData
+            return {
+              user_id: uid,
+              display_name: profile.display_name || profile.username || uid.slice(0, 8) || '친구',
+              avatar_url: profile.profile_image_url ?? profile.avatar_url,
+              total_places: sd.total_places_visited ?? 0,
+              current_streak: sd.current_streak ?? 0,
+              level: sd.level ?? 1,
+            }
+          } catch {
+            return null
           }
-        } catch {
-          return null
-        }
-      })
-      const results = (await Promise.all(statsPromises)).filter(Boolean) as any[]
-      setFriendCompareData(results)
+        })
+      )
+      setFriendCompareData(results.filter(Boolean) as any[])
     } catch (_) {
     } finally {
       setFriendCompareLoading(false)
@@ -1722,7 +1733,7 @@ export function CompleteApp() {
             <p style={{ fontSize: 14, color: isDarkMode ? 'rgba(255,255,255,0.7)' : '#6B7280', marginBottom: 8 }}>오늘의 한 곳에서 동네 커뮤니티까지 한 번에.</p>
             <div style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.5)' : '#9CA3AF' }}>홈 · 기분 맞춤 탐험 · 동네 피드</div>
           </div>
-          <button type="button" onClick={() => router.push('/my-map-real')} style={{ width: '100%', marginBottom: 20, padding: 16, borderRadius: 16, border: `1px solid ${borderColor}`, background: isDarkMode ? 'linear-gradient(135deg, rgba(232,116,12,0.12), rgba(232,116,12,0.04))' : 'linear-gradient(135deg, #FFF7ED, #FFEDD5)', color: textColor, textAlign: 'left', cursor: 'pointer', boxShadow: isDarkMode ? 'none' : '0 2px 12px rgba(232,116,12,0.08)' }}>
+          <button type="button" onClick={() => { setScreen('profile'); setProfileTab('map'); }} style={{ width: '100%', marginBottom: 20, padding: 16, borderRadius: 16, border: `1px solid ${borderColor}`, background: isDarkMode ? 'linear-gradient(135deg, rgba(232,116,12,0.12), rgba(232,116,12,0.04))' : 'linear-gradient(135deg, #FFF7ED, #FFEDD5)', color: textColor, textAlign: 'left', cursor: 'pointer', boxShadow: isDarkMode ? 'none' : '0 2px 12px rgba(232,116,12,0.08)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}><span style={{ fontSize: 24 }}>🗺️</span><span style={{ fontSize: 16, fontWeight: 800, color: accentColor }}>동네 정복 지도</span></div>
             <div style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280' }}>방문한 구역을 헥사곤으로 채워가며 탐험 완성도를 확인하세요</div>
           </button>
@@ -1832,7 +1843,8 @@ export function CompleteApp() {
             onViewMap={() => {
               setQuestCompleteData(null)
               setPendingFeedPost(null)
-              router.push('/my-map-real')
+              setScreen('profile')
+              setProfileTab('map')
             }}
             onPostFeed={async () => {
               const fn = pendingFeedPost
@@ -2980,53 +2992,6 @@ export function CompleteApp() {
       </div>
     )
 
-    // ── 지도 탭
-    const MapTabContent = () => (
-      <div style={{ padding: '16px 0 40px' }}>
-        {/* 내 위치 카드 */}
-        <div style={{ background: isDarkMode ? 'rgba(255,255,255,0.04)' : '#F9FAFB', border: `1px solid ${borderColor}`, borderRadius: 16, padding: 20, marginBottom: 16 }}>
-          <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>📍 현재 위치</div>
-          <div style={{ fontSize: 13, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280', marginBottom: 16 }}>
-            위도 {userLocation.lat.toFixed(4)} · 경도 {userLocation.lng.toFixed(4)}
-          </div>
-          <button
-            type="button"
-            onClick={() => router.push('/my-map-real')}
-            style={{ width: '100%', padding: '13px 0', borderRadius: 12, border: 'none', background: `linear-gradient(135deg, ${accentColor}, #F59E0B)`, color: '#fff', fontWeight: 700, fontSize: 14, cursor: 'pointer' }}
-          >
-            🗺️ 나의 지도 전체 보기
-          </button>
-        </div>
-
-        {/* 방문 통계 미리보기 */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
-          <div style={{ background: isDarkMode ? 'rgba(255,255,255,0.04)' : '#fff', border: `1px solid ${borderColor}`, borderRadius: 14, padding: 16, textAlign: 'center' }}>
-            <div style={{ fontSize: 28, fontWeight: 800, color: accentColor }}>{placesVisited}</div>
-            <div style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.5)' : '#9CA3AF', marginTop: 4 }}>방문한 장소</div>
-          </div>
-          <div style={{ background: isDarkMode ? 'rgba(255,255,255,0.04)' : '#fff', border: `1px solid ${borderColor}`, borderRadius: 14, padding: 16, textAlign: 'center' }}>
-            <div style={{ fontSize: 28, fontWeight: 800, color: '#10B981' }}>{streak}</div>
-            <div style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.5)' : '#9CA3AF', marginTop: 4 }}>연속 방문일</div>
-          </div>
-        </div>
-
-        {/* 소셜 지도 힌트 */}
-        <div style={{ background: isDarkMode ? 'linear-gradient(135deg, rgba(99,102,241,0.12), rgba(139,92,246,0.08))' : 'linear-gradient(135deg, #EEF2FF, #F5F3FF)', border: `1px solid ${isDarkMode ? 'rgba(99,102,241,0.3)' : 'rgba(99,102,241,0.2)'}`, borderRadius: 16, padding: 18 }}>
-          <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 8 }}>👥 친구 위치 보기</div>
-          <div style={{ fontSize: 13, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280', lineHeight: 1.6, marginBottom: 12 }}>
-            소셜 탭 → 친구 위치에서 친구들의 실시간 체크인을 확인하세요
-          </div>
-          <button
-            type="button"
-            onClick={() => { setScreen('social') }}
-            style={{ padding: '9px 18px', borderRadius: 10, border: 'none', background: 'rgba(99,102,241,0.15)', color: '#6366F1', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}
-          >
-            친구 위치 보기 →
-          </button>
-        </div>
-      </div>
-    )
-
     return (
       <div style={{ maxWidth: 430, margin: '0 auto', minHeight: '100vh', background: bgColor, color: textColor, fontFamily: 'Pretendard, sans-serif' }}>
         {/* 상단 탭 바 */}
@@ -3337,8 +3302,8 @@ export function CompleteApp() {
             </>
           )}
 
-          {/* 지도 탭 */}
-          {profileTab === 'map' && <MapTabContent />}
+          {/* 지도 탭: 나의 지도 UI 임베드 (같은 도메인, 리로드 없음) */}
+          {profileTab === 'map' && <MyMapScreen isEmbedded isDarkMode={isDarkMode} onGoHome={() => setScreen('home')} />}
 
           {/* 챌린지 탭 */}
           {profileTab === 'challenges' && <ChallengesTabContent />}
