@@ -190,6 +190,8 @@ export function CompleteApp() {
   const [chatInput, setChatInput] = useState('')
   const [demoAccepted, setDemoAccepted] = useState(false)
   const [selectedProfilePost, setSelectedProfilePost] = useState<{ id: string; title: string; body?: string; type?: string; image_url?: string; place_name?: string; rating?: number; created_at?: string; author_id?: string } | null>(null)
+  /** 카카오 친구에게 장소 추천 시: 소셜 탭으로 이동 후 친구 목록 모달에 전달 */
+  const [placeToRecommendForKakao, setPlaceToRecommendForKakao] = useState<{ place_name: string; description?: string; image_url?: string; link_url: string } | null>(null)
   const [profileCommentInput, setProfileCommentInput] = useState('')
   const [userProfile, setUserProfile] = useState<{ display_name?: string; profile_image_url?: string } | null>(null)
   const [nicknameInput, setNicknameInput] = useState('')
@@ -2210,6 +2212,38 @@ export function CompleteApp() {
           {/* 소셜 공유 */}
           <div style={{ background: isDarkMode ? accentRgba(0.1) : '#FEF3C7', border: '1px solid rgba(232,116,12,0.3)', borderRadius: 16, padding: 20, marginBottom: 16 }}>
             <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 12, color: accentColor }}>📢 친구에게 공유하기</div>
+            <button
+              type="button"
+              onClick={() => {
+                const origin = typeof window !== 'undefined' ? window.location.origin : ''
+                const placeId = acceptedQuest?.place_id || acceptedQuest?.id || ''
+                setPlaceToRecommendForKakao({
+                  place_name: acceptedQuest?.name || '장소',
+                  description: acceptedQuest?.narrative || acceptedQuest?.reason || undefined,
+                  image_url: (acceptedQuest as any)?.image_url || undefined,
+                  link_url: `${origin.replace(/\/$/, '')}/?screen=accepted&place_id=${encodeURIComponent(placeId)}`,
+                })
+                setScreen('social')
+              }}
+              style={{
+                width: '100%',
+                marginBottom: 12,
+                padding: 14,
+                borderRadius: 12,
+                border: 'none',
+                background: 'linear-gradient(135deg, #E8740C, #C65D00)',
+                color: '#fff',
+                fontSize: 14,
+                fontWeight: 700,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 8,
+              }}
+            >
+              💬 친구에게 이 장소 추천하기
+            </button>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 8 }}>
               {[
                 { icon: '💬', name: '카카오톡', platform: 'kakao' },
@@ -2814,7 +2848,14 @@ export function CompleteApp() {
 
   // 소셜 탭
   if (screen === 'social') {
-    return <SocialScreen BottomNav={<BottomNav />} sharedPostId={sharedPostId} />
+    return (
+      <SocialScreen
+        BottomNav={<BottomNav />}
+        sharedPostId={sharedPostId}
+        placeToRecommendForKakao={placeToRecommendForKakao}
+        onCloseRecommendPlace={() => setPlaceToRecommendForKakao(null)}
+      />
+    )
   }
 
   // 프로필 화면

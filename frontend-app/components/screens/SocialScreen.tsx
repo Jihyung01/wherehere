@@ -9,7 +9,14 @@ import { makeStoryCard, makeFeedCard, blobToFile, shareOrDownload } from '@/lib/
 import { toast } from 'sonner'
 
 type SocialTab = 'feed' | 'friends'
-type SocialScreenProps = { BottomNav?: React.ReactNode; sharedPostId?: string | null }
+export type PlaceToRecommend = { place_name: string; description?: string; image_url?: string; link_url: string }
+type SocialScreenProps = {
+  BottomNav?: React.ReactNode
+  sharedPostId?: string | null
+  /** 장소 추천 플로우: 설정 시 소셜 탭에서 친구 목록 모달을 연다 */
+  placeToRecommendForKakao?: PlaceToRecommend | null
+  onCloseRecommendPlace?: () => void
+}
 
 interface FriendActivity {
   user_id: string
@@ -31,7 +38,7 @@ function timeAgoFriend(iso?: string): string {
   return `${Math.floor(diff / 86400)}일 전`
 }
 
-export function SocialScreen({ BottomNav, sharedPostId }: SocialScreenProps = {}) {
+export function SocialScreen({ BottomNav, sharedPostId, placeToRecommendForKakao, onCloseRecommendPlace }: SocialScreenProps = {}) {
   const [socialTab, setSocialTab] = useState<SocialTab>('feed')
   const [friendActivities, setFriendActivities] = useState<FriendActivity[]>([])
   const [friendActLoading, setFriendActLoading] = useState(false)
@@ -576,6 +583,8 @@ export function SocialScreen({ BottomNav, sharedPostId }: SocialScreenProps = {}
           setScreen('accepted')
           toast(`🚀 ${questFromFeed.name} 도전 시작!`)
         }}
+        placeToRecommend={placeToRecommendForKakao ?? undefined}
+        onCloseRecommendPlace={onCloseRecommendPlace}
       />
       {instagramShareModalEl}
         </div>

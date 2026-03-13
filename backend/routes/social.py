@@ -359,17 +359,26 @@ class KakaoFriendsRequest(BaseModel):
     access_token: str
 
 
+class KakaoFeedContent(BaseModel):
+    """feed 타입 메시지용 (POST /friends/message/default/send). 장소 추천 등 소셜 공유."""
+    title: str
+    description: Optional[str] = None
+    image_url: Optional[str] = None
+    link_url: Optional[str] = None
+
+
 class KakaoSendMessageRequest(BaseModel):
     access_token: str
     receiver_uuid: str
-    text: str
+    text: str = ""
     title: Optional[str] = None
     link_url: Optional[str] = None
     # 사용자 정의 템플릿 사용 시 (카카오 콘솔 [도구] > [메시지 템플릿]에서 생성한 template_id)
     template_id: Optional[str] = None
     # 템플릿의 사용자 인자 (${KEY} 형식). 값은 모두 문자열.
-    # 예: {"title": "장소명", "desc": "한 줄 설명", "image_url": "https://...", "link_url": "https://..."}
     template_args: Optional[dict[str, str]] = None
+    # feed 타입 사용 시: default/send 에서 피드형 카드(장소명·설명·이미지·딥링크)로 전송
+    feed_content: Optional[KakaoFeedContent] = None
 
 
 @router.post("/kakao-friends")
@@ -401,16 +410,21 @@ async def get_kakao_friends(req: KakaoFriendsRequest):
 async def send_kakao_friend_message(req: KakaoSendMessageRequest):
     if not req.receiver_uuid:
         raise HTTPException(status_code=400, detail="receiver_uuid is required")
-    if not req.template_id:
+    if req.template_id:
+        pass
+    elif req.feed_content:
+        if not req.feed_content.title or not req.feed_content.title.strip():
+            raise HTTPException(status_code=400, detail="feed_content.title is required for feed type")
+    else:
         if not req.text or not req.text.strip():
-            raise HTTPException(status_code=400, detail="text is required when not using template_id")
+            raise HTTPException(status_code=400, detail="text is required when not using template_id or feed_content")
 
     target_url = req.link_url or "https://wherehere.app/"
 
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             if req.template_id:
-                # 사용자 정의 템플릿: 콘솔에서 만든 피드/리스트 등 (이미지·버튼·레이아웃 적용)
+                # 사용자 정의 템플릿: 콘솔에서 만든 피드/리스트 등
                 payload = {
                     "receiver_uuids": json.dumps([req.receiver_uuid], ensure_ascii=False),
                     "template_id": req.template_id,
@@ -421,6 +435,34 @@ async def send_kakao_friend_message(req: KakaoSendMessageRequest):
                     "https://kapi.kakao.com/v1/api/talk/friends/message/send",
                     headers={"Authorization": f"Bearer {req.access_token}"},
                     data=payload,
+                )
+            elif req.feed_content:
+                # default/send + feed 타입: 장소 추천 등 소셜 공유 (심사용 피드형 메시지)
+                fc = req.feed_content
+                link_url = (fc.link_url or target_url).strip()
+                image_url = (fc.image_url or "").strip()
+                if not image_url:
+                    image_url = "https://wherehere.app/og.png"
+                template_object = {
+                    "object_type": "feed",
+                    "content": {
+                        "title": (fc.title or "").strip()[:200],
+                        "description": (fc.description or "").strip()[:500],
+                        "image_url": image_url,
+                        "link": {
+                            "web_url": link_url,
+                            "mobile_web_url": link_url,
+                        },
+                    },
+                    "button_title": req.title or "WhereHere에서 보기",
+                }
+                r = await client.post(
+                    "https://kapi.kakao.com/v1/api/talk/friends/message/default/send",
+                    headers={"Authorization": f"Bearer {req.access_token}"},
+                    data={
+                        "receiver_uuids": json.dumps([req.receiver_uuid], ensure_ascii=False),
+                        "template_object": json.dumps(template_object, ensure_ascii=False),
+                    },
                 )
             else:
                 # 기본 텍스트 템플릿 (기존 동작)

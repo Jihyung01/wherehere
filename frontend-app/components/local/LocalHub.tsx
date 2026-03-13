@@ -48,6 +48,9 @@ type LocalHubProps = {
   accentColor?: string
   /** URL에서 ?post_id=xxx 로 들어왔을 때 해당 게시글로 스크롤 */
   sharedPostId?: string | null
+  /** 장소 추천: 설정 시 친구 목록 모달을 열고 feed 타입으로 해당 장소를 친구에게 보냄 */
+  placeToRecommend?: { place_name: string; description?: string; image_url?: string; link_url: string }
+  onCloseRecommendPlace?: () => void
 }
 
 export function LocalHub({
@@ -76,6 +79,8 @@ export function LocalHub({
   onAcceptQuest,
   accentColor = '#E8740C',
   sharedPostId,
+  placeToRecommend,
+  onCloseRecommendPlace,
 }: LocalHubProps) {
   const [topTab, setTopTab] = useState<'neighborhood' | 'friend'>('neighborhood')
   const [subTab, setSubTab] = useState<'home' | 'compose' | 'feed'>('compose')
@@ -139,6 +144,12 @@ export function LocalHub({
           body: JSON.stringify({ access_token: token }),
         })
         const data = await res.json().catch(() => ({}))
+        if (res.status === 403) {
+          onToast('친구 목록 권한이 필요해요. 동의창으로 이동합니다.')
+          const origin = typeof window !== 'undefined' ? window.location.origin : ''
+          window.location.href = `${origin}/api/auth/kakao-consent?return=${encodeURIComponent(window.location.pathname + window.location.search)}`
+          return
+        }
         const elements = data.elements ?? []
         setKakaoFriendsList(elements)
         if (elements.length === 0) {
@@ -176,6 +187,12 @@ export function LocalHub({
         body: JSON.stringify({ access_token: token }),
       })
       const data = await res.json().catch(() => ({}))
+      if (res.status === 403) {
+        onToast('친구 목록 권한이 필요해요. 동의창으로 이동합니다.')
+        const origin = typeof window !== 'undefined' ? window.location.origin : ''
+        window.location.href = `${origin}/api/auth/kakao-consent?return=${encodeURIComponent(window.location.pathname + window.location.search)}`
+        return
+      }
       const elements = data.elements ?? []
       setKakaoFriendsList(elements)
       if (elements.length === 0) {
@@ -187,6 +204,47 @@ export function LocalHub({
       setKakaoFriendsLoading(false)
     }
   }, [apiBase, kakaoAccessToken, onToast])
+
+  /** placeToRecommend가 설정되면 친구 목록 모달을 열고 친구 목록 로드 */
+  useEffect(() => {
+    if (!placeToRecommend) return
+    const kakao = typeof window !== 'undefined' ? (window as any).Kakao : undefined
+    const token = kakaoAccessToken ?? kakao?.Auth?.getAccessToken?.()
+    if (!token) {
+      onToast('카카오 로그인이 필요해요. 로그인 후 다시 시도해 주세요.')
+      return
+    }
+    setSharePostForKakao(null)
+    setKakaoFriendsLoading(true)
+    setKakaoFriendsList([])
+    setKakaoFriendsOpen(true)
+    let cancelled = false
+    ;(async () => {
+      try {
+        const res = await fetch(`${apiBase}/api/v1/social/kakao-friends`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ access_token: token }),
+        })
+        const data = await res.json().catch(() => ({}))
+        if (cancelled) return
+        if (res.status === 403) {
+          onToast('친구 목록 권한이 필요해요. 동의창으로 이동합니다.')
+          const origin = typeof window !== 'undefined' ? window.location.origin : ''
+          window.location.href = `${origin}/api/auth/kakao-consent?return=${encodeURIComponent(window.location.pathname + window.location.search)}`
+          return
+        }
+        const elements = data.elements ?? []
+        setKakaoFriendsList(elements)
+        if (elements.length === 0) onToast('카카오톡 친구 목록이 비어있거나 권한이 없어요.')
+      } catch {
+        if (!cancelled) onToast('친구 목록을 불러오지 못했어요.')
+      } finally {
+        if (!cancelled) setKakaoFriendsLoading(false)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [placeToRecommend, apiBase, kakaoAccessToken, onToast])
 
   const sendKakaoInviteToFriend = useCallback(async (friendUuid?: string) => {
     if (!friendUuid) {
@@ -309,6 +367,51 @@ export function LocalHub({
       setKakaoSendingUuid(null)
     }
   }, [apiBase, kakaoAccessToken, kakaoInviteTemplateId, onToast, sharePostForKakao])
+
+  /** 장소 추천: feed_content로 친구에게 전송 (딥링크 포함) */
+  const sendKakaoPlaceToFriend = useCallback(async (friendUuid?: string) => {
+    const place = placeToRecommend
+    if (!place || !friendUuid) return
+    const kakao = typeof window !== 'undefined' ? (window as any).Kakao : undefined
+    const token = kakaoAccessToken ?? kakao?.Auth?.getAccessToken?.()
+    if (!token) {
+      onToast('카카오 로그인 토큰을 찾지 못했어요.')
+      return
+    }
+    const appUrl = typeof window !== 'undefined' ? window.location.origin + '/' : ''
+    const imageUrl = (place.image_url && !place.image_url.startsWith('data:') && place.image_url.length <= 1000)
+      ? place.image_url
+      : (process.env.NEXT_PUBLIC_KAKAO_INVITE_IMAGE_URL || appUrl + 'og.png')
+    setKakaoSendingUuid(friendUuid)
+    try {
+      const body = {
+        access_token: token,
+        receiver_uuid: friendUuid,
+        feed_content: {
+          title: place.place_name,
+          description: place.description ?? '',
+          image_url: imageUrl,
+          link_url: place.link_url,
+        },
+      }
+      const res = await fetch(`${apiBase}/api/v1/social/kakao-friends/send-message`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || !data.success) {
+        throw new Error(typeof data.detail === 'string' ? data.detail : 'send failed')
+      }
+      onToast('친구에게 장소를 추천했어요.')
+      setKakaoFriendsOpen(false)
+      onCloseRecommendPlace?.()
+    } catch (e) {
+      onToast(e instanceof Error ? e.message : '전송에 실패했어요.')
+    } finally {
+      setKakaoSendingUuid(null)
+    }
+  }, [apiBase, kakaoAccessToken, onToast, placeToRecommend, onCloseRecommendPlace])
 
   const fetchLocalPosts = useCallback(async () => {
     const params = new URLSearchParams({ scope: 'neighborhood', limit: '100' })
@@ -599,7 +702,7 @@ export function LocalHub({
             justifyContent: 'center',
             padding: 20,
           }}
-          onClick={() => { setKakaoFriendsOpen(false); setSharePostForKakao(null); }}
+          onClick={() => { setKakaoFriendsOpen(false); setSharePostForKakao(null); onCloseRecommendPlace?.(); }}
         >
           <div
             style={{
@@ -619,17 +722,21 @@ export function LocalHub({
             <div style={{ padding: 16, borderBottom: `1px solid ${borderColor}`, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>
-                  {sharePostForKakao ? '이 게시글을 카카오 친구에게 보내기' : '카카오 친구에게 초대하기'}
+                  {placeToRecommend ? '친구에게 이 장소 추천하기' : sharePostForKakao ? '이 게시글을 카카오 친구에게 보내기' : '카카오 친구에게 초대하기'}
                 </h3>
-                {sharePostForKakao ? (
+                {placeToRecommend ? (
                   <p style={{ margin: '4px 0 0', fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.65)' : '#6B7280' }}>
-                    📷 이 게시글에 올린 이미지가 카드에 들어가요.
+                    친구에게 이 장소를 추천하는 소셜 활동이에요. 장소 카드와 링크가 전송돼요.
+                  </p>
+                ) : sharePostForKakao ? (
+                  <p style={{ margin: '4px 0 0', fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.65)' : '#6B7280' }}>
+                    📷 이 게시글에 올린 이미지가 카드에 들어가요. 친구와 소통하는 소셜 활동이에요.
                   </p>
                 ) : kakaoInviteTemplateId ? (
                   <p style={{ margin: '4px 0 0', fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.65)' : '#6B7280' }}>💌 친구를 선택하면 카카오톡에 예쁜 카드로 전송돼요.</p>
                 ) : null}
               </div>
-              <button type="button" onClick={() => { setKakaoFriendsOpen(false); setSharePostForKakao(null); }} style={{ flexShrink: 0, background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: textColor }}>×</button>
+              <button type="button" onClick={() => { setKakaoFriendsOpen(false); setSharePostForKakao(null); onCloseRecommendPlace?.(); }} style={{ flexShrink: 0, background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: textColor }}>×</button>
             </div>
             <div style={{ padding: 16, overflow: 'auto', flex: 1 }}>
               {kakaoFriendsLoading ? (
@@ -652,19 +759,28 @@ export function LocalHub({
                       </div>
                       <button
                         type="button"
-                        onClick={() => (sharePostForKakao ? sendKakaoPostToFriend(f.uuid || f.id) : sendKakaoInviteToFriend(f.uuid || f.id))}
+                        onClick={() => (placeToRecommend ? sendKakaoPlaceToFriend(f.uuid || f.id) : sharePostForKakao ? sendKakaoPostToFriend(f.uuid || f.id) : sendKakaoInviteToFriend(f.uuid || f.id))}
                         disabled={kakaoSendingUuid === (f.uuid || f.id)}
                         style={{ padding: '8px 14px', borderRadius: 999, border: 'none', background: '#E8740C', color: '#fff', fontSize: 12, fontWeight: 600, cursor: kakaoSendingUuid === (f.uuid || f.id) ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap', opacity: kakaoSendingUuid === (f.uuid || f.id) ? 0.7 : 1 }}
                       >
-                        {kakaoSendingUuid === (f.uuid || f.id) ? '전송 중...' : '바로 보내기'}
+                        {kakaoSendingUuid === (f.uuid || f.id) ? '전송 중...' : placeToRecommend ? '전송' : '바로 보내기'}
                       </button>
                     </div>
                   ))}
                 </div>
               ) : (
                 <div style={{ textAlign: 'center' }}>
-                  <p style={{ fontSize: 14, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280', marginBottom: 12 }}>초대 링크를 복사해서 카카오톡으로 보내보세요.</p>
-                  <button type="button" onClick={() => { copyInviteAndToast(); setKakaoFriendsOpen(false); }} style={{ padding: '12px 20px', borderRadius: 12, border: 'none', background: '#E8740C', color: '#fff', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>초대 링크 복사</button>
+                  {placeToRecommend ? (
+                    <>
+                      <p style={{ fontSize: 14, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280', marginBottom: 12 }}>표시할 카카오톡 친구가 없어요. 친구 목록 권한을 허용한 후 다시 시도해 주세요.</p>
+                      <button type="button" onClick={() => { setKakaoFriendsOpen(false); onCloseRecommendPlace?.(); }} style={{ padding: '12px 20px', borderRadius: 12, border: 'none', background: '#E8740C', color: '#fff', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>닫기</button>
+                    </>
+                  ) : (
+                    <>
+                      <p style={{ fontSize: 14, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280', marginBottom: 12 }}>초대 링크를 복사해서 카카오톡으로 보내보세요.</p>
+                      <button type="button" onClick={() => { copyInviteAndToast(); setKakaoFriendsOpen(false); }} style={{ padding: '12px 20px', borderRadius: 12, border: 'none', background: '#E8740C', color: '#fff', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>초대 링크 복사</button>
+                    </>
+                  )}
                 </div>
               )}
             </div>
