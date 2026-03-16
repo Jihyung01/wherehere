@@ -278,6 +278,19 @@ async def get_recommendations(request: RecommendationRequest):
         if not unique_docs:
             raise RuntimeError("No Kakao places found")
 
+        # 카테고리 기반 예상 비용 (메뉴/장소 유형 기준 평균)
+        def _estimate_cost_from_category(category: str) -> int:
+            cost_map = {
+                "카페": 8000,
+                "맛집": 15000,
+                "갤러리": 5000,
+                "공원": 0,
+                "바": 20000,
+                "북카페": 10000,
+                "관광지": 10000,
+            }
+            return cost_map.get(category, 10000)
+
         # Kakao 응답을 우리 스키마에 맞춘 place 딕셔너리로 변환
         def _haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
             R = 6371000
@@ -307,9 +320,9 @@ async def get_recommendations(request: RecommendationRequest):
                     "id": place_id,
                     "name": mapped["name"],
                     "address": mapped.get("road_address") or mapped.get("address") or "",
-                    "primary_category": mapped.get("category") or "기타",
+                    "            primary_category": mapped.get("category") or "기타",
                     "secondary_categories": [],
-                    "average_price": mapped.get("estimated_cost"),
+                    "average_price": _estimate_cost_from_category(mapped.get("category") or "기타"),
                     "vibe_tags": [],  # Kakao만으로는 vibe 태그 없음 (나중에 AI 태깅)
                     "average_rating": 4.3,  # 기본값 (실제 평점 없으므로 보수적 기본)
                     "is_hidden_gem": False,

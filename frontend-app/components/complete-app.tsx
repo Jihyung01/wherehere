@@ -1757,7 +1757,7 @@ export function CompleteApp() {
                     <div style={{ background: isDarkMode ? 'linear-gradient(135deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02))' : cardBg, border: `1px solid ${borderColor}`, borderRadius: 18, padding: 18, boxShadow: isDarkMode ? 'none' : '0 4px 16px rgba(0,0,0,0.06)' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
                         <div><div style={{ fontSize: 11, color: accentColor, fontWeight: 600, marginBottom: 4 }}>오늘의 한 곳</div><div style={{ fontSize: 18, fontWeight: 800, marginBottom: 4 }}>{rec.name}</div><div style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280' }}>{rec.address}</div></div>
-                        <div style={{ textAlign: 'right' }}><div style={{ fontSize: 20, fontWeight: 800, color: accentColor }}>{rec.score}</div><div style={{ fontSize: 9, color: isDarkMode ? 'rgba(255,255,255,0.4)' : '#9CA3AF' }}>점수</div><div style={{ marginTop: 6, fontSize: 11 }}><span>📍 {rec.distance_meters}m</span></div></div>
+                        <div style={{ textAlign: 'right' }}><div style={{ fontSize: 20, fontWeight: 800, color: accentColor }}>{rec.score}</div><div style={{ fontSize: 9, color: isDarkMode ? 'rgba(255,255,255,0.4)' : '#9CA3AF' }}>점수</div><div style={{ marginTop: 6, fontSize: 11 }}><span>📍 {rec.distance_meters}m</span>{rec.estimated_cost ? <><span style={{ marginLeft: 8 }}>💰 {(rec.estimated_cost / 1000).toFixed(0)}천원</span></> : null}</div></div>
                       </div>
                       {rec.reason && <p style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.7)' : '#4B5563', marginBottom: 10 }}>{rec.reason}</p>}
                       <button type="button" onClick={() => { setAcceptedQuest(rec); setScreen('accepted') }} style={{ width: '100%', padding: 12, borderRadius: 12, border: 'none', background: 'linear-gradient(135deg, #E8740C, #C65D00)', color: '#fff', fontSize: 14, fontWeight: 700, cursor: 'pointer', marginTop: 4 }}>경로 보기 →</button>
@@ -2013,10 +2013,10 @@ export function CompleteApp() {
                     </div>
                   </div>
                   <div style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280', marginBottom: 12 }}>{quest.address}</div>
-                  <div style={{ display: 'flex', gap: 8, fontSize: 11, marginBottom: 6 }}>
+                  <div style={{ display: 'flex', gap: 8, fontSize: 11, marginBottom: 6, flexWrap: 'wrap' }}>
                     <span>📍 {quest.distance_meters}m</span>
                     <span>⭐ {quest.average_rating || '-'}</span>
-                    {quest.estimated_cost && <span>💰 {(quest.estimated_cost/1000).toFixed(0)}천원</span>}
+                    <span>💰 평균 비용: {quest.estimated_cost ? `${(quest.estimated_cost / 1000).toFixed(0)}천원` : '—'}</span>
                   </div>
                   {quest.reason && (
                     <p style={{ fontSize: 11, color: isDarkMode ? 'rgba(255,255,255,0.7)' : '#4B5563', marginBottom: 8 }}>{quest.reason}</p>
@@ -2224,6 +2224,11 @@ export function CompleteApp() {
             <p style={{ fontSize: 14, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280', lineHeight: 1.6 }}>
               {narrativeLoading ? '서사 불러오는 중…' : (acceptedQuest.narrative || acceptedQuest.reason)}
             </p>
+            <div style={{ display: 'flex', justifyContent: 'center', gap: 12, flexWrap: 'wrap', marginTop: 12, fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280' }}>
+              <span>📍 {acceptedQuest.distance_meters ?? 0}m</span>
+              <span>⭐ {acceptedQuest.average_rating ?? '-'}</span>
+              <span>💰 평균 비용: {acceptedQuest.estimated_cost ? `${(acceptedQuest.estimated_cost / 1000).toFixed(0)}천원` : '—'}</span>
+            </div>
           </div>
 
           {/* 소셜 공유 */}

@@ -616,11 +616,17 @@ export function MyMapScreen({ isEmbedded = false, isDarkMode: isDarkModeProp, on
             </div>
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginTop: 16 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 16 }}>
             {[
               { label: "총 방문", value: `${computedStats.total_visits}곳`, sub: "고유 장소 " + computedStats.unique_places + "곳" },
               { label: "이번 달 탐험 반경", value: `${computedStats.this_month_radius_km}km`, sub: "전체 " + computedStats.exploration_radius_km + "km" },
               { label: "총 XP", value: `${computedStats.total_xp}`, sub: "+" + computedStats.total_xp },
+              (() => {
+                const totalSpent = filteredVisits.reduce((s, v) => s + (v.spent_amount ?? 0), 0);
+                const avgSpent = filteredVisits.length ? totalSpent / filteredVisits.length : 0;
+                const avgCostDisplay = avgSpent >= 1000 ? `${(avgSpent / 1000).toFixed(0)}천원` : avgSpent > 0 ? `${Math.round(avgSpent)}원` : "—";
+                return { label: "평균 비용", value: avgCostDisplay, sub: "방문당 (선택 기간)" };
+              })(),
             ].map((s, i) => (
               <div key={i} style={{ background: cardBg, borderRadius: 12, padding: "12px 10px", textAlign: "center", border: `1px solid ${borderColor}` }}>
                 <div style={{ fontSize: 9, color: isDarkMode ? "rgba(255,255,255,0.4)" : "#9CA3AF", marginBottom: 4 }}>{s.label}</div>
