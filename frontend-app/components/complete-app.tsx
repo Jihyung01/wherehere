@@ -377,6 +377,11 @@ export function CompleteApp() {
     }
 
     if (token) {
+      if (typeof window !== 'undefined' && window.opener) {
+        try { window.opener.postMessage({ type: 'kakao_friends_token', token }, window.location.origin) } catch (_) {}
+        window.close()
+        return
+      }
       setKakaoFriendsToken(token)
       try { sessionStorage.setItem('kakao_friends_token', token) } catch (_) {}
     } else {
@@ -3514,14 +3519,15 @@ export function CompleteApp() {
               )}
             </div>
 
-            {/* ② 친구목록 동의 */}
+            {/* ② 친구목록 동의 — Step 2: 친구 목록 권한 요청 시스템 팝업 + 이용 중 동의 설명 */}
             <div style={{ background: cardBg, border: `2px solid ${step2Done ? '#16a34a' : borderColor}`, borderRadius: 12, padding: 16 }}>
               <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 6 }}>② 카카오톡 서비스 내 친구목록 동의</div>
+              <div style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.5)' : '#6B7280', marginBottom: 8 }}>이용 중 동의를 통해 부족한 권한을 획득하는 과정</div>
               {step2Done ? (
                 <div style={{ fontSize: 13, color: '#16a34a', fontWeight: 600 }}>✓ 완료 — 친구 목록 동의 완료 (동의창에서 권한 허용 후 복귀)</div>
               ) : (
                 <div>
-                  <div style={{ fontSize: 13, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280', marginBottom: 10 }}>아래 버튼으로 카카오 동의창을 띄운 뒤, 「카카오톡 친구 목록」「카카오톡 메시지 전송」에 동의해 주세요. 동의 후 이 페이지로 돌아오면 ③번을 진행합니다.</div>
+                  <div style={{ fontSize: 13, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280', marginBottom: 10 }}>아래 버튼을 누르면 친구 목록 권한 요청 시스템 팝업창이 뜹니다. 「카카오톡 친구 목록」「카카오톡 메시지 전송」에 동의해 주세요. 동의 후 이 페이지로 돌아오면 ③번을 진행합니다.</div>
                   <a
                     href="/api/auth/kakao-consent?return=kakao-api-test"
                     style={{ display: 'inline-block', padding: '10px 16px', borderRadius: 10, background: '#FEE500', color: '#3C1E1E', fontWeight: 600, fontSize: 13, cursor: 'pointer', textDecoration: 'none' }}

@@ -84,6 +84,8 @@ export function SocialScreen({ BottomNav, sharedPostId, placeToRecommendForKakao
     setAcceptedQuest,
     userProfile,
     kakaoAccessToken,
+    kakaoFriendsToken,
+    setKakaoFriendsToken,
     showInstagramShareModal,
     setShowInstagramShareModal,
     instagramShareForm,
@@ -664,6 +666,7 @@ export function SocialScreen({ BottomNav, sharedPostId, placeToRecommendForKakao
         BottomNav={BottomNav}
         userAvatarUrl={userProfile?.profile_image_url}
         kakaoAccessToken={kakaoAccessToken}
+        kakaoFriendsToken={kakaoFriendsToken}
         accentColor={accentColor}
         sharedPostId={sharedPostId}
         onAcceptQuest={(post: any) => {
@@ -682,6 +685,7 @@ export function SocialScreen({ BottomNav, sharedPostId, placeToRecommendForKakao
         }}
         placeToRecommend={placeToRecommendForKakao ?? undefined}
         onCloseRecommendPlace={onCloseRecommendPlace}
+        onKakaoFriendsToken={(token) => setKakaoFriendsToken(token)}
       />
       {instagramShareModalEl}
         </div>

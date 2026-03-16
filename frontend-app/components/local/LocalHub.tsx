@@ -43,6 +43,8 @@ type LocalHubProps = {
   userAvatarUrl?: string
   /** Supabase 카카오 로그인 시 provider_token. 있으면 친구 목록/메시지 API에 사용 */
   kakaoAccessToken?: string | null
+  /** 추가 동의(friends/talk_message) 후 받은 토큰. 전송 API에 우선 사용 */
+  kakaoFriendsToken?: string | null
   /** 피드 "나도 도전" 버튼 클릭 시 콜백 — place_name이 있는 게시글에 표시됨 */
   onAcceptQuest?: (post: { place_name?: string; title?: string; place_address?: string }) => void
   accentColor?: string
@@ -51,6 +53,8 @@ type LocalHubProps = {
   /** 장소 추천: 설정 시 친구 목록 모달을 열고 feed 타입으로 해당 장소를 친구에게 보냄 */
   placeToRecommend?: { place_name: string; description?: string; image_url?: string; link_url: string }
   onCloseRecommendPlace?: () => void
+  /** 추가 동의(friends/talk_message) 후 토큰 전달 — 팝업에서 돌아왔을 때 저장용 */
+  onKakaoFriendsToken?: (token: string) => void
 }
 
 export function LocalHub({
@@ -76,11 +80,13 @@ export function LocalHub({
   BottomNav,
   userAvatarUrl,
   kakaoAccessToken,
+  kakaoFriendsToken,
   onAcceptQuest,
   accentColor = '#E8740C',
   sharedPostId,
   placeToRecommend,
   onCloseRecommendPlace,
+  onKakaoFriendsToken,
 }: LocalHubProps) {
   const [topTab, setTopTab] = useState<'neighborhood' | 'friend'>('neighborhood')
   const [subTab, setSubTab] = useState<'home' | 'compose' | 'feed'>('compose')
@@ -110,66 +116,64 @@ export function LocalHub({
     }
   }, [inviteText, onToast])
 
-  const openKakaoInvite = useCallback(async () => {
-    const kakao = typeof window !== 'undefined' ? (window as any).Kakao : undefined
-    const url = typeof window !== 'undefined' ? window.location.origin + '/' : ''
-    // 1) 카카오 공유 SDK로 공유 창 열기 (친구 선택 후 보내기 가능)
-    if (kakao?.Share?.sendDefault) {
-      try {
-        await kakao.Share.sendDefault({
-          objectType: 'feed',
-          content: {
-            title: 'WhereHere 초대',
-            description: `친구 코드: ${myFriendCode}\n위 코드로 WhereHere 앱에서 나를 찾아줘!`,
-            imageUrl: url + 'og.png',
-            link: { webUrl: url, mobileWebUrl: url },
-          },
-        })
-        onToast('카카오톡으로 공유했어요.')
-        return
-      } catch (err) {
-        // 공유 취소 등이면 그냥 링크 복사로
-      }
+  /** 클릭 이벤트 내에서 호출: 추가 항목 동의(friends,talk_message) 팝업을 열고, 토큰 수신 시 콜백 실행. TWA/브라우저에서 팝업 차단 방지. */
+  const openConsentPopupAndThen = useCallback((callback: (token: string) => void) => {
+    const origin = typeof window !== 'undefined' ? window.location.origin : ''
+    const returnTo = typeof window !== 'undefined' ? encodeURIComponent(window.location.pathname + window.location.search) : ''
+    const consentUrl = `${origin}/api/auth/kakao-consent?return=${returnTo}&incremental=1`
+    const popup = typeof window !== 'undefined' ? window.open(consentUrl, 'kakao_friends_consent', 'width=500,height=600,scrollbars=yes') : null
+    if (!popup && typeof window !== 'undefined') {
+      onToast('팝업이 차단됐어요. 동의창으로 이동합니다.')
+      window.location.href = consentUrl.replace('&incremental=1', '')
+      return
     }
-    // 2) 카카오 로그인 토큰 있으면 친구 목록 모달 (Supabase provider_token 우선, 없으면 Kakao SDK)
+    const handler = (e: MessageEvent) => {
+      if (e.data?.type !== 'kakao_friends_token' || !e.data?.token) return
+      try {
+        if (e.origin !== window.location.origin) return
+      } catch (_) { return }
+      window.removeEventListener('message', handler)
+      clearTimeout(timer)
+      const token = e.data.token as string
+      onKakaoFriendsToken?.(token)
+      callback(token)
+    }
+    window.addEventListener('message', handler)
+    const timer = window.setTimeout(() => { window.removeEventListener('message', handler) }, 5 * 60 * 1000)
+  }, [onKakaoFriendsToken, onToast])
+
+  const openKakaoInvite = useCallback(() => {
+    const kakao = typeof window !== 'undefined' ? (window as any).Kakao : undefined
     const token = kakaoAccessToken ?? kakao?.Auth?.getAccessToken?.()
-    if (token) {
+    if (!token) {
+      onToast('카카오로 로그인하면 친구 목록에서 바로 초대할 수 있어요. 지금은 초대 링크를 복사해 드릴게요.')
+      copyInviteAndToast()
+      return
+    }
+    // 버튼 클릭 직후 동의 팝업을 띄워 TWA/브라우저에서 차단되지 않게 함. 토큰 수신 후 친구 목록 로드.
+    openConsentPopupAndThen((accessToken) => {
       setKakaoFriendsLoading(true)
       setKakaoFriendsList([])
       setKakaoFriendsOpen(true)
-      try {
-        const res = await fetch(`${apiBase}/api/v1/social/kakao-friends`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ access_token: token }),
+      setSharePostForKakao(null)
+      fetch(`${apiBase}/api/v1/social/kakao-friends`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ access_token: accessToken }),
+      })
+        .then((res) => res.json().catch(() => ({})))
+        .then((data) => {
+          const elements = data.elements ?? []
+          setKakaoFriendsList(elements)
+          if (elements.length === 0) onToast('카카오톡 친구 목록이 비어있거나 권한이 없어요. 초대 링크를 복사해서 보내보세요.')
         })
-        const data = await res.json().catch(() => ({}))
-        if (res.status === 403) {
-          onToast('친구 목록 권한이 필요해요. 동의창으로 이동합니다.')
-          const origin = typeof window !== 'undefined' ? window.location.origin : ''
-          window.location.href = `${origin}/api/auth/kakao-consent?return=${encodeURIComponent(window.location.pathname + window.location.search)}`
-          return
-        }
-        const elements = data.elements ?? []
-        setKakaoFriendsList(elements)
-        if (elements.length === 0) {
-          onToast('카카오톡 친구 목록이 비어있거나 권한이 없어요. 초대 링크를 복사해서 보내보세요.')
-          copyInviteAndToast()
-        }
-      } catch {
-        onToast('친구 목록을 불러오지 못했어요. 초대 링크를 복사해서 보내보세요.')
-        copyInviteAndToast()
-      } finally {
-        setKakaoFriendsLoading(false)
-      }
-    } else {
-      onToast('카카오로 로그인하면 친구 목록에서 바로 초대할 수 있어요. 지금은 초대 링크를 복사해 드릴게요.')
-      copyInviteAndToast()
-    }
-  }, [apiBase, copyInviteAndToast, kakaoAccessToken, myFriendCode, onToast])
+        .catch(() => onToast('친구 목록을 불러오지 못했어요. 초대 링크를 복사해서 보내보세요.'))
+        .finally(() => setKakaoFriendsLoading(false))
+    })
+  }, [apiBase, copyInviteAndToast, kakaoAccessToken, onToast, openConsentPopupAndThen])
 
-  /** 게시글(리뷰 등)을 카카오 친구에게 보낼 때: 모달을 열고 친구 목록 로드. 보낼 때 해당 게시글 이미지가 카드에 들어감 */
-  const openKakaoFriendsWithPost = useCallback(async (post: Post) => {
+  /** 게시글(리뷰 등)을 카카오 친구에게 보낼 때: 클릭 시 동의 팝업 → 토큰 수신 후 친구 목록 로드 */
+  const openKakaoFriendsWithPost = useCallback((post: Post) => {
     const kakao = typeof window !== 'undefined' ? (window as any).Kakao : undefined
     const token = kakaoAccessToken ?? kakao?.Auth?.getAccessToken?.()
     if (!token) {
@@ -180,32 +184,24 @@ export function LocalHub({
     setKakaoFriendsLoading(true)
     setKakaoFriendsList([])
     setKakaoFriendsOpen(true)
-    try {
-      const res = await fetch(`${apiBase}/api/v1/social/kakao-friends`, {
+    openConsentPopupAndThen((accessToken) => {
+      fetch(`${apiBase}/api/v1/social/kakao-friends`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ access_token: token }),
+        body: JSON.stringify({ access_token: accessToken }),
       })
-      const data = await res.json().catch(() => ({}))
-      if (res.status === 403) {
-        onToast('친구 목록 권한이 필요해요. 동의창으로 이동합니다.')
-        const origin = typeof window !== 'undefined' ? window.location.origin : ''
-        window.location.href = `${origin}/api/auth/kakao-consent?return=${encodeURIComponent(window.location.pathname + window.location.search)}`
-        return
-      }
-      const elements = data.elements ?? []
-      setKakaoFriendsList(elements)
-      if (elements.length === 0) {
-        onToast('카카오톡 친구 목록이 비어있거나 권한이 없어요.')
-      }
-    } catch {
-      onToast('친구 목록을 불러오지 못했어요.')
-    } finally {
-      setKakaoFriendsLoading(false)
-    }
-  }, [apiBase, kakaoAccessToken, onToast])
+        .then((res) => res.json().catch(() => ({})))
+        .then((data) => {
+          const elements = data.elements ?? []
+          setKakaoFriendsList(elements)
+          if (elements.length === 0) onToast('카카오톡 친구 목록이 비어있거나 권한이 없어요.')
+        })
+        .catch(() => onToast('친구 목록을 불러오지 못했어요.'))
+        .finally(() => setKakaoFriendsLoading(false))
+    })
+  }, [apiBase, kakaoAccessToken, onToast, openConsentPopupAndThen])
 
-  /** placeToRecommend가 설정되면 친구 목록 모달을 열고 친구 목록 로드 */
+  /** placeToRecommend가 설정되면 친구 목록 모달만 열고, "동의하고 친구 선택" 버튼 클릭 시 팝업 → 토큰 수신 후 로드 */
   useEffect(() => {
     if (!placeToRecommend) return
     const kakao = typeof window !== 'undefined' ? (window as any).Kakao : undefined
@@ -215,36 +211,10 @@ export function LocalHub({
       return
     }
     setSharePostForKakao(null)
-    setKakaoFriendsLoading(true)
     setKakaoFriendsList([])
+    setKakaoFriendsLoading(false)
     setKakaoFriendsOpen(true)
-    let cancelled = false
-    ;(async () => {
-      try {
-        const res = await fetch(`${apiBase}/api/v1/social/kakao-friends`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ access_token: token }),
-        })
-        const data = await res.json().catch(() => ({}))
-        if (cancelled) return
-        if (res.status === 403) {
-          onToast('친구 목록 권한이 필요해요. 동의창으로 이동합니다.')
-          const origin = typeof window !== 'undefined' ? window.location.origin : ''
-          window.location.href = `${origin}/api/auth/kakao-consent?return=${encodeURIComponent(window.location.pathname + window.location.search)}`
-          return
-        }
-        const elements = data.elements ?? []
-        setKakaoFriendsList(elements)
-        if (elements.length === 0) onToast('카카오톡 친구 목록이 비어있거나 권한이 없어요.')
-      } catch {
-        if (!cancelled) onToast('친구 목록을 불러오지 못했어요.')
-      } finally {
-        if (!cancelled) setKakaoFriendsLoading(false)
-      }
-    })()
-    return () => { cancelled = true }
-  }, [placeToRecommend, apiBase, kakaoAccessToken, onToast])
+  }, [placeToRecommend, kakaoAccessToken, onToast])
 
   const sendKakaoInviteToFriend = useCallback(async (friendUuid?: string) => {
     if (!friendUuid) {
@@ -252,7 +222,7 @@ export function LocalHub({
       return
     }
     const kakao = typeof window !== 'undefined' ? (window as any).Kakao : undefined
-    const token = kakaoAccessToken ?? kakao?.Auth?.getAccessToken?.()
+    const token = kakaoFriendsToken ?? kakaoAccessToken ?? kakao?.Auth?.getAccessToken?.()
     if (!token) {
       onToast('카카오 로그인 토큰을 찾지 못했어요. 다시 로그인 후 시도해 주세요.')
       copyInviteAndToast()
@@ -302,14 +272,14 @@ export function LocalHub({
     } finally {
       setKakaoSendingUuid(null)
     }
-  }, [apiBase, copyInviteAndToast, kakaoAccessToken, kakaoInviteTemplateId, myFriendCode, onToast])
+  }, [apiBase, copyInviteAndToast, kakaoAccessToken, kakaoFriendsToken, kakaoInviteTemplateId, myFriendCode, onToast])
 
   /** 게시글을 사용자 정의 템플릿으로 친구에게 전송 (해당 게시글 이미지가 카드에 들어감) */
   const sendKakaoPostToFriend = useCallback(async (friendUuid?: string) => {
     const post = sharePostForKakao
     if (!post || !friendUuid) return
     const kakao = typeof window !== 'undefined' ? (window as any).Kakao : undefined
-    const token = kakaoAccessToken ?? kakao?.Auth?.getAccessToken?.()
+    const token = kakaoFriendsToken ?? kakaoAccessToken ?? kakao?.Auth?.getAccessToken?.()
     if (!token) {
       onToast('카카오 로그인 토큰을 찾지 못했어요.')
       return
@@ -366,14 +336,14 @@ export function LocalHub({
     } finally {
       setKakaoSendingUuid(null)
     }
-  }, [apiBase, kakaoAccessToken, kakaoInviteTemplateId, onToast, sharePostForKakao])
+  }, [apiBase, kakaoAccessToken, kakaoFriendsToken, kakaoInviteTemplateId, onToast, sharePostForKakao])
 
   /** 장소 추천: feed_content로 친구에게 전송 (딥링크 포함) */
   const sendKakaoPlaceToFriend = useCallback(async (friendUuid?: string) => {
     const place = placeToRecommend
     if (!place || !friendUuid) return
     const kakao = typeof window !== 'undefined' ? (window as any).Kakao : undefined
-    const token = kakaoAccessToken ?? kakao?.Auth?.getAccessToken?.()
+    const token = kakaoFriendsToken ?? kakaoAccessToken ?? kakao?.Auth?.getAccessToken?.()
     if (!token) {
       onToast('카카오 로그인 토큰을 찾지 못했어요.')
       return
@@ -411,7 +381,7 @@ export function LocalHub({
     } finally {
       setKakaoSendingUuid(null)
     }
-  }, [apiBase, kakaoAccessToken, onToast, placeToRecommend, onCloseRecommendPlace])
+  }, [apiBase, kakaoAccessToken, kakaoFriendsToken, onToast, placeToRecommend, onCloseRecommendPlace])
 
   const fetchLocalPosts = useCallback(async () => {
     const params = new URLSearchParams({ scope: 'neighborhood', limit: '100' })
@@ -741,6 +711,33 @@ export function LocalHub({
             <div style={{ padding: 16, overflow: 'auto', flex: 1 }}>
               {kakaoFriendsLoading ? (
                 <p style={{ textAlign: 'center', color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280', fontSize: 14 }}>친구 목록 불러오는 중...</p>
+              ) : placeToRecommend && kakaoFriendsList.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '24px 0' }}>
+                  <p style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.5)' : '#6B7280', marginBottom: 8 }}>이용 중 동의를 통해 부족한 권한을 획득하는 과정</p>
+                  <p style={{ fontSize: 14, color: isDarkMode ? 'rgba(255,255,255,0.7)' : '#374151', marginBottom: 16 }}>친구 선택을 위해 카카오톡 친구 목록·메시지 동의가 필요해요.</p>
+                  <button
+                    type="button"
+                    onClick={() => openConsentPopupAndThen((accessToken) => {
+                      onKakaoFriendsToken?.(accessToken)
+                      setKakaoFriendsLoading(true)
+                      fetch(`${apiBase}/api/v1/social/kakao-friends`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ access_token: accessToken }),
+                      })
+                        .then((res) => res.json().catch(() => ({})))
+                        .then((data) => {
+                          setKakaoFriendsList(data.elements ?? [])
+                          if ((data.elements ?? []).length === 0) onToast('카카오톡 친구 목록이 비어있거나 권한이 없어요.')
+                        })
+                        .catch(() => onToast('친구 목록을 불러오지 못했어요.'))
+                        .finally(() => setKakaoFriendsLoading(false))
+                    })}
+                    style={{ padding: '14px 24px', borderRadius: 12, border: 'none', background: '#FEE500', color: '#3C1E1E', fontSize: 15, fontWeight: 700, cursor: 'pointer' }}
+                  >
+                    동의하고 친구 선택하기
+                  </button>
+                </div>
               ) : kakaoFriendsList.length > 0 ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                   <p style={{ fontSize: 11, color: isDarkMode ? 'rgba(255,255,255,0.5)' : '#9CA3AF', marginBottom: 0 }}>
