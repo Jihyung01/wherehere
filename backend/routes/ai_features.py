@@ -9,6 +9,8 @@ AI 기능 API 라우터
 
 
 from fastapi import APIRouter, HTTPException, Depends
+
+from services.weather_service import WeatherUnavailableError
 from typing import Optional, List, Dict, Any, Tuple
 from datetime import datetime, timedelta, timezone
 from pydantic import BaseModel
@@ -375,7 +377,9 @@ async def on_arrival(
         )
         
         return result
-    
+
+    except WeatherUnavailableError as e:
+        raise HTTPException(status_code=e.status_code, detail=e.message) from e
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -402,7 +406,9 @@ async def check_progress(
             return {"message": "최소 30일이 지난 후 다시 시도해주세요"}
         
         return suggestion
-    
+
+    except WeatherUnavailableError as e:
+        raise HTTPException(status_code=e.status_code, detail=e.message) from e
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

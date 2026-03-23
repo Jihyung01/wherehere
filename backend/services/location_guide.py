@@ -419,16 +419,10 @@ class LocationGuideService:
         return int(distance)
     
     async def _get_weather(self, latitude: float, longitude: float) -> Dict:
-        """
-        날씨 정보 가져오기
-        """
-        # TODO: OpenWeatherMap API 연동
-        return {
-            "condition": "clear",
-            "condition_kr": "맑음",
-            "temperature": 20,
-            "humidity": 60
-        }
+        """OpenWeather 실제 데이터만 (mock 없음). 실패 시 WeatherUnavailableError."""
+        from services.weather_service import get_weather
+
+        return await get_weather(latitude, longitude)
     
     async def _get_place_reviews(self, place_id: str, limit: int = 10) -> List[Dict]:
         """

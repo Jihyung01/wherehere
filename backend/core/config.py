@@ -36,8 +36,12 @@ class Settings(BaseSettings):
     KAKAO_REST_API_KEY: str = ""
     KAKAO_API_KEY: str = ""  # Alias for services
     
-    # OpenWeatherMap
+    # OpenWeatherMap — 실제 날씨만 사용 (비우면 추천/날씨 API 503)
     OPENWEATHER_API_KEY: str = ""
+    # 좌표(소수 2자리) 단위 메모리 캐시, 초 단위. 0이면 캐시 안 함.
+    WEATHER_CACHE_TTL_SECONDS: int = 600
+    # 추천 POST 응답 메모리 캐시 (같은 위치·역할·기분·유저). 랜덤 스코어는 캐시 히트 시 고정됨.
+    RECOMMENDATION_CACHE_TTL_SECONDS: int = 120
 
     # Web Push (VAPID) - optional; 없으면 푸시 전송 스킵
     VAPID_PRIVATE_KEY: str = ""

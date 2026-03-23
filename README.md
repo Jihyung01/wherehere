@@ -50,7 +50,8 @@
 
 ## 🚀 빠른 시작
 
-> **⚡ 15분 안에 시작하기**: [QUICK_START.md](./QUICK_START.md) 참고
+> **⚡ 15분 안에 시작하기**: [QUICK_START.md](./QUICK_START.md) 참고  
+> **배포(Vercel + 백엔드)**: [docs/DEPLOYMENT_CHECKLIST.md](./docs/DEPLOYMENT_CHECKLIST.md) · 로드맵 대비 구현 상태: [docs/ROADMAP_STATUS.md](./docs/ROADMAP_STATUS.md)
 
 ### 사전 요구사항
 - ✅ Node.js 18+ (현재: v22.14.0)

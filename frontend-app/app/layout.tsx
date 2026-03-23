@@ -4,6 +4,7 @@ import './globals.css'
 import { Providers } from './providers'
 import { ToastProvider } from '@/components/ui/toast'
 import { InstallBanner } from '@/components/InstallBanner'
+import { BackendStatusBanner } from '@/components/BackendStatusBanner'
 import { ServiceWorkerRegistrar } from '@/components/ServiceWorkerRegistrar'
 
 const inter = Inter({ subsets: ['latin'] })
@@ -65,6 +66,7 @@ export default function RootLayout({
         <Providers>
           {children}
         </Providers>
+        <BackendStatusBanner />
         <ToastProvider />
         <InstallBanner />
         <ServiceWorkerRegistrar />

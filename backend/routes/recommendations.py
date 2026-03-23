@@ -3,9 +3,9 @@ Recommendations API Routes
 Mock-First Architecture: Works without DB, upgrades seamlessly with DB
 """
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, HTTPException
 from pydantic import BaseModel, Field
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Set
 from datetime import datetime
 import math
 import random
@@ -13,7 +13,6 @@ import random
 from core.dependencies import Database
 from mock.mock_data import (
     get_mock_recommendations,
-    ROLE_CATEGORY_MAP as MOCK_ROLE_CATEGORY_MAP,
     ROLE_NARRATIVES,
 )
 from services.weather_service import get_weather, get_time_of_day
@@ -113,6 +112,40 @@ ROLE_TO_KAKAO_CODES: Dict[str, List[str]] = {
     "achiever": ["CE7"],
 }
 
+# Kakao map_to_our_schema 의 primary_category 와 맞춤 (mock ROLE_CATEGORY_MAP 과 별도)
+KAKAO_ROLE_CATEGORY_MAP: Dict[str, List[str]] = {
+    "explorer": ["관광지", "갤러리", "맛집", "공원"],
+    "healer": ["공원", "카페", "북카페", "갤러리"],
+    "artist": ["갤러리", "카페", "북카페", "관광지"],
+    "foodie": ["맛집", "카페", "바"],
+    "challenger": ["관광지", "맛집", "바"],
+    "archivist": ["갤러리", "카페", "관광지", "북카페"],
+    "relation": ["맛집", "카페", "바"],
+    "achiever": ["카페", "북카페", "갤러리"],
+}
+
+
+def _expand_mood_categories_for_kakao(mood_text_lower: str, mood_preferred_categories: Set[str]) -> None:
+    """프론트 MOODS 한글 라벨(부분 일치) → Kakao primary_category. 기존 키워드 규칙과 병행."""
+    hints = [
+        ("호기심", {"카페", "갤러리", "관광지", "북카페"}),
+        ("지쳐", {"공원", "카페", "북카페"}),
+        ("영감", {"갤러리", "카페", "북카페", "관광지"}),
+        ("배고", {"맛집", "카페"}),
+        ("모험", {"관광지", "맛집", "바"}),
+        ("차분", {"공원", "북카페", "카페"}),
+        ("스트레스", {"공원", "카페"}),
+        ("기분 좋", {"카페", "맛집", "관광지", "갤러리"}),
+    ]
+    for sub, cats in hints:
+        if sub in mood_text_lower:
+            mood_preferred_categories.update(cats)
+    legacy_alias = {"술집/바": "바", "음식점": "맛집", "문화시설": "갤러리"}
+    for old, new in legacy_alias.items():
+        if old in mood_preferred_categories:
+            mood_preferred_categories.add(new)
+
+
 # 역할 한글 라벨 (reason 문구용)
 ROLE_LABELS_KO: Dict[str, str] = {
     "explorer": "탐험가",
@@ -150,6 +183,54 @@ async def get_narrative_for_place(request: NarrativeRequest):
     return {"narrative": narrative}
 
 
+async def _try_recommendation_cache(request: RecommendationRequest) -> Optional[RecommendationResponse]:
+    """짧은 TTL 동안 동일 조건 추천 응답 재사용."""
+    from core.config import settings
+
+    ttl = max(0, int(getattr(settings, "RECOMMENDATION_CACHE_TTL_SECONDS", 120) or 0))
+    if ttl <= 0:
+        return None
+    from services.recommendation_cache import make_recommendation_cache_key, get_cached
+
+    mood_t = (request.mood.mood_text or "") if request.mood else ""
+    mi = float(request.mood.intensity) if request.mood else 0.0
+    key = make_recommendation_cache_key(
+        request.current_location.latitude,
+        request.current_location.longitude,
+        request.role_type,
+        mood_t,
+        mi,
+        request.user_id or "anon",
+        request.user_level,
+    )
+    cached = await get_cached(key, ttl)
+    if cached is None:
+        return None
+    return RecommendationResponse(**cached)
+
+
+async def _store_recommendation_cache(request: RecommendationRequest, out: RecommendationResponse) -> None:
+    from core.config import settings
+
+    ttl = max(0, int(getattr(settings, "RECOMMENDATION_CACHE_TTL_SECONDS", 120) or 0))
+    if ttl <= 0:
+        return
+    from services.recommendation_cache import make_recommendation_cache_key, set_cached
+
+    mood_t = (request.mood.mood_text or "") if request.mood else ""
+    mi = float(request.mood.intensity) if request.mood else 0.0
+    key = make_recommendation_cache_key(
+        request.current_location.latitude,
+        request.current_location.longitude,
+        request.role_type,
+        mood_t,
+        mi,
+        request.user_id or "anon",
+        request.user_level,
+    )
+    await set_cached(key, ttl, out.model_dump())
+
+
 @router.post("", response_model=RecommendationResponse)
 @router.post("/", response_model=RecommendationResponse)
 async def get_recommendations(request: RecommendationRequest):
@@ -161,11 +242,18 @@ async def get_recommendations(request: RecommendationRequest):
     """
 
     # 날씨 & 시간 자동 감지
-    weather_data = await get_weather(
-        request.current_location.latitude,
-        request.current_location.longitude
-    )
+    try:
+        weather_data = await get_weather(
+            request.current_location.latitude,
+            request.current_location.longitude,
+        )
+    except WeatherUnavailableError as e:
+        raise HTTPException(status_code=e.status_code, detail=e.message) from e
     time_now = request.time_of_day or get_time_of_day()
+
+    cached_resp = await _try_recommendation_cache(request)
+    if cached_resp is not None:
+        return cached_resp
 
     # 기분 텍스트 기반 선호 카테고리/분위기 키워드 계산
     mood_text = (request.mood.mood_text or "").lower() if request.mood else ""
@@ -191,6 +279,8 @@ async def get_recommendations(request: RecommendationRequest):
         # 혼자 정리하고 싶은 날 → 조용한 카페/문화시설
         mood_preferred_categories.update(["카페", "문화시설"])
         mood_vibe_keywords.update(["조용", "북카페", "갤러리", "전시"])
+
+    _expand_mood_categories_for_kakao(mood_text, mood_preferred_categories)
 
     # Kakao Local API 기반 추천 (DB는 유저 행동 로그/캐시로만 사용)
     try:
@@ -337,8 +427,10 @@ async def get_recommendations(request: RecommendationRequest):
         if not places:
             raise RuntimeError("No places after filtering")
 
-        # 2단계: 역할/기분/거리 기반 스코어링
-        role_preferred_categories = MOCK_ROLE_CATEGORY_MAP.get(request.role_type, [])
+        # 2단계: 역할/기분/거리 기반 스코어링 (Kakao primary_category 와 동일 용어 사용)
+        role_preferred_categories = KAKAO_ROLE_CATEGORY_MAP.get(
+            request.role_type, KAKAO_ROLE_CATEGORY_MAP["explorer"]
+        )
 
         candidates: list[Dict] = []
         for p in places:
@@ -502,7 +594,7 @@ async def get_recommendations(request: RecommendationRequest):
         # 개인화 여부: 별점 3.5 이상 카테고리가 1개 이상이면 개인화 추천 활성
         personalized_cats = [cat for cat, avg in category_preferences.items() if avg >= 3.5]
 
-        return RecommendationResponse(
+        out = RecommendationResponse(
             recommendations=recommendations,
             role_type=request.role_type,
             radius_used=radius,
@@ -514,6 +606,8 @@ async def get_recommendations(request: RecommendationRequest):
             has_personalization=bool(personalized_cats),
             personalized_categories=personalized_cats[:3],
         )
+        await _store_recommendation_cache(request, out)
+        return out
     except Exception as e:
         import logging
         logger = logging.getLogger("uvicorn.error")
@@ -533,7 +627,9 @@ async def get_recommendations(request: RecommendationRequest):
     mock_result["weather"] = weather_data
     mock_result["time_of_day"] = time_now
 
-    return RecommendationResponse(**mock_result)
+    out = RecommendationResponse(**mock_result)
+    await _store_recommendation_cache(request, out)
+    return out
 
 
 async def _get_db_recommendations(request, weather_data, time_now):
@@ -695,8 +791,11 @@ async def get_current_weather(
     lat: float = Query(..., ge=-90, le=90),
     lon: float = Query(..., ge=-180, le=180),
 ):
-    """현재 날씨 조회"""
-    weather = await get_weather(lat, lon)
+    """현재 날씨 조회 (OpenWeather 실제 데이터만, 키 없으면 503)"""
+    try:
+        weather = await get_weather(lat, lon)
+    except WeatherUnavailableError as e:
+        raise HTTPException(status_code=e.status_code, detail=e.message) from e
     return {"weather": weather, "time_of_day": get_time_of_day()}
 
 
@@ -726,6 +825,8 @@ async def get_recommendations_simple(
         result = await get_recommendations(req)
         result.recommendations = result.recommendations[:limit]
         return result
+    except HTTPException:
+        raise
     except Exception as e:
         logger.warning(f"GET recommendations failed: {e}")
         mock = get_mock_recommendations(role_safe, lat, lng, 1, top_k=limit)

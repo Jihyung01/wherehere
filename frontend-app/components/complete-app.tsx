@@ -39,6 +39,85 @@ const API_BASE = typeof window !== 'undefined' ? window.location.origin : (proce
 /** 도착 인정 거리(미터): 이 거리 이내면 "장소 도착하기" 조건 충족 */
 const ARRIVAL_THRESHOLD_METERS = 100
 
+const TIME_OF_DAY_KR: Record<string, string> = {
+  dawn: '새벽',
+  morning: '아침',
+  afternoon: '오후',
+  evening: '저녁',
+  night: '밤',
+}
+
+function WeatherStrip(props: {
+  weather: Record<string, unknown> | null | undefined
+  timeOfDay?: string | null
+  isDarkMode: boolean
+  textColor: string
+  borderColor: string
+  accentColor: string
+}) {
+  const { weather, timeOfDay, isDarkMode, textColor, borderColor, accentColor } = props
+  if (!weather || typeof weather !== 'object') return null
+  const w = weather as {
+    condition_kr?: string
+    temperature?: number
+    feels_like?: number
+    icon?: string
+  }
+  const icon = w.icon
+  const label = w.condition_kr ?? '날씨'
+  const temp = w.temperature
+  const feels = w.feels_like
+  return (
+    <div
+      style={{
+        marginTop: 12,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 12,
+        padding: '12px 14px',
+        borderRadius: 14,
+        border: `1px solid ${borderColor}`,
+        background: isDarkMode ? 'rgba(14,165,233,0.12)' : 'linear-gradient(135deg, #ECFEFF, #E0F2FE)',
+      }}
+    >
+      {icon ? (
+        <img
+          src={`https://openweathermap.org/img/wn/${icon}@2x.png`}
+          alt=""
+          width={40}
+          height={40}
+          style={{ flexShrink: 0 }}
+        />
+      ) : (
+        <span style={{ fontSize: 28, flexShrink: 0 }}>🌤️</span>
+      )}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: isDarkMode ? '#7dd3fc' : '#0369a1' }}>지금 이 근처 날씨</div>
+        <div style={{ fontSize: 14, fontWeight: 600, color: textColor, marginTop: 2 }}>
+          {label}
+          {typeof temp === 'number' ? (
+            <>
+              {' '}
+              · <span style={{ color: accentColor }}>{temp}°C</span>
+            </>
+          ) : null}
+          {typeof feels === 'number' ? (
+            <span style={{ fontSize: 12, fontWeight: 500, color: isDarkMode ? 'rgba(255,255,255,0.55)' : '#64748B' }}>
+              {' '}
+              · 체감 {feels}°C
+            </span>
+          ) : null}
+        </div>
+        {timeOfDay ? (
+          <div style={{ fontSize: 11, color: isDarkMode ? 'rgba(255,255,255,0.45)' : '#94a3b8', marginTop: 4 }}>
+            {TIME_OF_DAY_KR[timeOfDay] ?? timeOfDay}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
 type ChallengeCategory = 'daily' | 'weekly' | 'achievement' | 'social' | 'explorer'
 const CHALLENGE_CATEGORIES: { id: ChallengeCategory; label: string }[] = [
   { id: 'daily', label: '일일' },
@@ -1737,6 +1816,14 @@ export function CompleteApp() {
             <h1 style={{ fontSize: 24, fontWeight: 900, marginBottom: 6, background: 'linear-gradient(90deg, #E8740C, #F59E0B)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>WhereHere</h1>
             <p style={{ fontSize: 14, color: isDarkMode ? 'rgba(255,255,255,0.7)' : '#6B7280', marginBottom: 8 }}>오늘의 한 곳에서 동네 커뮤니티까지 한 번에.</p>
             <div style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.5)' : '#9CA3AF' }}>홈 · 기분 맞춤 탐험 · 동네 피드</div>
+            <WeatherStrip
+              weather={homeData?.weather as Record<string, unknown> | undefined}
+              timeOfDay={homeData?.time_of_day}
+              isDarkMode={isDarkMode}
+              textColor={textColor}
+              borderColor={borderColor}
+              accentColor={accentColor}
+            />
           </div>
           <button type="button" onClick={() => { setScreen('profile'); setProfileTab('map'); }} style={{ width: '100%', marginBottom: 20, padding: 16, borderRadius: 16, border: `1px solid ${borderColor}`, background: isDarkMode ? 'linear-gradient(135deg, rgba(232,116,12,0.12), rgba(232,116,12,0.04))' : 'linear-gradient(135deg, #FFF7ED, #FFEDD5)', color: textColor, textAlign: 'left', cursor: 'pointer', boxShadow: isDarkMode ? 'none' : '0 2px 12px rgba(232,116,12,0.08)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}><span style={{ fontSize: 24 }}>🗺️</span><span style={{ fontSize: 16, fontWeight: 800, color: accentColor }}>동네 정복 지도</span></div>
@@ -1861,6 +1948,22 @@ export function CompleteApp() {
               setQuestCompleteData(null)
               setPendingFeedPost(null)
             }}
+            onShareKakaoFriends={() => {
+              if (typeof window === 'undefined') return
+              const origin = window.location.origin.replace(/\/$/, '')
+              const pid = acceptedQuest?.place_id || (acceptedQuest as { id?: string })?.id || ''
+              setPlaceToRecommendForKakao({
+                place_name: questCompleteData.placeName,
+                description: `퀘스트 완료! +${questCompleteData.xpEarned} XP${questCompleteData.locationVerified ? ' · 위치 인증' : ''}`,
+                image_url: (acceptedQuest as { image_url?: string })?.image_url || undefined,
+                link_url: pid
+                  ? `${origin}/?screen=accepted&place_id=${encodeURIComponent(String(pid))}`
+                  : `${origin}/`,
+              })
+              setQuestCompleteData(null)
+              setPendingFeedPost(null)
+              setScreen('social')
+            }}
           />
         )}
         <BottomNav />
@@ -1983,6 +2086,16 @@ export function CompleteApp() {
             <div style={{ fontSize: 48, marginBottom: 16 }}>✨</div>
             <h2 style={{ fontSize: 24, fontWeight: 800, marginBottom: 8 }}>AI가 추천하는 퀘스트</h2>
             <p style={{ fontSize: 14, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280' }}>당신을 위한 특별한 장소 3곳</p>
+            <div style={{ maxWidth: 360, margin: '0 auto' }}>
+              <WeatherStrip
+                weather={questsData?.weather as Record<string, unknown> | undefined}
+                timeOfDay={questsData?.time_of_day}
+                isDarkMode={isDarkMode}
+                textColor={textColor}
+                borderColor={borderColor}
+                accentColor={accentColor}
+              />
+            </div>
           </div>
 
           {questsLoading ? (

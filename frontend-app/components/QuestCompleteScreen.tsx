@@ -10,6 +10,8 @@ interface QuestCompleteScreenProps {
   onViewMap: () => void
   onPostFeed: () => void
   onHome: () => void
+  /** 카카오톡 친구 목록·메시지 API로 퀘스트 완료 카드 공유 (동의·친구 선택은 소셜 탭에서) */
+  onShareKakaoFriends?: () => void
 }
 
 function useCountUp(target: number, active: boolean, duration = 1200) {
@@ -30,7 +32,7 @@ function useCountUp(target: number, active: boolean, duration = 1200) {
 
 export function QuestCompleteScreen({
   isOpen, placeName, xpEarned, locationVerified,
-  onViewMap, onPostFeed, onHome,
+  onViewMap, onPostFeed, onHome, onShareKakaoFriends,
 }: QuestCompleteScreenProps) {
   const [show, setShow] = useState(false)
   const xp = useCountUp(xpEarned, show)
@@ -109,6 +111,19 @@ export function QuestCompleteScreen({
           >
             📢 동네 피드에 올리기
           </button>
+          {onShareKakaoFriends && (
+            <button
+              type="button"
+              onClick={onShareKakaoFriends}
+              style={{
+                padding: '14px', borderRadius: 14, border: '1px solid rgba(254,229,0,0.5)',
+                background: 'rgba(254,229,0,0.12)', color: '#FEE500',
+                fontSize: 15, fontWeight: 700, cursor: 'pointer',
+              }}
+            >
+              💬 카카오 친구에게 자랑하기
+            </button>
+          )}
           <div style={{ display: 'flex', gap: 10 }}>
             <button
               onClick={onViewMap}
