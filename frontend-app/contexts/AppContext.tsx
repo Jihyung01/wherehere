@@ -17,7 +17,7 @@ export type { GhostLevel, MovementStatus, FriendLocation }
 // ─────────────────────────────────────────────
 // Types
 // ─────────────────────────────────────────────
-export type Screen = 'home' | 'role' | 'mood' | 'quests' | 'accepted' | 'checkin' | 'review' | 'challenges' | 'profile' | 'social' | 'chat' | 'settings' | 'kakao-api-test'
+export type Screen = 'home' | 'role' | 'mood' | 'quests' | 'accepted' | 'checkin' | 'review' | 'challenges' | 'profile' | 'social' | 'chat' | 'settings' | 'kakao-api-test' | 'group-quests'
 export type ThemeMode = 'light' | 'dark' | 'system'
 export type ChallengeCategory = 'daily' | 'weekly' | 'achievement' | 'social' | 'explorer'
 

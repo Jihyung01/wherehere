@@ -24,6 +24,7 @@ import { QuestCompleteScreen } from './QuestCompleteScreen'
 import { SettingsScreen } from './screens/SettingsScreen'
 import { SocialScreen } from './screens/SocialScreen'
 import { MyMapScreen } from './screens/MyMapScreen'
+import { GroupQuestScreen } from './screens/GroupQuestScreen'
 
 declare global {
   interface Window {
@@ -31,7 +32,7 @@ declare global {
   }
 }
 
-type Screen = 'home' | 'role' | 'mood' | 'quests' | 'accepted' | 'checkin' | 'review' | 'challenges' | 'profile' | 'social' | 'chat' | 'settings' | 'kakao-api-test'
+type Screen = 'home' | 'role' | 'mood' | 'quests' | 'accepted' | 'checkin' | 'review' | 'challenges' | 'profile' | 'social' | 'chat' | 'settings' | 'kakao-api-test' | 'group-quests'
 
 // 브라우저에서는 같은 출처 사용 → Next API 프록시가 백엔드로 전달 (405/CORS 방지)
 const API_BASE = typeof window !== 'undefined' ? window.location.origin : (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000')
@@ -398,7 +399,7 @@ export function CompleteApp() {
     } catch (_) {}
   }, [])
 
-  // 카카오 로그인 시 provider_token 저장 (친구 목록/메시지 API용)
+  // 카카오 로그인 시 provider_token 저장 (친구 목록/메시지 API용) + 카카오 ID 자동 등록
   useEffect(() => {
     if (!user) {
       setKakaoAccessToken(null)
@@ -412,8 +413,17 @@ export function CompleteApp() {
     createClient().auth.getSession().then(({ data: { session } }) => {
       const token = (session as any)?.provider_token ?? null
       setKakaoAccessToken(token)
+      
+      // 카카오 ID를 매칭 테이블에 자동 등록 (친구 찾기 기능용)
+      if (token && userId && userId !== 'user-demo-001') {
+        fetch(`${API_BASE}/api/v1/social/kakao-id/register?user_id=${encodeURIComponent(userId)}&access_token=${encodeURIComponent(token)}`, {
+          method: 'POST',
+        }).catch(() => {
+          // 실패해도 무시 (백그라운드 작업)
+        })
+      }
     })
-  }, [user?.id, user?.app_metadata?.provider])
+  }, [user?.id, user?.app_metadata?.provider, userId])
 
   // 추가 동의 플로우 복귀: URL의 kakao_friends_token, return, error 처리 (한 번만 처리 후 URL 정리)
   // toast/setScreen는 다음 틱으로 미뤄서 React 418(렌더 중 다른 컴포넌트 업데이트) 방지
@@ -1599,7 +1609,7 @@ export function CompleteApp() {
   // 하단 네비게이션 (4탭: 홈 | 소셜 | 프로필 | 설정)
   const BottomNav = () => {
     const tabs = [
-      { icon: '🏠', label: '홈', active: screen === 'home' || screen === 'role' || screen === 'mood' || screen === 'quests' || screen === 'accepted' || screen === 'checkin' || screen === 'review', onClick: () => { setScreen('home'); setAcceptedQuest(null); } },
+      { icon: '🏠', label: '홈', active: screen === 'home' || screen === 'role' || screen === 'mood' || screen === 'quests' || screen === 'accepted' || screen === 'checkin' || screen === 'review' || screen === 'group-quests', onClick: () => { setScreen('home'); setAcceptedQuest(null); } },
       { icon: '💬', label: '소셜', active: screen === 'social', onClick: () => setScreen('social') },
       { icon: '👤', label: '프로필', active: screen === 'profile', onClick: () => { setScreen('profile'); setProfileTab('profile'); } },
       { icon: '⚙️', label: '설정', active: screen === 'settings', onClick: () => setScreen('settings') },
@@ -2346,39 +2356,82 @@ export function CompleteApp() {
 
           {/* 소셜 공유 */}
           <div style={{ background: isDarkMode ? accentRgba(0.1) : '#FEF3C7', border: '1px solid rgba(232,116,12,0.3)', borderRadius: 16, padding: 20, marginBottom: 16 }}>
-            <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 12, color: accentColor }}>📢 친구에게 공유하기</div>
-            <button
-              type="button"
-              onClick={() => {
-                const origin = typeof window !== 'undefined' ? window.location.origin : ''
-                const placeId = acceptedQuest?.place_id || acceptedQuest?.id || ''
-                setPlaceToRecommendForKakao({
-                  place_name: acceptedQuest?.name || '장소',
-                  description: acceptedQuest?.narrative || acceptedQuest?.reason || undefined,
-                  image_url: (acceptedQuest as any)?.image_url || undefined,
-                  link_url: `${origin.replace(/\/$/, '')}/?screen=accepted&place_id=${encodeURIComponent(placeId)}`,
-                })
-                setScreen('social')
-              }}
-              style={{
-                width: '100%',
-                marginBottom: 12,
-                padding: 14,
-                borderRadius: 12,
-                border: 'none',
-                background: 'linear-gradient(135deg, #E8740C, #C65D00)',
-                color: '#fff',
-                fontSize: 14,
-                fontWeight: 700,
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 8,
-              }}
-            >
-              💬 친구에게 이 장소 추천하기
-            </button>
+            <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 12, color: accentColor }}>📢 친구와 함께하기</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 12 }}>
+              <button
+                type="button"
+                onClick={() => {
+                  const origin = typeof window !== 'undefined' ? window.location.origin : ''
+                  const placeId = acceptedQuest?.place_id || acceptedQuest?.id || ''
+                  setPlaceToRecommendForKakao({
+                    place_name: acceptedQuest?.name || '장소',
+                    description: acceptedQuest?.narrative || acceptedQuest?.reason || undefined,
+                    image_url: (acceptedQuest as any)?.image_url || undefined,
+                    link_url: `${origin.replace(/\/$/, '')}/?screen=accepted&place_id=${encodeURIComponent(placeId)}`,
+                  })
+                  setScreen('social')
+                }}
+                style={{
+                  padding: 12,
+                  borderRadius: 12,
+                  border: 'none',
+                  background: 'linear-gradient(135deg, #E8740C, #C65D00)',
+                  color: '#fff',
+                  fontSize: 13,
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 6,
+                }}
+              >
+                💬 장소 추천
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    const res = await fetch(`${API_BASE}/api/v1/social/group-quests/create`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        creator_id: userId,
+                        place_id: acceptedQuest?.place_id || acceptedQuest?.id || '',
+                        place_name: acceptedQuest?.name || '장소',
+                        place_address: acceptedQuest?.address || '',
+                        max_participants: 4,
+                      }),
+                    })
+                    const data = await res.json().catch(() => ({}))
+                    if (data.success) {
+                      toast.success('협동 퀘스트가 생성됐어요! 친구를 초대하세요.')
+                      setScreen('group-quests')
+                    } else {
+                      toast.error('퀘스트 생성에 실패했어요.')
+                    }
+                  } catch {
+                    toast.error('네트워크 오류가 났어요.')
+                  }
+                }}
+                style={{
+                  padding: 12,
+                  borderRadius: 12,
+                  border: `1px solid ${borderColor}`,
+                  background: isDarkMode ? 'rgba(139,92,246,0.15)' : '#F5F3FF',
+                  color: '#8B5CF6',
+                  fontSize: 13,
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 6,
+                }}
+              >
+                👥 함께 도전
+              </button>
+            </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 8 }}>
               {[
                 { icon: '💬', name: '카카오톡', platform: 'kakao' },
@@ -2989,6 +3042,28 @@ export function CompleteApp() {
         sharedPostId={sharedPostId}
         placeToRecommendForKakao={placeToRecommendForKakao}
         onCloseRecommendPlace={() => setPlaceToRecommendForKakao(null)}
+      />
+    )
+  }
+
+  // 함께 퀘스트 화면
+  if (screen === 'group-quests') {
+    return (
+      <GroupQuestScreen
+        apiBase={API_BASE}
+        userId={userId}
+        isDarkMode={isDarkMode}
+        bgColor={bgColor}
+        textColor={textColor}
+        cardBg={cardBg}
+        borderColor={borderColor}
+        accentColor={accentColor}
+        accentRgba={accentRgba}
+        BottomNav={<BottomNav />}
+        onBack={() => setScreen('home')}
+        onInviteKakaoFriends={(questId, placeName) => {
+          toast.info('카카오 친구 초대 기능은 소셜 탭에서 이용하세요.')
+        }}
       />
     )
   }

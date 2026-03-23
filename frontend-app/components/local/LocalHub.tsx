@@ -99,6 +99,10 @@ export function LocalHub({
   const [kakaoSendingUuid, setKakaoSendingUuid] = useState<string | null>(null)
   /** 피드에서 작성자 클릭 시 해당 사용자 프로필·피드 보기 */
   const [selectedProfileUser, setSelectedProfileUser] = useState<{ id: string; display_name?: string; avatar_url?: string } | null>(null)
+  /** 카카오 친구 중 앱 사용자 매칭 결과 */
+  const [kakaoMatchedFriends, setKakaoMatchedFriends] = useState<Array<{ user_id: string; display_name?: string; username?: string; avatar_url?: string; kakao_nickname?: string; kakao_thumbnail?: string; is_following?: boolean; code?: string }>>([])
+  const [kakaoMatchLoading, setKakaoMatchLoading] = useState(false)
+  const [showKakaoMatch, setShowKakaoMatch] = useState(false)
 
   /** 사용자 정의 템플릿 ID (카카오 콘솔 [도구] > [메시지 템플릿]에서 생성). 있으면 피드형 카드로 전송 */
   const kakaoInviteTemplateId = typeof window !== 'undefined' ? (process.env.NEXT_PUBLIC_KAKAO_INVITE_TEMPLATE_ID || '') : ''
@@ -383,6 +387,41 @@ export function LocalHub({
     }
   }, [apiBase, kakaoAccessToken, kakaoFriendsToken, onToast, placeToRecommend, onCloseRecommendPlace])
 
+  /** 카카오 친구 중 앱 사용자 찾기 */
+  const findKakaoFriendsInApp = useCallback(() => {
+    const kakao = typeof window !== 'undefined' ? (window as any).Kakao : undefined
+    const token = kakaoAccessToken ?? kakao?.Auth?.getAccessToken?.()
+    if (!token) {
+      onToast('카카오로 로그인하면 카카오 친구 중 앱 사용자를 찾을 수 있어요.')
+      return
+    }
+    
+    // 동의 팝업 → 토큰 수신 → 매칭 API 호출
+    openConsentPopupAndThen((accessToken) => {
+      setKakaoMatchLoading(true)
+      setKakaoMatchedFriends([])
+      setShowKakaoMatch(true)
+      
+      fetch(`${apiBase}/api/v1/social/kakao-friends/match`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ access_token: accessToken, user_id: userId }),
+      })
+        .then((res) => res.json().catch(() => ({})))
+        .then((data) => {
+          const matched = data.matched_friends ?? []
+          setKakaoMatchedFriends(matched)
+          if (matched.length === 0) {
+            onToast('카카오 친구 중 앱을 사용하는 친구가 없어요. 친구를 초대해보세요!')
+          } else {
+            onToast(`${matched.length}명의 카카오 친구가 앱을 사용하고 있어요!`)
+          }
+        })
+        .catch(() => onToast('카카오 친구 매칭에 실패했어요.'))
+        .finally(() => setKakaoMatchLoading(false))
+    })
+  }, [apiBase, userId, kakaoAccessToken, onToast, openConsentPopupAndThen])
+
   const fetchLocalPosts = useCallback(async () => {
     const params = new URLSearchParams({ scope: 'neighborhood', limit: '100' })
     if (areaName) params.set('area_name', areaName)
@@ -544,27 +583,48 @@ export function LocalHub({
                 <div style={{ fontSize: 20, fontFamily: 'ui-monospace, monospace', letterSpacing: 2 }}>{myFriendCode}</div>
                 <div style={{ fontSize: 11, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280', marginTop: 6 }}>카카오톡/인스타 DM으로 이 코드를 보내서 친구를 초대해 보세요.</div>
               </div>
-              <button
-                type="button"
-                onClick={openKakaoInvite}
-                style={{
-                  width: '100%',
-                  padding: 14,
-                  borderRadius: 16,
-                  border: `1px solid ${borderColor}`,
-                  background: isDarkMode ? 'rgba(255,255,255,0.06)' : '#FAFAFA',
-                  color: textColor,
-                  fontSize: 14,
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 8,
-                }}
-              >
-                <span>💬</span> 카카오 친구에게 초대하기
-              </button>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                <button
+                  type="button"
+                  onClick={openKakaoInvite}
+                  style={{
+                    padding: 14,
+                    borderRadius: 16,
+                    border: `1px solid ${borderColor}`,
+                    background: isDarkMode ? 'rgba(255,255,255,0.06)' : '#FAFAFA',
+                    color: textColor,
+                    fontSize: 13,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 6,
+                  }}
+                >
+                  <span>💬</span> 친구 초대
+                </button>
+                <button
+                  type="button"
+                  onClick={findKakaoFriendsInApp}
+                  style={{
+                    padding: 14,
+                    borderRadius: 16,
+                    border: `2px solid #FEE500`,
+                    background: isDarkMode ? 'rgba(254,229,0,0.12)' : '#FFFDE7',
+                    color: textColor,
+                    fontSize: 13,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 6,
+                  }}
+                >
+                  <span>🔍</span> 카카오 친구 찾기
+                </button>
+              </div>
               <div style={{ background: cardBg, borderRadius: 16, border: `1px solid ${borderColor}`, padding: 16 }}>
                 <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 8 }}>친구 찾기</div>
                 <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
@@ -778,6 +838,153 @@ export function LocalHub({
                       <button type="button" onClick={() => { copyInviteAndToast(); setKakaoFriendsOpen(false); }} style={{ padding: '12px 20px', borderRadius: 12, border: 'none', background: '#E8740C', color: '#fff', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}>초대 링크 복사</button>
                     </>
                   )}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 카카오 친구 매칭 모달 */}
+      {showKakaoMatch && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 9999,
+            background: 'rgba(0,0,0,0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 20,
+          }}
+          onClick={() => setShowKakaoMatch(false)}
+        >
+          <div
+            style={{
+              background: cardBg,
+              borderRadius: 20,
+              border: `1px solid ${borderColor}`,
+              maxWidth: 400,
+              width: '100%',
+              maxHeight: '80vh',
+              overflow: 'hidden',
+              display: 'flex',
+              flexDirection: 'column',
+              boxShadow: '0 20px 40px rgba(0,0,0,0.2)',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ padding: 16, borderBottom: `1px solid ${borderColor}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>카카오 친구 중 앱 사용자</h3>
+                <p style={{ margin: '4px 0 0', fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280' }}>
+                  {kakaoMatchLoading ? '찾는 중...' : `${kakaoMatchedFriends.length}명이 WhereHere를 사용하고 있어요`}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowKakaoMatch(false)}
+                style={{ flexShrink: 0, background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: textColor }}
+              >
+                ×
+              </button>
+            </div>
+            <div style={{ padding: 16, overflow: 'auto', flex: 1 }}>
+              {kakaoMatchLoading ? (
+                <p style={{ textAlign: 'center', color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280', fontSize: 14 }}>
+                  카카오 친구 목록을 확인하고 있어요...
+                </p>
+              ) : kakaoMatchedFriends.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '24px 0' }}>
+                  <div style={{ fontSize: 48, marginBottom: 12 }}>😢</div>
+                  <p style={{ fontSize: 14, color: isDarkMode ? 'rgba(255,255,255,0.7)' : '#374151', marginBottom: 8 }}>
+                    카카오 친구 중 앱을 사용하는 친구가 없어요
+                  </p>
+                  <p style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.5)' : '#6B7280', marginBottom: 16 }}>
+                    친구를 초대해서 함께 탐험해보세요!
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowKakaoMatch(false)
+                      openKakaoInvite()
+                    }}
+                    style={{
+                      padding: '12px 20px',
+                      borderRadius: 12,
+                      border: 'none',
+                      background: '#FEE500',
+                      color: '#3C1E1E',
+                      fontSize: 14,
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    💬 친구 초대하기
+                  </button>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {kakaoMatchedFriends.map((friend) => (
+                    <div
+                      key={friend.user_id}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: 12,
+                        padding: 12,
+                        background: isDarkMode ? 'rgba(255,255,255,0.04)' : '#F9FAFB',
+                        borderRadius: 12,
+                        border: `1px solid ${borderColor}`,
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: 1 }}>
+                        <div style={{ width: 44, height: 44, borderRadius: '50%', overflow: 'hidden', background: 'linear-gradient(135deg, #E8740C, #F59E0B)', flexShrink: 0 }}>
+                          {friend.avatar_url || friend.kakao_thumbnail ? (
+                            <img
+                              src={friend.avatar_url || friend.kakao_thumbnail || ''}
+                              alt=""
+                              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                            />
+                          ) : (
+                            <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', fontSize: 18, color: '#fff' }}>
+                              {(friend.display_name || friend.kakao_nickname || '친구').slice(0, 1)}
+                            </span>
+                          )}
+                        </div>
+                        <div style={{ minWidth: 0, flex: 1 }}>
+                          <div style={{ fontSize: 14, fontWeight: 600, color: textColor }}>
+                            {friend.display_name || friend.username || '사용자'}
+                          </div>
+                          <div style={{ fontSize: 11, color: isDarkMode ? 'rgba(255,255,255,0.5)' : '#6B7280' }}>
+                            카카오: {friend.kakao_nickname || '친구'}
+                          </div>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => toggleFollow(friend.user_id, !!friend.is_following)}
+                        style={{
+                          padding: '8px 14px',
+                          borderRadius: 999,
+                          border: friend.is_following ? `1px solid ${borderColor}` : 'none',
+                          background: friend.is_following ? 'transparent' : accentColor,
+                          color: friend.is_following ? textColor : '#fff',
+                          fontSize: 12,
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          whiteSpace: 'nowrap',
+                          flexShrink: 0,
+                        }}
+                      >
+                        {friend.is_following ? '팔로잉' : '팔로우'}
+                      </button>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>

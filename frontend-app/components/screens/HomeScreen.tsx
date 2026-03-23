@@ -174,26 +174,46 @@ export function HomeScreen() {
           </div>
         </div>
 
-        {/* 동네 정복 지도 */}
-        <button
-          type="button"
-          onClick={() => router.push('/my-map-real')}
-          style={{
-            width: '100%', marginBottom: 20, padding: 16, borderRadius: 16,
-            border: `1px solid ${borderColor}`,
-            background: isDarkMode ? 'linear-gradient(135deg, rgba(232,116,12,0.12), rgba(232,116,12,0.04))' : 'linear-gradient(135deg, #FFF7ED, #FFEDD5)',
-            color: textColor, textAlign: 'left', cursor: 'pointer',
-            boxShadow: isDarkMode ? 'none' : '0 2px 12px rgba(232,116,12,0.08)',
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
-            <span style={{ fontSize: 24 }}>🗺️</span>
-            <span style={{ fontSize: 16, fontWeight: 800, color: accentColor }}>동네 정복 지도</span>
-          </div>
-          <div style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280' }}>
-            방문한 구역을 헥사곤으로 채워가며 탐험 완성도를 확인하세요
-          </div>
-        </button>
+        {/* 빠른 액션 버튼들 */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 20 }}>
+          {/* 동네 정복 지도 */}
+          <button
+            type="button"
+            onClick={() => router.push('/my-map-real')}
+            style={{
+              padding: 14, borderRadius: 16,
+              border: `1px solid ${borderColor}`,
+              background: isDarkMode ? 'linear-gradient(135deg, rgba(232,116,12,0.12), rgba(232,116,12,0.04))' : 'linear-gradient(135deg, #FFF7ED, #FFEDD5)',
+              color: textColor, textAlign: 'left', cursor: 'pointer',
+              boxShadow: isDarkMode ? 'none' : '0 2px 12px rgba(232,116,12,0.08)',
+            }}
+          >
+            <div style={{ fontSize: 24, marginBottom: 6 }}>🗺️</div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: accentColor, marginBottom: 2 }}>동네 정복</div>
+            <div style={{ fontSize: 11, color: isDarkMode ? 'rgba(255,255,255,0.5)' : '#6B7280' }}>
+              헥사곤 지도
+            </div>
+          </button>
+
+          {/* 함께 퀘스트 */}
+          <button
+            type="button"
+            onClick={() => setScreen('group-quests')}
+            style={{
+              padding: 14, borderRadius: 16,
+              border: `1px solid ${borderColor}`,
+              background: isDarkMode ? 'linear-gradient(135deg, rgba(139,92,246,0.12), rgba(139,92,246,0.04))' : 'linear-gradient(135deg, #F5F3FF, #EDE9FE)',
+              color: textColor, textAlign: 'left', cursor: 'pointer',
+              boxShadow: isDarkMode ? 'none' : '0 2px 12px rgba(139,92,246,0.08)',
+            }}
+          >
+            <div style={{ fontSize: 24, marginBottom: 6 }}>👥</div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: '#8B5CF6', marginBottom: 2 }}>함께 퀘스트</div>
+            <div style={{ fontSize: 11, color: isDarkMode ? 'rgba(255,255,255,0.5)' : '#6B7280' }}>
+              친구와 협동
+            </div>
+          </button>
+        </div>
 
         {/* 오늘의 한 곳 */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>

@@ -23,9 +23,15 @@ type Post = {
 type Comment = {
   id: string
   post_id: string
-  author_id: string
+  user_id: string
   body: string
   created_at?: string
+  author?: {
+    id: string
+    display_name?: string
+    username?: string
+    profile_image_url?: string
+  }
 }
 
 type FeedType = 'all' | 'hot' | 'gathering' | 'review'
@@ -124,7 +130,7 @@ export function LocalFeed({
   }, [apiBase, scope, areaName, userId, feedType, authorId])
 
   const fetchComments = async (postId: string) => {
-    const res = await fetch(`${apiBase}/api/v1/local/posts/${postId}/comments`)
+    const res = await fetch(`${apiBase}/api/v1/social/posts/${postId}/comments`)
     const data = await res.json().catch(() => ({ comments: [] }))
     return (data.comments || []) as Comment[]
   }
@@ -174,10 +180,10 @@ export function LocalFeed({
     if (!body) { toast.error('댓글을 입력하세요.'); return }
     setSubmittingComment(postId)
     try {
-      const res = await fetch(`${apiBase}/api/v1/local/posts/${postId}/comments`, {
+      const res = await fetch(`${apiBase}/api/v1/social/posts/comment`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ author_id: userId, body }),
+        body: JSON.stringify({ post_id: postId, user_id: userId, body }),
       })
       const data = await res.json().catch(() => ({}))
       if (data.success && data.comment) {
@@ -197,30 +203,48 @@ export function LocalFeed({
   const toggleLike = async (post: Post) => {
     if (likingPost === post.id) return
     setLikingPost(post.id)
-    // 낙관적 업데이트
     const wasLiked = post.liked_by_me
+    const originalCount = post.like_count || 0
+    
+    // 낙관적 업데이트
     setPosts(prev => prev.map(p => p.id === post.id ? {
       ...p,
       liked_by_me: !wasLiked,
-      like_count: (p.like_count || 0) + (wasLiked ? -1 : 1),
+      like_count: originalCount + (wasLiked ? -1 : 1),
     } : p))
+    
     try {
-      const res = await fetch(`${apiBase}/api/v1/local/posts/${post.id}/like`, {
-        method: 'POST',
+      const endpoint = wasLiked 
+        ? `${apiBase}/api/v1/social/posts/like`
+        : `${apiBase}/api/v1/social/posts/like`
+      
+      const res = await fetch(endpoint, {
+        method: wasLiked ? 'DELETE' : 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_id: userId }),
+        body: JSON.stringify({ post_id: post.id, user_id: userId }),
       })
-      const data = await res.json().catch(() => null)
-      if (data) {
-        setPosts(prev => prev.map(p => p.id === post.id ? {
-          ...p, liked_by_me: data.liked, like_count: data.like_count,
-        } : p))
+      
+      if (!res.ok) {
+        throw new Error('API failed')
       }
+      
+      // 최신 좋아요 수 조회
+      const likesRes = await fetch(`${apiBase}/api/v1/social/posts/${post.id}/likes`)
+      const likesData = await likesRes.json().catch(() => ({ count: originalCount }))
+      
+      setPosts(prev => prev.map(p => p.id === post.id ? {
+        ...p,
+        liked_by_me: !wasLiked,
+        like_count: likesData.count || 0,
+      } : p))
     } catch {
       // 실패 시 롤백
       setPosts(prev => prev.map(p => p.id === post.id ? {
-        ...p, liked_by_me: wasLiked, like_count: post.like_count,
+        ...p,
+        liked_by_me: wasLiked,
+        like_count: originalCount,
       } : p))
+      toast.error('좋아요 처리에 실패했어요.')
     } finally {
       setLikingPost(null)
     }
@@ -497,20 +521,28 @@ export function LocalFeed({
             {/* 댓글 영역 */}
             {isCommentsOpen && (
               <div style={{ padding: '12px 16px 16px', borderTop: `1px solid ${borderColor}`, background: isDarkMode ? 'rgba(0,0,0,0.2)' : 'rgba(0,0,0,0.02)' }}>
-                {(commentsByPostId[post.id] || []).map((c) => (
-                  <div key={c.id} style={{ marginBottom: 10, display: 'flex', gap: 8 }}>
-                    <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'linear-gradient(135deg,#E8740C,#F59E0B)', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: '#fff', fontWeight: 700 }}>
-                      {(c.author_id === userId ? '나' : c.author_id?.slice(0, 1) || '?')}
-                    </div>
-                    <div>
-                      <div style={{ display: 'flex', gap: 6, alignItems: 'baseline' }}>
-                        <strong style={{ fontSize: 12, color: textColor }}>{c.author_id === userId ? '나' : c.author_id?.slice(0, 8)}</strong>
-                        <span style={{ fontSize: 10, color: isDarkMode ? 'rgba(255,255,255,0.35)' : '#9CA3AF' }}>{relativeTime(c.created_at)}</span>
+                {(commentsByPostId[post.id] || []).map((c) => {
+                  const authorName = c.author?.display_name || c.author?.username || (c.user_id === userId ? '나' : c.user_id?.slice(0, 8))
+                  const authorAvatar = c.author?.profile_image_url
+                  return (
+                    <div key={c.id} style={{ marginBottom: 10, display: 'flex', gap: 8 }}>
+                      <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'linear-gradient(135deg,#E8740C,#F59E0B)', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: '#fff', fontWeight: 700, overflow: 'hidden' }}>
+                        {authorAvatar ? (
+                          <img src={authorAvatar} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        ) : (
+                          (authorName || '?').slice(0, 1)
+                        )}
                       </div>
-                      <p style={{ fontSize: 13, color: isDarkMode ? 'rgba(255,255,255,0.8)' : '#374151', marginTop: 2, lineHeight: 1.5 }}>{c.body}</p>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: 'flex', gap: 6, alignItems: 'baseline' }}>
+                          <strong style={{ fontSize: 12, color: textColor }}>{authorName}</strong>
+                          <span style={{ fontSize: 10, color: isDarkMode ? 'rgba(255,255,255,0.35)' : '#9CA3AF' }}>{relativeTime(c.created_at)}</span>
+                        </div>
+                        <p style={{ fontSize: 13, color: isDarkMode ? 'rgba(255,255,255,0.8)' : '#374151', marginTop: 2, lineHeight: 1.5, wordBreak: 'break-word' }}>{c.body}</p>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  )
+                })}
                 <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
                   <input
                     type="text"
