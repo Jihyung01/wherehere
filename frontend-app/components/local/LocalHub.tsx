@@ -4,6 +4,7 @@ import { useState, useCallback, useEffect } from 'react'
 import { LocalMetrics } from './LocalMetrics'
 import { LocalComposer } from './LocalComposer'
 import { LocalFeed } from './LocalFeed'
+import { ShareSheet } from './ShareSheet'
 
 type Post = {
   id: string
@@ -103,6 +104,12 @@ export function LocalHub({
   const [kakaoMatchedFriends, setKakaoMatchedFriends] = useState<Array<{ user_id: string; display_name?: string; username?: string; avatar_url?: string; kakao_nickname?: string; kakao_thumbnail?: string; is_following?: boolean; code?: string }>>([])
   const [kakaoMatchLoading, setKakaoMatchLoading] = useState(false)
   const [showKakaoMatch, setShowKakaoMatch] = useState(false)
+  
+  // 공유 시트 & 친구 검색
+  const [shareSheetOpen, setShareSheetOpen] = useState(false)
+  const [shareSheetContent, setShareSheetContent] = useState<any>(null)
+  const [friendSearchQuery, setFriendSearchQuery] = useState('')
+  const [selectedFriends, setSelectedFriends] = useState<string[]>([])
 
   /** 사용자 정의 템플릿 ID (카카오 콘솔 [도구] > [메시지 템플릿]에서 생성). 있으면 피드형 카드로 전송 */
   const kakaoInviteTemplateId = typeof window !== 'undefined' ? (process.env.NEXT_PUBLIC_KAKAO_INVITE_TEMPLATE_ID || '') : ''
@@ -178,12 +185,7 @@ export function LocalHub({
 
   /** 게시글(리뷰 등)을 카카오 친구에게 보낼 때: 클릭 시 동의 팝업 → 토큰 수신 후 친구 목록 로드 */
   const openKakaoFriendsWithPost = useCallback((post: Post) => {
-    const kakao = typeof window !== 'undefined' ? (window as any).Kakao : undefined
-    const token = kakaoAccessToken ?? kakao?.Auth?.getAccessToken?.()
-    if (!token) {
-      onToast('카카오 로그인이 필요해요. 로그인 후 다시 시도해 주세요.')
-      return
-    }
+    // 토큰 체크 없이 바로 모달 열기 (동의 버튼에서 팝업)
     setSharePostForKakao(post)
     setKakaoFriendsLoading(true)
     setKakaoFriendsList([])
@@ -203,22 +205,17 @@ export function LocalHub({
         .catch(() => onToast('친구 목록을 불러오지 못했어요.'))
         .finally(() => setKakaoFriendsLoading(false))
     })
-  }, [apiBase, kakaoAccessToken, onToast, openConsentPopupAndThen])
+  }, [apiBase, onToast, openConsentPopupAndThen])
 
   /** placeToRecommend가 설정되면 친구 목록 모달만 열고, "동의하고 친구 선택" 버튼 클릭 시 팝업 → 토큰 수신 후 로드 */
   useEffect(() => {
     if (!placeToRecommend) return
-    const kakao = typeof window !== 'undefined' ? (window as any).Kakao : undefined
-    const token = kakaoAccessToken ?? kakao?.Auth?.getAccessToken?.()
-    if (!token) {
-      onToast('카카오 로그인이 필요해요. 로그인 후 다시 시도해 주세요.')
-      return
-    }
+    // 장소 추천은 토큰 없이도 모달 열기 (동의 버튼에서 팝업)
     setSharePostForKakao(null)
     setKakaoFriendsList([])
     setKakaoFriendsLoading(false)
     setKakaoFriendsOpen(true)
-  }, [placeToRecommend, kakaoAccessToken, onToast])
+  }, [placeToRecommend])
 
   const sendKakaoInviteToFriend = useCallback(async (friendUuid?: string) => {
     if (!friendUuid) {
@@ -226,9 +223,13 @@ export function LocalHub({
       return
     }
     const kakao = typeof window !== 'undefined' ? (window as any).Kakao : undefined
-    const token = kakaoFriendsToken ?? kakaoAccessToken ?? kakao?.Auth?.getAccessToken?.()
+    // 토큰 우선순위: 추가 동의 토큰 > Supabase 로그인 토큰 > Kakao SDK 토큰
+    let token = kakaoFriendsToken ?? kakaoAccessToken
+    if (!token && kakao?.Auth) {
+      token = kakao.Auth.getAccessToken?.() ?? null
+    }
     if (!token) {
-      onToast('카카오 로그인 토큰을 찾지 못했어요. 다시 로그인 후 시도해 주세요.')
+      onToast('카카오톡 메시지 전송 권한이 필요해요. "동의하고 친구 선택" 버튼을 먼저 눌러주세요.')
       copyInviteAndToast()
       return
     }
@@ -269,7 +270,7 @@ export function LocalHub({
       if (!res.ok || !data.success) {
         throw new Error(typeof data.detail === 'string' ? data.detail : 'send failed')
       }
-      onToast('카카오톡으로 초대 메시지를 바로 보냈어요.')
+      onToast('✅ 카카오톡으로 초대 메시지를 보냈어요! (+10 XP 획득)')
     } catch (e) {
       onToast(e instanceof Error ? e.message : '바로 전송에 실패했어요. 복사 링크로 대체합니다.')
       copyInviteAndToast()
@@ -283,9 +284,13 @@ export function LocalHub({
     const post = sharePostForKakao
     if (!post || !friendUuid) return
     const kakao = typeof window !== 'undefined' ? (window as any).Kakao : undefined
-    const token = kakaoFriendsToken ?? kakaoAccessToken ?? kakao?.Auth?.getAccessToken?.()
+    // 토큰 우선순위: 추가 동의 토큰 > Supabase 로그인 토큰 > Kakao SDK 토큰
+    let token = kakaoFriendsToken ?? kakaoAccessToken
+    if (!token && kakao?.Auth) {
+      token = kakao.Auth.getAccessToken?.() ?? null
+    }
     if (!token) {
-      onToast('카카오 로그인 토큰을 찾지 못했어요.')
+      onToast('카카오톡 메시지 전송 권한이 필요해요. "동의하고 친구 선택" 버튼을 먼저 눌러주세요.')
       return
     }
     const appUrl = typeof window !== 'undefined' ? window.location.origin + '/' : ''
@@ -332,7 +337,7 @@ export function LocalHub({
       if (!res.ok || !data.success) {
         throw new Error(typeof data.detail === 'string' ? data.detail : 'send failed')
       }
-      onToast('카카오톡으로 게시글을 보냈어요.')
+      onToast('✅ 카카오톡으로 게시글을 보냈어요! (+5 XP 획득)')
       setSharePostForKakao(null)
       setKakaoFriendsOpen(false)
     } catch (e) {
@@ -347,9 +352,13 @@ export function LocalHub({
     const place = placeToRecommend
     if (!place || !friendUuid) return
     const kakao = typeof window !== 'undefined' ? (window as any).Kakao : undefined
-    const token = kakaoFriendsToken ?? kakaoAccessToken ?? kakao?.Auth?.getAccessToken?.()
+    // 토큰 우선순위: 추가 동의 토큰 > Supabase 로그인 토큰 > Kakao SDK 토큰
+    let token = kakaoFriendsToken ?? kakaoAccessToken
+    if (!token && kakao?.Auth) {
+      token = kakao.Auth.getAccessToken?.() ?? null
+    }
     if (!token) {
-      onToast('카카오 로그인 토큰을 찾지 못했어요.')
+      onToast('카카오톡 메시지 전송 권한이 필요해요. "동의하고 친구 선택" 버튼을 먼저 눌러주세요.')
       return
     }
     const appUrl = typeof window !== 'undefined' ? window.location.origin + '/' : ''
@@ -377,7 +386,7 @@ export function LocalHub({
       if (!res.ok || !data.success) {
         throw new Error(typeof data.detail === 'string' ? data.detail : 'send failed')
       }
-      onToast('친구에게 장소를 추천했어요.')
+      onToast('✅ 친구에게 장소를 추천했어요! (+15 XP 획득)')
       setKakaoFriendsOpen(false)
       onCloseRecommendPlace?.()
     } catch (e) {
@@ -390,7 +399,11 @@ export function LocalHub({
   /** 카카오 친구 중 앱 사용자 찾기 */
   const findKakaoFriendsInApp = useCallback(() => {
     const kakao = typeof window !== 'undefined' ? (window as any).Kakao : undefined
-    const token = kakaoAccessToken ?? kakao?.Auth?.getAccessToken?.()
+    // 토큰 확인: Supabase 로그인 토큰 또는 Kakao SDK 토큰
+    let token = kakaoAccessToken
+    if (!token && kakao?.Auth) {
+      token = kakao.Auth.getAccessToken?.() ?? null
+    }
     if (!token) {
       onToast('카카오로 로그인하면 카카오 친구 중 앱 사용자를 찾을 수 있어요.')
       return
@@ -769,6 +782,60 @@ export function LocalHub({
               <button type="button" onClick={() => { setKakaoFriendsOpen(false); setSharePostForKakao(null); onCloseRecommendPlace?.(); }} style={{ flexShrink: 0, background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: textColor }}>×</button>
             </div>
             <div style={{ padding: 16, overflow: 'auto', flex: 1 }}>
+              {/* 검색 바 */}
+              {kakaoFriendsList.length > 0 && (
+                <div style={{ marginBottom: 12 }}>
+                  <input
+                    type="text"
+                    placeholder="친구 검색..."
+                    value={friendSearchQuery}
+                    onChange={(e) => setFriendSearchQuery(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '10px 12px',
+                      borderRadius: 8,
+                      border: `1px solid ${borderColor}`,
+                      background: isDarkMode ? 'rgba(255,255,255,0.05)' : '#F9FAFB',
+                      color: textColor,
+                      fontSize: 14,
+                    }}
+                  />
+                </div>
+              )}
+              
+              {/* 다중 선택 안내 */}
+              {kakaoFriendsList.length > 0 && selectedFriends.length > 0 && (
+                <div style={{
+                  marginBottom: 12,
+                  padding: '8px 12px',
+                  background: '#E8740C',
+                  color: '#fff',
+                  borderRadius: 8,
+                  fontSize: 13,
+                  fontWeight: 600,
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                }}>
+                  <span>{selectedFriends.length}명 선택됨</span>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedFriends([])}
+                    style={{
+                      background: 'rgba(255,255,255,0.2)',
+                      border: 'none',
+                      color: '#fff',
+                      padding: '4px 8px',
+                      borderRadius: 4,
+                      fontSize: 12,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    선택 해제
+                  </button>
+                </div>
+              )}
+              
               {kakaoFriendsLoading ? (
                 <p style={{ textAlign: 'center', color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280', fontSize: 14 }}>친구 목록 불러오는 중...</p>
               ) : placeToRecommend && kakaoFriendsList.length === 0 ? (
@@ -806,24 +873,81 @@ export function LocalHub({
                   {kakaoInviteTemplateId ? (
                     <p style={{ fontSize: 12, color: isDarkMode ? 'rgba(255,255,255,0.6)' : '#6B7280', marginBottom: 4 }}>아래에서 친구를 골라 보내면 카드 형태로 전달돼요.</p>
                   ) : null}
-                  {kakaoFriendsList.map((f) => (
-                    <div key={f.uuid || f.id || f.profile_nickname || ''} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
-                        <div style={{ width: 44, height: 44, borderRadius: '50%', overflow: 'hidden', background: 'linear-gradient(135deg, #E8740C, #F59E0B)', flexShrink: 0 }}>
-                          {f.profile_thumbnail_image ? <img src={f.profile_thumbnail_image} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', fontSize: 18, color: '#fff' }}>👤</span>}
+                  {kakaoFriendsList
+                    .filter(f => {
+                      if (!friendSearchQuery) return true
+                      const nickname = (f.profile_nickname || '').toLowerCase()
+                      return nickname.includes(friendSearchQuery.toLowerCase())
+                    })
+                    .map((f) => {
+                      const friendId = f.uuid || f.id || ''
+                      const isSelected = selectedFriends.includes(friendId)
+                      return (
+                      <div key={friendId} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '8px 12px', borderRadius: 8, background: isSelected ? (isDarkMode ? 'rgba(232,116,12,0.2)' : 'rgba(232,116,12,0.1)') : 'transparent', border: isSelected ? '1px solid #E8740C' : '1px solid transparent' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: 1 }}>
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedFriends(prev => [...prev, friendId])
+                              } else {
+                                setSelectedFriends(prev => prev.filter(id => id !== friendId))
+                              }
+                            }}
+                            style={{ width: 18, height: 18, cursor: 'pointer' }}
+                          />
+                          <div style={{ width: 44, height: 44, borderRadius: '50%', overflow: 'hidden', background: 'linear-gradient(135deg, #E8740C, #F59E0B)', flexShrink: 0 }}>
+                            {f.profile_thumbnail_image ? <img src={f.profile_thumbnail_image} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', fontSize: 18, color: '#fff' }}>👤</span>}
+                          </div>
+                          <span style={{ fontSize: 14, fontWeight: 600 }}>{f.profile_nickname || '친구'}</span>
                         </div>
-                        <span style={{ fontSize: 14, fontWeight: 600 }}>{f.profile_nickname || '친구'}</span>
+                        <button
+                          type="button"
+                          onClick={() => (placeToRecommend ? sendKakaoPlaceToFriend(friendId) : sharePostForKakao ? sendKakaoPostToFriend(friendId) : sendKakaoInviteToFriend(friendId))}
+                          disabled={kakaoSendingUuid === friendId}
+                          style={{ padding: '8px 14px', borderRadius: 999, border: 'none', background: '#E8740C', color: '#fff', fontSize: 12, fontWeight: 600, cursor: kakaoSendingUuid === friendId ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap', opacity: kakaoSendingUuid === friendId ? 0.7 : 1 }}
+                        >
+                          {kakaoSendingUuid === friendId ? '전송 중...' : placeToRecommend ? '전송' : '바로 보내기'}
+                        </button>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => (placeToRecommend ? sendKakaoPlaceToFriend(f.uuid || f.id) : sharePostForKakao ? sendKakaoPostToFriend(f.uuid || f.id) : sendKakaoInviteToFriend(f.uuid || f.id))}
-                        disabled={kakaoSendingUuid === (f.uuid || f.id)}
-                        style={{ padding: '8px 14px', borderRadius: 999, border: 'none', background: '#E8740C', color: '#fff', fontSize: 12, fontWeight: 600, cursor: kakaoSendingUuid === (f.uuid || f.id) ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap', opacity: kakaoSendingUuid === (f.uuid || f.id) ? 0.7 : 1 }}
-                      >
-                        {kakaoSendingUuid === (f.uuid || f.id) ? '전송 중...' : placeToRecommend ? '전송' : '바로 보내기'}
-                      </button>
-                    </div>
-                  ))}
+                    )
+                  })}
+                  
+                  {/* 일괄 전송 버튼 */}
+                  {selectedFriends.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const sendFunc = placeToRecommend ? sendKakaoPlaceToFriend : sharePostForKakao ? sendKakaoPostToFriend : sendKakaoInviteToFriend
+                        let successCount = 0
+                        for (const friendId of selectedFriends) {
+                          try {
+                            await sendFunc(friendId)
+                            successCount++
+                          } catch (e) {
+                            console.error('전송 실패:', e)
+                          }
+                        }
+                        onToast(`${successCount}명에게 전송 완료! ${selectedFriends.length - successCount > 0 ? `(${selectedFriends.length - successCount}명 실패)` : ''}`)
+                        setSelectedFriends([])
+                      }}
+                      style={{
+                        width: '100%',
+                        padding: '14px',
+                        borderRadius: 12,
+                        border: 'none',
+                        background: '#E8740C',
+                        color: '#fff',
+                        fontSize: 15,
+                        fontWeight: 700,
+                        cursor: 'pointer',
+                        marginTop: 8,
+                      }}
+                    >
+                      선택한 {selectedFriends.length}명에게 전송
+                    </button>
+                  )}
                 </div>
               ) : (
                 <div style={{ textAlign: 'center' }}>
